@@ -43,6 +43,7 @@ const PUBLIC_BOOLEAN_KEYS = [
   'enable_registration',
   'save_public_video'
 ] as const
+const SMTP_PROVIDERS = Object.freeze(['', 'gmail', 'ymail', 'outlook', 'other'] as const)
 const BOOLEAN_KEY_SET = new Set<string>(BOOLEAN_KEYS)
 const TIMEZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])
 
@@ -62,6 +63,21 @@ export type PublicSettingKey =
   | 'public_video_user'
 
 export type PublicSettings = Readonly<Record<PublicSettingKey, string | boolean>>
+
+export type SmtpProvider = typeof SMTP_PROVIDERS[number]
+
+export type SmtpSettings = Readonly<{
+  disable_confirm: boolean
+  smtp_provider: SmtpProvider
+  smtp_host: string
+  smtp_port: string
+  smtp_tls: boolean
+  smtp_email: string
+  smtp_password_configured: boolean
+  smtp_sender: string
+  smtp_reply_email: string
+  smtp_reply_name: string
+}>
 
 export type SettingEntry = Readonly<{ key: string; value: string }>
 
@@ -156,6 +172,72 @@ export class SettingsAdminService {
     await this.store.upsertMany(entries)
     return Object.freeze({ status: 'ok', message: 'The Public Settings have been successfully updated' })
   }
+
+  public async smtpSettings(): Promise<SmtpSettings> {
+    const raw = await this.store.getAll()
+    const provider = raw.smtp_provider ?? ''
+    return Object.freeze({
+      disable_confirm: raw.disable_confirm === 'true',
+      smtp_provider: isSmtpProvider(provider) ? provider : '',
+      smtp_host: normalizedSmtpHost(raw.smtp_host) ?? '',
+      smtp_port: optionalPort(raw.smtp_port) ?? '',
+      smtp_tls: raw.smtp_tls === 'true',
+      smtp_email: optionalEmail(raw.smtp_email) ?? '',
+      smtp_password_configured: (raw.smtp_password ?? '') !== '',
+      smtp_sender: boundedText(raw.smtp_sender, 255) ?? '',
+      smtp_reply_email: optionalEmail(raw.smtp_reply_email) ?? '',
+      smtp_reply_name: boundedText(raw.smtp_reply_name, 255) ?? ''
+    })
+  }
+
+  public async saveSmtp(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const entries: SettingEntry[] = []
+    if ('disable_confirm' in input) entries.push({ key: 'disable_confirm', value: booleanValue(input.disable_confirm) ? 'true' : 'false' })
+    if ('smtp_tls' in input) entries.push({ key: 'smtp_tls', value: booleanValue(input.smtp_tls) ? 'true' : 'false' })
+
+    if ('smtp_provider' in input) {
+      const provider = scalarValue(input.smtp_provider)
+      if (!isSmtpProvider(provider)) return invalid('The SMTP provider is invalid')
+      entries.push({ key: 'smtp_provider', value: provider })
+    }
+
+    if ('smtp_host' in input) {
+      const host = normalizedSmtpHost(input.smtp_host)
+      if (host === null) return invalid('The SMTP host is invalid')
+      entries.push({ key: 'smtp_host', value: host })
+    }
+
+    if ('smtp_port' in input) {
+      const port = optionalPort(input.smtp_port)
+      if (port === null) return invalid('The SMTP port is invalid')
+      entries.push({ key: 'smtp_port', value: port })
+    }
+
+    for (const key of ['smtp_email', 'smtp_reply_email'] as const) {
+      if (!(key in input)) continue
+      const email = optionalEmail(input[key])
+      if (email === null) return invalid(`The ${key.replaceAll('_', ' ')} is invalid`)
+      entries.push({ key, value: email })
+    }
+
+    for (const key of ['smtp_sender', 'smtp_reply_name'] as const) {
+      if (!(key in input)) continue
+      const value = boundedText(input[key], 255)
+      if (value === null) return invalid(`The ${key.replaceAll('_', ' ')} is too long`)
+      entries.push({ key, value })
+    }
+
+    const password = scalarValue(input.smtp_password, false)
+    const clearPassword = booleanValue(input.clear_smtp_password)
+    if (password !== '' && clearPassword) return invalid('Choose either a new SMTP password or remove the stored password')
+    if (password.length > 4_096) return invalid('The SMTP password is too long')
+    if (clearPassword) entries.push({ key: 'smtp_password', value: '' })
+    else if (password !== '') entries.push({ key: 'smtp_password', value: password })
+
+    if (entries.length === 0) return invalid('No supported settings were submitted')
+    await this.store.upsertMany(entries)
+    return Object.freeze({ status: 'ok', message: 'The SMTP Settings have been successfully updated' })
+  }
 }
 
 export function generalSettings(raw: Readonly<Record<string, string>>, defaultBaseUrl: URL): GeneralSettings {
@@ -214,6 +296,29 @@ function positiveId(value: unknown): string | null {
   }
 }
 
+function normalizedSmtpHost(value: unknown): string | null {
+  const candidate = scalarValue(value).toLowerCase()
+  if (candidate === '') return ''
+  if (candidate.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?))*$/.test(candidate)) return null
+  return candidate
+}
+
+function optionalPort(value: unknown): string | null {
+  const candidate = scalarValue(value)
+  return candidate === '' ? '' : boundedIntegerString(candidate, 1, 65_535)
+}
+
+function optionalEmail(value: unknown): string | null {
+  const candidate = scalarValue(value)
+  if (candidate === '') return ''
+  return candidate.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : null
+}
+
+function boundedText(value: unknown, maximum: number): string | null {
+  const candidate = scalarValue(value)
+  return candidate.length <= maximum ? candidate : null
+}
+
 function boundedIntegerString(value: unknown, minimum: number, maximum: number): string | null {
   const candidate = scalarValue(value)
   if (!/^\d+$/.test(candidate)) return null
@@ -234,6 +339,10 @@ function scalarValue(value: unknown, trim = true): string {
 
 function isCacheMode(value: string): value is typeof CACHE_MODES[number] {
   return (CACHE_MODES as readonly string[]).includes(value)
+}
+
+function isSmtpProvider(value: string): value is SmtpProvider {
+  return (SMTP_PROVIDERS as readonly string[]).includes(value)
 }
 
 function invalid(message: string): SettingsMutationResult {

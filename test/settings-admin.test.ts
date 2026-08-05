@@ -148,6 +148,67 @@ describe('settings administration service', () => {
     await expect(settings.savePublic({ public_video_user: '4294967296' })).resolves.toEqual({ status: 'invalid', message: 'The public video user is invalid' })
     await expect(settings.savePublic({ contact_page_link: 'javascript:alert(1)' })).resolves.toEqual({ status: 'invalid', message: 'The contact page URL is invalid' })
   })
+
+  it('preserves the ten-key SMTP contract without returning the stored password', async () => {
+    const store = new MemorySettingsStore({
+      disable_confirm: 'false',
+      smtp_provider: 'gmail',
+      smtp_host: 'SMTP.GMAIL.COM',
+      smtp_port: '587',
+      smtp_tls: 'true',
+      smtp_email: 'mailer@example.test',
+      smtp_password: 'stored-secret',
+      smtp_sender: 'GPlayer Mailer',
+      smtp_reply_email: 'support@example.test',
+      smtp_reply_name: 'Support'
+    })
+    const settings = new SettingsAdminService(store)
+    const values = await settings.smtpSettings()
+    expect(values).toEqual({
+      disable_confirm: false,
+      smtp_provider: 'gmail',
+      smtp_host: 'smtp.gmail.com',
+      smtp_port: '587',
+      smtp_tls: true,
+      smtp_email: 'mailer@example.test',
+      smtp_password_configured: true,
+      smtp_sender: 'GPlayer Mailer',
+      smtp_reply_email: 'support@example.test',
+      smtp_reply_name: 'Support'
+    })
+    expect(values).not.toHaveProperty('smtp_password')
+
+    await expect(settings.saveSmtp({
+      disable_confirm: ['false', 'true'],
+      smtp_provider: 'outlook',
+      smtp_host: 'smtp.office365.com',
+      smtp_port: '0587',
+      smtp_tls: 'true',
+      smtp_email: 'mailer@example.test',
+      smtp_password: 'replacement-secret',
+      smtp_sender: 'No Reply',
+      smtp_reply_email: 'support@example.test',
+      smtp_reply_name: 'Support Team',
+      attacker_controlled_key: 'blocked'
+    })).resolves.toEqual({ status: 'ok', message: 'The SMTP Settings have been successfully updated' })
+    expect(store.values).toEqual(expect.objectContaining({ smtp_provider: 'outlook', smtp_host: 'smtp.office365.com', smtp_port: '587', smtp_password: 'replacement-secret' }))
+    expect(store.values).not.toHaveProperty('attacker_controlled_key')
+  })
+
+  it('validates SMTP transport fields and requires an explicit password removal', async () => {
+    const store = new MemorySettingsStore({ smtp_password: 'preserve-me' })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.saveSmtp({ smtp_host: 'https://smtp.example.test' })).resolves.toEqual({ status: 'invalid', message: 'The SMTP host is invalid' })
+    await expect(settings.saveSmtp({ smtp_port: '65536' })).resolves.toEqual({ status: 'invalid', message: 'The SMTP port is invalid' })
+    await expect(settings.saveSmtp({ smtp_email: 'not-an-email' })).resolves.toEqual({ status: 'invalid', message: 'The smtp email is invalid' })
+    await expect(settings.saveSmtp({ smtp_password: 'new-secret', clear_smtp_password: 'true' })).resolves.toEqual({ status: 'invalid', message: 'Choose either a new SMTP password or remove the stored password' })
+    expect(store.writes).toEqual([])
+
+    await expect(settings.saveSmtp({ smtp_password: '', smtp_sender: 'Mailer' })).resolves.toEqual({ status: 'ok', message: 'The SMTP Settings have been successfully updated' })
+    expect(store.values.smtp_password).toBe('preserve-me')
+    await expect(settings.saveSmtp({ clear_smtp_password: 'true' })).resolves.toEqual({ status: 'ok', message: 'The SMTP Settings have been successfully updated' })
+    expect(store.values.smtp_password).toBe('')
+  })
 })
 
 describe('MySqlSettingsAdminStore', () => {
@@ -252,6 +313,36 @@ describe('general settings administration routes', () => {
     expect(response.statusCode).toBe(400)
     expect(response.body).toContain('The public video user is invalid')
     expect(store.writes).toEqual([])
+  })
+
+  it('renders and updates SMTP settings without exposing the stored password', async () => {
+    const store = new MemorySettingsStore({
+      smtp_provider: 'gmail',
+      smtp_host: 'smtp.gmail.com',
+      smtp_port: '587',
+      smtp_tls: 'true',
+      smtp_email: 'mailer@example.test',
+      smtp_password: 'never-render-this',
+      smtp_sender: 'GPlayer Mailer'
+    })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/smtp/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1]
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('SMTP settings.')
+    expect(page.body).toContain('<option value="gmail" selected>Gmail</option>')
+    expect(page.body).toContain('A password is stored. Leave this blank to preserve it.')
+    expect(page.body).not.toContain('never-render-this')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/smtp/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `csrf=${csrf}&disable_confirm=false&smtp_provider=other&smtp_host=mail.example.test&smtp_port=465&smtp_tls=false&smtp_email=mailer%40example.test&smtp_password=&smtp_sender=Mailer&smtp_reply_email=support%40example.test&smtp_reply_name=Support`
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/smtp/?updated=1')
+    expect(store.values).toEqual(expect.objectContaining({ smtp_provider: 'other', smtp_host: 'mail.example.test', smtp_port: '465', smtp_tls: 'false', smtp_password: 'never-render-this' }))
   })
 
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {

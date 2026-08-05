@@ -1,7 +1,7 @@
 import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
-import { timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings } from '../settings/settings-admin-service.js'
+import { timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -288,6 +288,63 @@ export function renderAdminPublicSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminSmtpSettings(input: Readonly<{
+  adminBase: string
+  values: SmtpSettings
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const checked = (value: boolean): string => value ? ' checked' : ''
+  const providerOptions = [
+    ['', 'Select email provider'],
+    ['gmail', 'Gmail'],
+    ['ymail', 'Yahoo!'],
+    ['outlook', 'Outlook'],
+    ['other', 'Other']
+  ].map(([value, label]) => stringOption(value ?? '', label ?? '', input.values.smtp_provider)).join('')
+  const passwordHint = input.values.smtp_password_configured
+    ? 'A password is stored. Leave this blank to preserve it.'
+    : 'No SMTP password is currently stored.'
+
+  return adminDocument('SMTP settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Email transport</p>
+  <div class="admin-dashboard-heading"><div><h1>SMTP settings.</h1><p>Configure registration and password-reset delivery using the complete legacy SMTP key contract.</p></div><span class="admin-role">10 keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'smtp')}
+  <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/settings/smtp/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="smtp-policy-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Policy</p><h2 id="smtp-policy-title">Verification delivery</h2><p>Choose whether account confirmation and password-reset messages are sent.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('disable_confirm', 'Disable confirmation emails', 'Skip registration verification and password-reset email delivery. New addresses will not be verified.', checked(input.values.disable_confirm))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="smtp-server-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Transport</p><h2 id="smtp-server-title">SMTP server</h2><p>Set the provider metadata, connection host, port, and transport encryption.</p></div>
+      <div class="settings-grid">
+        <div class="field"><label for="smtp_provider">Provider</label><select id="smtp_provider" name="smtp_provider">${providerOptions}</select><p class="field-hint">Provider is retained for legacy compatibility; host and port remain explicit.</p></div>
+        ${settingsInput('smtp_host', 'Host', escapeHtml(input.values.smtp_host), 'text', 'smtp.example.com', false, 'Enter a hostname without a scheme or port.')}
+        ${settingsInput('smtp_port', 'Port', escapeHtml(input.values.smtp_port), 'number', '587', false, 'Valid TCP port: 1–65535.', '1', '65535')}
+        ${settingsToggle('smtp_tls', 'Use TLS', 'Use the legacy TLS transport flag for the SMTP connection.', checked(input.values.smtp_tls))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="smtp-identity-title">
+      <div class="settings-section-heading"><p class="panel-kicker">03 / Identity</p><h2 id="smtp-identity-title">Credentials and sender</h2><p>Keep authentication secrets server-side and define the visible sender and reply-to identity.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('smtp_email', 'Account email', escapeHtml(input.values.smtp_email), 'email', 'mailer@example.com', false, '', undefined, undefined, 'email')}
+        ${settingsInput('smtp_password', 'Password', '', 'password', input.values.smtp_password_configured ? 'Stored password' : 'SMTP password', false, passwordHint, undefined, undefined, 'new-password')}
+        ${settingsToggle('clear_smtp_password', 'Remove stored password', 'Explicitly clear the saved SMTP password. Do not combine this with a new password.', '')}
+        ${settingsInput('smtp_sender', 'Sender name', escapeHtml(input.values.smtp_sender), 'text', 'No-Reply')}
+        ${settingsInput('smtp_reply_email', 'Reply-to email', escapeHtml(input.values.smtp_reply_email), 'email', 'support@example.com', false, '', undefined, undefined, 'email')}
+        ${settingsInput('smtp_reply_name', 'Reply-to recipient', escapeHtml(input.values.smtp_reply_name), 'text', 'Support')}
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update SMTP settings</span><span aria-hidden="true">↗</span></button><p>The mail transport runtime will consume these values when registration and password-reset delivery is implemented.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminError(adminBase: string, status: 403 | 404 | 503, description: string): string {
   const title = status === 403 ? 'Access denied.' : status === 404 ? 'User not found.' : 'Service unavailable.'
   return adminDocument(String(status), `<main class="admin-error-main">
@@ -342,23 +399,24 @@ function settingsInput(
   name: string,
   label: string,
   value: string,
-  type: 'text' | 'url' | 'number' | 'password',
+  type: 'text' | 'url' | 'number' | 'password' | 'email',
   placeholder: string,
   required = false,
   hint = '',
   minimum?: string,
-  maximum?: string
+  maximum?: string,
+  autocomplete?: string
 ): string {
-  const maxlength = type === 'number' ? '' : ` maxlength="${type === 'password' ? '4096' : '100000'}"`
-  return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="${type}" value="${value}" placeholder="${escapeHtml(placeholder)}"${maxlength}${required ? ' required' : ''}${minimum === undefined ? '' : ` min="${escapeHtml(minimum)}"`}${maximum === undefined ? '' : ` max="${escapeHtml(maximum)}"`}>${hint === '' ? '' : `<p class="field-hint">${escapeHtml(hint)}</p>`}</div>`
+  const maxlength = type === 'number' ? '' : ` maxlength="${type === 'password' ? '4096' : type === 'email' ? '254' : '100000'}"`
+  return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="${type}" value="${value}" placeholder="${escapeHtml(placeholder)}"${maxlength}${required ? ' required' : ''}${minimum === undefined ? '' : ` min="${escapeHtml(minimum)}"`}${maximum === undefined ? '' : ` max="${escapeHtml(maximum)}"`}${autocomplete === undefined ? '' : ` autocomplete="${escapeHtml(autocomplete)}"`}>${hint === '' ? '' : `<p class="field-hint">${escapeHtml(hint)}</p>`}</div>`
 }
 
 function settingsToggle(name: string, label: string, description: string, checked: string): string {
   return `<label class="settings-toggle" for="${name}"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span><span class="settings-switch"><input type="hidden" name="${name}" value="false"><input id="${name}" name="${name}" type="checkbox" value="true"${checked}><i aria-hidden="true"></i></span></label>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a></nav>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {

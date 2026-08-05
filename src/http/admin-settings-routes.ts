@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, type AdminMessage } from '../player/admin-page.js'
+import { renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
@@ -19,9 +19,11 @@ export async function registerAdminSettingsRoutes(
   const loginUrl = `${adminBase}/login/`
   const generalUrl = `${adminBase}/settings/general/`
   const publicUrl = `${adminBase}/settings/public/`
+  const smtpUrl = `${adminBase}/settings/smtp/`
 
   app.get(`${adminBase}/settings/general`, async (_request, reply) => await reply.redirect(generalUrl, 308))
   app.get(`${adminBase}/settings/public`, async (_request, reply) => await reply.redirect(publicUrl, 308))
+  app.get(`${adminBase}/settings/smtp`, async (_request, reply) => await reply.redirect(smtpUrl, 308))
 
   app.get(generalUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -123,6 +125,53 @@ export async function registerAdminSettingsRoutes(
         values,
         users: userOptions,
         csrfToken: csrfToken(config, tokenFor(request), 'settings-public'),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings database is temporarily unavailable.'))
+    }
+  })
+
+  app.get(smtpUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    try {
+      const values = await settings.smtpSettings()
+      const message: AdminMessage | undefined = stringValue(objectValue(request.query).updated) === '1'
+        ? { kind: 'success', text: 'The SMTP Settings have been successfully updated' }
+        : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminSmtpSettings({
+        adminBase,
+        values,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-smtp'),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings database is temporarily unavailable.'))
+    }
+  })
+
+  app.post(smtpUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-smtp')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const result = await settings.saveSmtp(body)
+      if (result.status === 'ok') return await reply.redirect(`${smtpUrl}?updated=1`, 303)
+      const values = await settings.smtpSettings()
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminSmtpSettings({
+        adminBase,
+        values,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-smtp'),
         message: { kind: 'error', text: result.message }
       }))
     } catch {
