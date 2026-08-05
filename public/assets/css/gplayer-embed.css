@@ -72,6 +72,13 @@ video,
   height: 100%;
 }
 
+[data-gplayer-audio-panel] .plyr__control[aria-checked="true"],
+[data-gplayer-audio-panel] .plyr__control:hover,
+[data-gplayer-audio-panel] .plyr__control:focus-visible {
+  background: #00638f !important;
+  color: #fff !important;
+}
+
 video.player-stretch-exactfit {
   object-fit: fill;
 }

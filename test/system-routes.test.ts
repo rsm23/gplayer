@@ -279,12 +279,13 @@ describe('legacy-compatible system routes', () => {
       SECURE_SALT: secureSalt
     }))
 
-    const [sitemap, manifest, worker, offline, publicStyle, embedScript] = await Promise.all([
+    const [sitemap, manifest, worker, offline, publicStyle, embedStyle, embedScript] = await Promise.all([
       app.inject({ method: 'GET', url: '/sitemap.xml' }),
       app.inject({ method: 'GET', url: '/manifest.json' }),
       app.inject({ method: 'GET', url: '/sw.js' }),
       app.inject({ method: 'GET', url: '/offline.html' }),
       app.inject({ method: 'GET', url: '/assets/css/gplayer-public.css' }),
+      app.inject({ method: 'GET', url: '/assets/css/gplayer-embed.css' }),
       app.inject({ method: 'GET', url: '/assets/js/gplayer-embed.js' })
     ])
 
@@ -307,6 +308,9 @@ describe('legacy-compatible system routes', () => {
     expect(publicStyle.statusCode).toBe(200)
     expect(publicStyle.body).toContain('.public-main')
     expect(publicStyle.body).toContain('color: var(--brand-ink)')
+    expect(embedStyle.statusCode).toBe(200)
+    expect(embedStyle.body).toContain('[data-gplayer-audio-panel]')
+    expect(embedStyle.body).toContain('background: #00638f')
     expect(embedScript.statusCode).toBe(200)
     expect(embedScript.body).toContain("body.dataset.embedOnly !== 'true'")
     expect(embedScript.body).toContain('window.self !== window.top')
@@ -321,5 +325,11 @@ describe('legacy-compatible system routes', () => {
     expect(embedScript.body).toContain("import('/assets/vendor/p2p-media-loader-hlsjs/2.2.1/p2p-media-loader-hlsjs.es.min.js')")
     expect(embedScript.body).toContain("body.dataset.p2pTransport = 'hls'")
     expect(embedScript.body).toContain("body.dataset.p2pTransport = 'dash'")
+    expect(embedScript.body).toContain('waitForHlsManifest')
+    expect(embedScript.body).toContain('body.dataset.playerQuality')
+    expect(embedScript.body).toContain('data-gplayer-audio-menu')
+    expect(embedScript.body).toContain('shakaPlayer.selectTextTrack(track)')
+    expect(embedScript.body).toContain("storage: { enabled: false, key: 'plyr' }")
+    expect(embedScript.body).toContain("settings.setAttribute('aria-label', 'Settings')")
   })
 })

@@ -17,7 +17,10 @@ describe('native embed appearance', () => {
         background_color: '102030',
         background_opacity: '65',
         window_color: '405060',
-        window_opacity: '35'
+        window_opacity: '35',
+        default_resolution: '700',
+        default_audio: 'French',
+        default_subtitle: 'Spanish'
       }, defaults)
       const html = renderEmbedPage(
         { host: 'direct', id: 'https://media.example.test/video.mp4' },
@@ -36,6 +39,11 @@ describe('native embed appearance', () => {
       expect(html).toContain('data-caption-background-opacity="65"')
       expect(html).toContain('data-caption-window-color="#405060"')
       expect(html).toContain('data-caption-window-opacity="35"')
+      expect(html).toContain('data-default-resolution="700"')
+      expect(html).toContain('data-default-audio="French"')
+      expect(html).toContain('data-default-audio-key="fr"')
+      expect(html).toContain('data-default-subtitle="Spanish"')
+      expect(html).toContain('data-default-subtitle-key="es"')
     }
   })
 

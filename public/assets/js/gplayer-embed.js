@@ -149,6 +149,82 @@
     streaming: { bufferBehind: 15, bufferingGoal: 10, rebufferingGoal: 5 }
   })
 
+  const languagePreference = (name) => [body.dataset[name] || '', body.dataset[`${name}Key`] || '']
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+
+  const languageMatches = (track, name) => {
+    const preferences = languagePreference(name)
+    if (preferences.length === 0) return false
+    const values = [track.language, track.lang, track.name, track.label]
+      .filter((value) => typeof value === 'string' && value.trim() !== '')
+      .map((value) => value.trim().toLowerCase())
+    return preferences.some((preference) => values.some((value) => value === preference || (value.length > 3 && preference.length > 3 && (value.includes(preference) || preference.includes(value)))))
+  }
+
+  const languageLabel = (track, index) => {
+    for (const value of [track.label, track.originalTextId]) {
+      if (typeof value === 'string' && value.trim() !== '' && value !== 'Shaka Player TextTrack') return value.trim()
+    }
+    if (typeof track.language === 'string' && track.language.trim() !== '') {
+      try {
+        return new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(track.language) || track.language.toUpperCase()
+      } catch {
+        return track.language.toUpperCase()
+      }
+    }
+    return `Subtitle ${index + 1}`
+  }
+
+  const qualityBucket = (height) => {
+    for (const threshold of [4_000, 2_000, 1_400, 1_200, 1_100, 1_000, 900, 800, 700, 600, 500, 400, 300, 200]) {
+      if (height >= threshold) return threshold
+    }
+    return 100
+  }
+
+  const selectedDefaultQuality = (heights) => {
+    const requested = Number.parseInt(body.dataset.defaultResolution || '', 10)
+    if (!Number.isInteger(requested)) return 0
+    return heights.find((height) => qualityBucket(height) === requested) || 0
+  }
+
+  const supportedHlsLevels = (hls) => hls.levels.flatMap((level, index) => {
+    const height = Number(level.height)
+    if (!Number.isInteger(height) || height <= 0) return []
+    const codecs = typeof level.codecs === 'string' && level.codecs !== ''
+      ? level.codecs
+      : typeof level.attrs?.CODECS === 'string' ? level.attrs.CODECS : ''
+    if (codecs !== '' && typeof window.MediaSource?.isTypeSupported === 'function' && !window.MediaSource.isTypeSupported(`video/mp4; codecs="${codecs}"`)) return []
+    return [{ index, height }]
+  })
+
+  const uniqueQualities = (tracks) => [...new Set(tracks.map((track) => Number(track.height)).filter((height) => Number.isInteger(height) && height > 0))].sort((left, right) => left - right)
+
+  const waitForHlsManifest = (hls) => new Promise((resolve, reject) => {
+    const events = window.Hls.Events
+    const clear = () => {
+      window.clearTimeout(timeout)
+      hls.off?.(events.MANIFEST_PARSED, parsed)
+      hls.off?.(events.ERROR, failed)
+    }
+    const parsed = () => {
+      clear()
+      resolve()
+    }
+    const failed = (_event, data) => {
+      if (!data?.fatal) return
+      clear()
+      reject(new Error('HLS manifest failed to load'))
+    }
+    const timeout = window.setTimeout(() => {
+      clear()
+      reject(new Error('HLS manifest timed out'))
+    }, 60_000)
+    hls.on(events.MANIFEST_PARSED, parsed)
+    hls.on(events.ERROR, failed)
+  })
+
   const initializePlyrTransport = async (media) => {
     const source = media.dataset.source || ''
     const kind = media.dataset.sourceKind || 'video'
@@ -171,13 +247,50 @@
           }
         }
         const hls = new HlsRuntime(hlsRuntimeConfiguration(p2pActive ? p2p : null))
-        hls.attachMedia(media)
+        const manifest = waitForHlsManifest(hls)
         hls.on(window.Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source))
+        hls.attachMedia(media)
         window.gplayerMediaTransport = hls
         body.dataset.mediaTransport = 'hls.js'
         if (p2pActive) body.dataset.p2pTransport = 'hls'
         window.addEventListener('pagehide', () => hls.destroy(), { once: true })
-        return hls
+        await manifest
+        const levels = supportedHlsLevels(hls)
+        const qualities = uniqueQualities(levels)
+        let selectedQuality = selectedDefaultQuality(qualities)
+        const selectQuality = (value) => {
+          const quality = Number(value)
+          const level = levels.find((candidate) => candidate.height === quality)
+          selectedQuality = level === undefined ? 0 : quality
+          hls.currentLevel = level?.index ?? -1
+          body.dataset.playerQuality = selectedQuality === 0 ? 'auto' : String(selectedQuality)
+        }
+        selectQuality(selectedQuality)
+        const audioTracks = hls.audioTracks.map((track, index) => ({
+          id: index,
+          label: track.name || track.lang || `Audio ${index + 1}`,
+          language: track.lang || '',
+          active: index === hls.audioTrack
+        }))
+        const preferredAudio = audioTracks.find((track) => languageMatches(track, 'defaultAudio'))
+        if (preferredAudio !== undefined) hls.audioTrack = preferredAudio.id
+        const preferredSubtitle = hls.subtitleTracks
+          .map((track, index) => ({ ...track, id: index }))
+          .find((track) => languageMatches(track, 'defaultSubtitle'))
+        if (preferredSubtitle !== undefined) {
+          hls.subtitleTrack = preferredSubtitle.id
+          hls.subtitleDisplay = true
+        }
+        return {
+          engine: hls,
+          quality: qualities.length > 1 ? { default: selectedQuality, options: [0, ...qualities], forced: true, onChange: selectQuality } : null,
+          audio: audioTracks.length > 1
+            ? {
+                tracks: audioTracks.map((track) => ({ ...track, active: track.id === hls.audioTrack })),
+                select: (id) => { hls.audioTrack = Number(id) }
+              }
+            : null
+        }
       }
       if (media.canPlayType('application/vnd.apple.mpegurl')) {
         media.src = source
@@ -209,6 +322,53 @@
         }
       }
       await shakaPlayer.load(source)
+      const shakaCaptions = shakaPlayer.getTextTracks().map((track, index) => {
+        const kind = track.kind === 'caption' ? 'captions' : 'subtitles'
+        const nativeTrack = media.addTextTrack(kind, languageLabel(track, index), track.language || '')
+        nativeTrack.mode = 'hidden'
+        return { nativeTrack, track }
+      })
+      const variants = shakaPlayer.getVariantTracks()
+      let activeVariant = variants.find((track) => track.active) || variants[0]
+      const preferredAudio = variants.find((track) => languageMatches(track, 'defaultAudio'))
+      if (preferredAudio !== undefined && preferredAudio.audioId !== activeVariant?.audioId) {
+        if (typeof shakaPlayer.selectAudioLanguage === 'function' && preferredAudio.language) {
+          shakaPlayer.selectAudioLanguage(preferredAudio.language)
+        } else {
+          shakaPlayer.selectVariantTrack(preferredAudio, true)
+        }
+        activeVariant = preferredAudio
+      }
+      let selectedAudioId = activeVariant?.audioId
+      const qualities = uniqueQualities(variants)
+      let selectedQuality = selectedDefaultQuality(qualities)
+      const selectQuality = (value) => {
+        const quality = Number(value)
+        if (!Number.isInteger(quality) || quality <= 0) {
+          selectedQuality = 0
+          shakaPlayer.configure({ abr: { enabled: true } })
+          body.dataset.playerQuality = 'auto'
+          return
+        }
+        const variant = variants.find((track) => track.height === quality && track.audioId === selectedAudioId) || variants.find((track) => track.height === quality)
+        if (variant === undefined) return
+        selectedQuality = quality
+        selectedAudioId = variant.audioId
+        shakaPlayer.configure({ abr: { enabled: false } })
+        shakaPlayer.selectVariantTrack(variant, true)
+        body.dataset.playerQuality = String(quality)
+      }
+      selectQuality(selectedQuality)
+      const audioTracks = []
+      for (const variant of variants) {
+        if (audioTracks.some((track) => track.id === variant.audioId)) continue
+        audioTracks.push({
+          id: variant.audioId,
+          label: variant.label || variant.language || `Audio ${audioTracks.length + 1}`,
+          language: variant.language || '',
+          active: variant.audioId === selectedAudioId
+        })
+      }
       window.gplayerMediaTransport = shakaPlayer
       window.gplayerP2pEngine = p2pEngine
       body.dataset.mediaTransport = 'shaka'
@@ -216,7 +376,34 @@
         void p2pEngine?.destroy?.()
         void shakaPlayer.destroy()
       }, { once: true })
-      return shakaPlayer
+      return {
+        engine: shakaPlayer,
+        quality: qualities.length > 1 ? { default: selectedQuality, options: [0, ...qualities], forced: true, onChange: selectQuality } : null,
+        captions: shakaCaptions.length === 0
+          ? null
+          : {
+              tracks: shakaCaptions,
+              select: (track) => {
+                shakaPlayer.selectTextTrack(track)
+                shakaPlayer.setTextTrackVisibility(true)
+              },
+              disable: () => shakaPlayer.setTextTrackVisibility(false)
+            },
+        audio: audioTracks.length > 1
+          ? {
+              tracks: audioTracks,
+              select: (id) => {
+                const variant = variants.find((track) => String(track.audioId) === String(id) && (selectedQuality === 0 || track.height === selectedQuality)) || variants.find((track) => String(track.audioId) === String(id))
+                if (variant === undefined) return
+                selectedAudioId = variant.audioId
+                selectedQuality = Number(variant.height) || 0
+                shakaPlayer.configure({ abr: { enabled: false } })
+                shakaPlayer.selectVariantTrack(variant, true)
+                body.dataset.playerQuality = selectedQuality === 0 ? 'auto' : String(selectedQuality)
+              }
+            }
+          : null
+      }
     }
     return null
   }
@@ -312,6 +499,153 @@
     }
   }
 
+  const installAdaptiveAudioMenu = (instance, audio) => {
+    if (audio === null || audio.tracks.length < 2) return
+    const container = instance.elements?.container
+    if (!(container instanceof HTMLElement)) return
+    const menu = container.querySelector('.plyr__menu__container')
+    const home = menu?.querySelector('[id$="-home"]')
+    const homeMenu = home?.querySelector('[role="menu"]')
+    if (!(menu instanceof HTMLElement) || !(home instanceof HTMLElement) || !(homeMenu instanceof HTMLElement) || menu.querySelector('[data-gplayer-audio-menu]')) return
+
+    const active = () => audio.tracks.find((track) => track.active) || audio.tracks[0]
+    const identifier = `${menu.id || 'plyr-settings'}-gplayer-audio`
+    const forward = document.createElement('button')
+    forward.type = 'button'
+    forward.className = 'plyr__control plyr__control--forward'
+    forward.dataset.plyr = 'settings'
+    forward.dataset.gplayerAudioMenu = ''
+    forward.setAttribute('role', 'menuitem')
+    forward.setAttribute('aria-haspopup', 'true')
+    forward.setAttribute('aria-controls', identifier)
+    const forwardLabel = document.createElement('span')
+    forwardLabel.textContent = 'Audio'
+    const forwardValue = document.createElement('span')
+    forwardValue.className = 'plyr__menu__value'
+    forwardValue.textContent = active()?.label || 'Default'
+    forwardLabel.append(forwardValue)
+    forward.append(forwardLabel)
+    homeMenu.prepend(forward)
+
+    const panel = document.createElement('div')
+    panel.id = identifier
+    panel.hidden = true
+    panel.dataset.gplayerAudioPanel = ''
+    const back = document.createElement('button')
+    back.type = 'button'
+    back.className = 'plyr__control plyr__control--back'
+    const backVisible = document.createElement('span')
+    backVisible.setAttribute('aria-hidden', 'true')
+    backVisible.textContent = 'Audio'
+    const backLabel = document.createElement('span')
+    backLabel.className = 'plyr__sr-only'
+    backLabel.textContent = 'Go back to the previous menu'
+    back.append(backVisible, backLabel)
+    const choices = document.createElement('div')
+    choices.setAttribute('role', 'menu')
+    for (const track of audio.tracks) {
+      const choice = document.createElement('button')
+      choice.type = 'button'
+      choice.className = 'plyr__control'
+      choice.dataset.plyr = 'audio'
+      choice.value = String(track.id)
+      choice.setAttribute('role', 'menuitemradio')
+      choice.setAttribute('aria-checked', String(track.active))
+      choice.textContent = track.language && !track.label.toLowerCase().includes(track.language.toLowerCase())
+        ? `${track.label} (${track.language.toUpperCase()})`
+        : track.label
+      choice.addEventListener('click', () => {
+        for (const candidate of audio.tracks) candidate.active = String(candidate.id) === choice.value
+        for (const button of choices.querySelectorAll('[role="menuitemradio"]')) button.setAttribute('aria-checked', String(button === choice))
+        audio.select(choice.value)
+        forwardValue.textContent = track.label
+        panel.hidden = true
+        home.hidden = false
+        forward.focus()
+      })
+      choices.append(choice)
+    }
+    panel.append(back, choices)
+    home.after(panel)
+    forward.addEventListener('click', () => {
+      home.hidden = true
+      panel.hidden = false
+      choices.querySelector('[aria-checked="true"]')?.focus()
+    })
+    back.addEventListener('click', () => {
+      panel.hidden = true
+      home.hidden = false
+      forward.focus()
+    })
+  }
+
+  const installAdaptiveQualityMenu = (instance, quality) => {
+    const container = instance.elements?.container
+    if (!(container instanceof HTMLElement)) return
+    const buttons = [...container.querySelectorAll('button[data-plyr="quality"]')]
+    const automatic = buttons.find((button) => button.value === '0')
+    const label = automatic?.querySelector('span')
+    if (label instanceof HTMLElement) label.textContent = 'Auto'
+    if (quality === null) return
+    for (const button of buttons) {
+      if (button.dataset.gplayerQualityBound === 'true') continue
+      button.dataset.gplayerQualityBound = 'true'
+      button.addEventListener('click', () => quality.onChange(button.value))
+    }
+  }
+
+  const installAdaptiveCaptions = (instance, media, captions) => {
+    const selectCurrent = () => {
+      if (captions === null) return
+      const index = Number(instance.currentTrack)
+      const selected = Number.isInteger(index) && index >= 0 ? media.textTracks[index] : null
+      const shakaTrack = captions.tracks.find((candidate) => candidate.nativeTrack === selected)
+      if (shakaTrack === undefined) captions.disable()
+      else captions.select(shakaTrack.track)
+    }
+    const applyPreferred = () => {
+      const tracks = Array.from(media.textTracks)
+      const preferred = tracks.findIndex((track) => languageMatches(track, 'defaultSubtitle'))
+      const fallback = tracks.findIndex((track) => track.label !== 'Shaka Player TextTrack')
+      const index = preferred >= 0 ? preferred : fallback
+      if (index < 0) return
+      instance.currentTrack = index
+      instance.toggleCaptions?.(true)
+      window.queueMicrotask(selectCurrent)
+    }
+    if (captions !== null && !instance.gplayerAdaptiveCaptionsInstalled) {
+      instance.gplayerAdaptiveCaptionsInstalled = true
+      instance.on('captionsenabled', selectCurrent)
+      instance.on('languagechange', selectCurrent)
+      instance.on('captionsdisabled', captions.disable)
+    }
+    if (!instance.gplayerDefaultCaptionBound) {
+      instance.gplayerDefaultCaptionBound = true
+      instance.on('loadedmetadata', applyPreferred)
+      media.addEventListener('loadedmetadata', () => window.setTimeout(applyPreferred, 0))
+      media.addEventListener('loadeddata', () => window.setTimeout(applyPreferred, 0))
+      media.addEventListener('canplay', () => window.setTimeout(applyPreferred, 0))
+      media.textTracks.addEventListener?.('addtrack', () => window.setTimeout(applyPreferred, 0))
+      window.setTimeout(applyPreferred, 250)
+      window.setTimeout(applyPreferred, 1_000)
+    }
+    applyPreferred()
+  }
+
+  const labelPlayerSettings = (instance) => {
+    const container = instance.elements?.container
+    if (!(container instanceof HTMLElement)) return
+    const settings = container.querySelector('.plyr__controls button[data-plyr="settings"]')
+    if (!(settings instanceof HTMLButtonElement)) return
+    settings.setAttribute('aria-label', 'Settings')
+    settings.removeAttribute('aria-controls')
+    const currentTime = container.querySelector('.plyr__time--current[aria-label]')
+    if (currentTime instanceof HTMLElement) {
+      currentTime.title = currentTime.getAttribute('aria-label') || 'Current time'
+      currentTime.removeAttribute('aria-label')
+    }
+  }
+
   const initializeSelectedPlayer = async () => {
     if (!(video instanceof HTMLVideoElement)) return null
     const fallback = nativeController(video)
@@ -323,16 +657,33 @@
         await loadRuntimeScript('/assets/vendor/plyr/3.6.3/plyr-custom.polyfilled.min.js', 'plyr')
         if (typeof window.Plyr !== 'function') return fallback
         const speedEnabled = body.dataset.playbackRate === 'true'
+        const settings = ['captions']
+        if (mediaTransport?.quality !== null && mediaTransport?.quality !== undefined) settings.push('quality')
+        if (speedEnabled) settings.push('speed')
         const instance = new window.Plyr(video, {
           controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
-          settings: speedEnabled ? ['captions', 'speed'] : ['captions'],
+          settings,
           captions: { active: true, update: true },
+          ...(mediaTransport?.quality === null || mediaTransport?.quality === undefined ? {} : { quality: mediaTransport.quality }),
           ...(vastConfig?.schedule.length ? { ads: { enabled: true, tagUrl: vastConfig.schedule[0].tag } } : {}),
           speed: { selected: 1, options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
+          storage: { enabled: false, key: 'plyr' },
           tooltips: { controls: true, seek: true }
         })
-        instance.mediaTransport = mediaTransport
+        instance.mediaTransport = mediaTransport?.engine || null
         instance.resumePlayback = () => instance.play()
+        const installAdaptiveMenus = () => {
+          labelPlayerSettings(instance)
+          installAdaptiveQualityMenu(instance, mediaTransport?.quality || null)
+          installAdaptiveAudioMenu(instance, mediaTransport?.audio || null)
+        }
+        const installAdaptiveRuntime = () => {
+          installAdaptiveMenus()
+          installAdaptiveCaptions(instance, video, mediaTransport?.captions || null)
+        }
+        instance.on('ready', installAdaptiveRuntime)
+        window.queueMicrotask(installAdaptiveMenus)
+        window.setTimeout(installAdaptiveRuntime, 0)
         window.gdPlyr = instance
         body.dataset.activePlayer = 'plyr'
         return nativeController(video, 'plyr', instance)
