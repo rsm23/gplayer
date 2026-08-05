@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs'
 import { lstat } from 'node:fs/promises'
+import { isIP } from 'node:net'
 import path from 'node:path'
 import { Readable, Transform, type TransformCallback } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
@@ -10,6 +11,8 @@ import { StreamCache, type StreamCacheEntry, type StreamCacheMode, type StreamCa
 import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
 import { mediaCachePaths } from '../background/media-cache-path.js'
 import { parseByteRange } from '../background/media-download-worker.js'
+import type { GeoIpDetailsLookup } from '../security/geoip-details.js'
+import { isSmartTvUserAgent } from '../security/smart-tv.js'
 
 const MAX_MANIFEST_BYTES = 5 * 1_024 * 1_024
 const MAX_STREAM_URL_LENGTH = 16_384
@@ -17,6 +20,8 @@ const MAX_CACHEABLE_RESOURCE_BYTES = 128 * 1_024 * 1_024
 const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gsc', 'gd', 'gl', 'gx', 'gxr', 'gt'])
 const PROVIDER_CONTEXT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const CACHED_PROVIDER_CONTEXT_PLACEHOLDER = '__GPLAYER_PROVIDER_CONTEXT__'
+const CACHED_ACCESS_TOKEN_PLACEHOLDER = '__GPLAYER_STREAM_ACCESS__'
+const MAX_ACCESS_TOKEN_LENGTH = 2_048
 const HLS_DIRECT_TRANSPORT_DOMAINS = ['tiktokcdn.com', 'cloudfront-net.online'] as const
 const binaryResponseHeaders = [
   'accept-ranges',
@@ -39,6 +44,14 @@ export type StreamingIdentity = Readonly<{
   label?: string
   live?: boolean
   contextToken?: string
+  accessToken?: string
+  downloadable?: boolean
+}>
+
+export type StreamingAccessSettings = Readonly<{
+  disableValidation: boolean
+  p2p: boolean
+  downloadPageEnabled: boolean
 }>
 
 export type StreamingRouteOptions = Readonly<{
@@ -52,7 +65,15 @@ export type StreamingRouteOptions = Readonly<{
   loadCacheSettings?: () => StreamCacheSettings | Promise<StreamCacheSettings>
   maximumCacheableResourceBytes?: number
   maximumBytesPerSecond?: number
+  loadAccessSettings?: () => StreamingAccessSettings | Promise<StreamingAccessSettings>
+  geoIpDetailsLookup?: GeoIpDetailsLookup
+  validateAdminToken?: (token: string, userAgent: string) => boolean | Promise<boolean>
 }>
+
+export function createStreamingAccessToken(clientIp: string, security: Security): string | undefined {
+  const normalized = normalizeIp(clientIp)
+  return normalized === null ? undefined : security.encryptURL(normalized)
+}
 
 export function createStreamingProxyPath(
   route: StreamingRoute,
@@ -101,12 +122,15 @@ export async function registerStreamingRoutes(
   const manifestHandler = (kind: 'hls' | 'mpd') => async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const parsed = parseStreamingTarget(request.url, kind, security)
     if (parsed === null) return streamError(reply, 400, 'Invalid stream link')
+    if (!await streamAccessAllowed(request, kind, parsed.identity, security, options)) {
+      return streamError(reply, 403, 'Stream access denied')
+    }
     const cacheSettings = await loadCacheSettings()
 
     if (streamCache !== undefined && cacheSettings.enabled && parsed.identity.live !== true) {
       const cached = await streamCache.readText(parsed.identity, parsed.target, cacheSettings.maxAgeSeconds, MAX_MANIFEST_BYTES).catch(() => null)
       if (cached !== null) {
-        const rebound = bindCachedManifestContext(cached, parsed.identity.contextToken)
+        const rebound = bindCachedManifestTokens(cached, parsed.identity.contextToken, parsed.identity.accessToken)
         if (rebound !== null) {
           authorizeCachedManifestResources(rebound, parsed.target, security, parsed.identity, options.providerContexts)
           return sendManifest(reply, kind, rebound, false, cacheSettings.maxAgeSeconds, true, request.method === 'HEAD')
@@ -148,7 +172,7 @@ export async function registerStreamingRoutes(
         : rewriteMpdManifest(source, response.url, security, identity, observeResource)
       if (content.trim().length === 0) return streamError(reply, 404, 'Stream manifest is unavailable')
       if (streamCache !== undefined && cacheSettings.enabled && cacheSettings.maxAgeSeconds > 0 && !live) {
-        await streamCache.writeText(parsed.identity, parsed.target, cacheableManifest(content, identity.contextToken)).catch(() => undefined)
+        await streamCache.writeText(parsed.identity, parsed.target, cacheableManifest(content, identity.contextToken, identity.accessToken)).catch(() => undefined)
       }
 
       return sendManifest(reply, kind, content, live, cacheSettings.maxAgeSeconds, false, false)
@@ -160,6 +184,9 @@ export async function registerStreamingRoutes(
   const binaryHandler = (kind: 'stream-ts' | 'stream-seg' | 'stream-vid') => async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const parsed = parseStreamingTarget(request.url, kind, security)
     if (parsed === null) return streamError(reply, 400, 'Invalid stream link')
+    if (!await streamAccessAllowed(request, kind, parsed.identity, security, options)) {
+      return streamError(reply, 403, 'Stream access denied')
+    }
     const cacheSettings = await loadCacheSettings()
 
     if (kind === 'stream-vid' && options.cacheRoot !== undefined && parsed.identity.label !== undefined) {
@@ -232,6 +259,57 @@ type ParsedStreamingTarget = Readonly<{
   target: URL
 }>
 
+async function streamAccessAllowed(
+  request: FastifyRequest,
+  route: StreamingRoute,
+  identity: StreamingIdentity,
+  security: Security,
+  options: StreamingRouteOptions
+): Promise<boolean> {
+  // The supplied application deliberately validates only top-level manifests
+  // and MP4 resources. Child segment URLs remain protected by their encrypted
+  // target and provider-context envelopes, but are not rebound independently.
+  if (route === 'stream-ts' || route === 'stream-seg') return true
+  if (options.loadAccessSettings === undefined) return true
+
+  let settings: StreamingAccessSettings
+  try {
+    settings = await options.loadAccessSettings()
+  } catch {
+    settings = Object.freeze({ disableValidation: false, p2p: false, downloadPageEnabled: true })
+  }
+  if (settings.disableValidation || settings.p2p) return true
+  if (isSmartTvUserAgent(request.headers['user-agent'] ?? '')) return true
+  if (identity.downloadable === true && !settings.downloadPageEnabled) return true
+
+  const token = identity.accessToken ?? ''
+  const clientIp = normalizeIp(request.ip)
+  const tokenIp = normalizeIp(security.decryptURLStrict(token) ?? '')
+  if (clientIp !== null && tokenIp !== null) {
+    if (clientIp === tokenIp) return true
+    if (options.geoIpDetailsLookup !== undefined) {
+      try {
+        const [clientDetails, tokenDetails] = await Promise.all([
+          options.geoIpDetailsLookup(clientIp),
+          options.geoIpDetailsLookup(tokenIp)
+        ])
+        if (clientDetails?.asn !== null && clientDetails?.asn !== undefined && clientDetails.asn === tokenDetails?.asn) return true
+      } catch {
+        // A missing or unavailable ASN database falls back to exact IP binding.
+      }
+    }
+  }
+
+  if (token !== '' && tokenIp === null && options.validateAdminToken !== undefined) {
+    try {
+      return await options.validateAdminToken(token, request.headers['user-agent'] ?? '')
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 function parseStreamingTarget(requestUrl: string, route: StreamingRoute, security: Security): ParsedStreamingTarget | null {
   const request = new URL(requestUrl, 'http://gplayer.invalid')
   const prefix = `/${route}/`
@@ -258,19 +336,35 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
     const label = cacheLabel(request, security)
     const live = request.searchParams.get('gl') === '1'
     const contextToken = providerContextToken(request)
+    const accessToken = streamingAccessToken(request)
+    const downloadable = legacyNonEmpty(request.searchParams.get('dl'))
     return {
       identity: {
         host: identityValue.slice(0, separator),
         id: identityValue.slice(separator + 1),
         ...(label === null ? {} : { label }),
         ...(live ? { live: true } : {}),
-        ...(contextToken === null ? {} : { contextToken })
+        ...(contextToken === null ? {} : { contextToken }),
+        ...(accessToken === null ? {} : { accessToken }),
+        ...(downloadable ? { downloadable: true } : {})
       },
       target
     }
   } catch {
     return null
   }
+}
+
+function normalizeIp(value: string): string | null {
+  const candidate = value.trim().toLowerCase()
+  const normalized = candidate.startsWith('::ffff:') && isIP(candidate.slice('::ffff:'.length)) === 4
+    ? candidate.slice('::ffff:'.length)
+    : candidate
+  return isIP(normalized) === 0 ? null : normalized
+}
+
+function legacyNonEmpty(value: string | null): boolean {
+  return value !== null && value !== '' && value !== '0'
 }
 
 export function rewriteHlsPlaylist(
@@ -387,8 +481,10 @@ function createRedirectProxyPath(target: URL, security: Security, identity: Stre
 function withInternalQuery(value: string, identity: StreamingIdentity, security: Security): string {
   const internal = new URLSearchParams()
   if (identity.live === true) internal.set('gl', '1')
+  if (identity.downloadable === true) internal.set('dl', '1')
   if (identity.label !== undefined && identity.label.trim() !== '') internal.set('gcl', security.encryptURL(identity.label))
   if (identity.contextToken !== undefined && PROVIDER_CONTEXT_TOKEN_PATTERN.test(identity.contextToken)) internal.set('gsc', identity.contextToken)
+  if (identity.accessToken !== undefined && validAccessToken(identity.accessToken)) internal.set('gt', identity.accessToken)
   const query = internal.toString()
   return query === '' ? value : `${value}${value.includes('?') ? '&' : '?'}${query}`
 }
@@ -403,6 +499,15 @@ function cacheLabel(request: URL, security: Security): string | null {
 function providerContextToken(request: URL): string | null {
   const token = request.searchParams.get('gsc') ?? ''
   return PROVIDER_CONTEXT_TOKEN_PATTERN.test(token) ? token : null
+}
+
+function streamingAccessToken(request: URL): string | null {
+  const token = request.searchParams.get('gt') ?? ''
+  return validAccessToken(token) ? token : null
+}
+
+function validAccessToken(token: string): boolean {
+  return token.length >= 8 && token.length <= MAX_ACCESS_TOKEN_LENGTH && !/[\u0000-\u001f\u007f]/.test(token)
 }
 
 function targetHeadersOption(
@@ -434,16 +539,29 @@ function manifestResourceObserver(
   }
 }
 
-function cacheableManifest(content: string, contextToken: string | undefined): string {
-  if (contextToken === undefined) return content
-  return content.replaceAll(`gsc=${contextToken}`, `gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`)
+function cacheableManifest(content: string, contextToken: string | undefined, accessToken: string | undefined): string {
+  if (contextToken !== undefined) {
+    content = content.replaceAll(`gsc=${contextToken}`, `gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`)
+  }
+  if (accessToken !== undefined) {
+    content = content.replaceAll(`gt=${encodeURIComponent(accessToken)}`, `gt=${CACHED_ACCESS_TOKEN_PLACEHOLDER}`)
+  }
+  return content
 }
 
-function bindCachedManifestContext(content: string, contextToken: string | undefined): string | null {
-  const hasPlaceholder = content.includes(`gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`)
-  if (contextToken === undefined) return hasPlaceholder ? null : content
-  if (!hasPlaceholder) return null
-  return content.replaceAll(`gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`, `gsc=${contextToken}`)
+function bindCachedManifestTokens(content: string, contextToken: string | undefined, accessToken: string | undefined): string | null {
+  const hasContextPlaceholder = content.includes(`gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`)
+  if ((contextToken === undefined && hasContextPlaceholder) || (contextToken !== undefined && !hasContextPlaceholder)) return null
+  if (contextToken !== undefined) {
+    content = content.replaceAll(`gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`, `gsc=${contextToken}`)
+  }
+
+  const hasAccessPlaceholder = content.includes(`gt=${CACHED_ACCESS_TOKEN_PLACEHOLDER}`)
+  if ((accessToken === undefined && hasAccessPlaceholder) || (accessToken !== undefined && !hasAccessPlaceholder)) return null
+  if (accessToken !== undefined) {
+    content = content.replaceAll(`gt=${CACHED_ACCESS_TOKEN_PLACEHOLDER}`, `gt=${encodeURIComponent(accessToken)}`)
+  }
+  return content
 }
 
 function authorizeCachedManifestResources(

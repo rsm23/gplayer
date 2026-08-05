@@ -5,9 +5,10 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import {
+  createStreamingAccessToken,
   createStreamingProxyPath,
   registerStreamingRoutes,
   rewriteHlsPlaylist,
@@ -175,6 +176,79 @@ async function buildStreamingApp(
 }
 
 describe('authenticated streaming routes', () => {
+  it('binds top-level manifests and MP4 streams to the requesting client while leaving encrypted child segments usable', async () => {
+    const accessSettings = async () => ({ disableValidation: false, p2p: false, downloadPageEnabled: true })
+    app = await buildStreamingApp(true, undefined, { loadAccessSettings: accessSettings })
+    const security = new Security(secureSalt)
+    const manifestTarget = new URL('/master.m3u8', upstreamUrl)
+    const videoTarget = new URL('/video.mp4', upstreamUrl)
+
+    const unsignedManifest = createStreamingProxyPath('hls', manifestTarget, security)
+    const unsignedVideo = createStreamingProxyPath('stream-vid', videoTarget, security)
+    expect((await app.inject({ method: 'GET', url: unsignedManifest })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: unsignedVideo })).statusCode).toBe(403)
+
+    const accessToken = createStreamingAccessToken('127.0.0.1', security) ?? ''
+    expect(accessToken).not.toBe('')
+    const manifestPath = createStreamingProxyPath('hls', manifestTarget, security, {
+      host: 'direct', id: 'bound-fixture', accessToken
+    })
+    const master = await app.inject({ method: 'GET', url: manifestPath })
+    expect(master.statusCode).toBe(200)
+    const childPath = master.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''
+    expect(childPath).toContain('gt=')
+    expect((await app.inject({ method: 'GET', url: childPath })).statusCode).toBe(200)
+
+    const segmentPath = createStreamingProxyPath('stream-ts', new URL('/segment0.ts?sig=abc', upstreamUrl), security)
+    expect((await app.inject({ method: 'GET', url: segmentPath })).statusCode).toBe(200)
+
+    const foreignToken = createStreamingAccessToken('192.0.2.44', security) ?? ''
+    const stolen = createStreamingProxyPath('stream-vid', videoTarget, security, {
+      host: 'direct', id: 'stolen-fixture', accessToken: foreignToken
+    })
+    expect((await app.inject({ method: 'GET', url: stolen })).statusCode).toBe(403)
+  })
+
+  it('retains the bounded legacy ASN, administrator, Smart TV, P2P, download, and disable-validation exemptions', async () => {
+    const security = new Security(secureSalt)
+    const target = new URL('/master.m3u8', upstreamUrl)
+    const foreignToken = createStreamingAccessToken('192.0.2.44', security) ?? ''
+    const access = { disableValidation: false, p2p: false, downloadPageEnabled: true }
+    const validateAdminToken = vi.fn(async (token: string) => token === 'active-admin-token')
+    app = await buildStreamingApp(true, undefined, {
+      loadAccessSettings: async () => access,
+      geoIpDetailsLookup: async (ip) => ({ asn: ip === '127.0.0.1' || ip === '192.0.2.44' ? 64_496 : null, organization: '', country: '', continent: '' }),
+      validateAdminToken
+    })
+
+    const asnBound = createStreamingProxyPath('hls', target, security, {
+      host: 'direct', id: 'asn-fixture', accessToken: foreignToken
+    })
+    expect((await app.inject({ method: 'GET', url: asnBound })).statusCode).toBe(200)
+
+    const adminBound = createStreamingProxyPath('hls', target, security, {
+      host: 'direct', id: 'admin-fixture', accessToken: 'active-admin-token'
+    })
+    expect((await app.inject({ method: 'GET', url: adminBound, headers: { 'user-agent': 'Admin browser' } })).statusCode).toBe(200)
+    expect(validateAdminToken).toHaveBeenCalledWith('active-admin-token', 'Admin browser')
+
+    const unsigned = createStreamingProxyPath('hls', target, security)
+    expect((await app.inject({ method: 'GET', url: unsigned, headers: { 'user-agent': 'Mozilla/5.0 (SMART-TV; Tizen 7.0)' } })).statusCode).toBe(200)
+
+    access.p2p = true
+    expect((await app.inject({ method: 'GET', url: unsigned })).statusCode).toBe(200)
+    access.p2p = false
+    access.disableValidation = true
+    expect((await app.inject({ method: 'GET', url: unsigned })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/hls/not-a-token/not-a-target' })).statusCode).toBe(400)
+    access.disableValidation = false
+    access.downloadPageEnabled = false
+    const download = createStreamingProxyPath('stream-vid', new URL('/video.mp4', upstreamUrl), security, {
+      host: 'direct', id: 'download-fixture', downloadable: true
+    })
+    expect((await app.inject({ method: 'GET', url: download })).statusCode).toBe(200)
+  })
+
   it('rewrites an HLS master and its child playlist into authenticated local routes', async () => {
     app = await buildStreamingApp()
     const security = new Security(secureSalt)
@@ -272,22 +346,33 @@ describe('authenticated streaming routes', () => {
       loadCacheSettings: async () => ({ enabled: true, maxAgeSeconds: 3_600, mode: 'php' })
     })
     const security = new Security(secureSalt)
-    const firstPath = createStreamingProxyPath('hls', target, security, { host: 'direct', id: 'context-cache', contextToken: firstToken })
+    const firstAccessToken = createStreamingAccessToken('192.0.2.10', security) ?? ''
+    const firstPath = createStreamingProxyPath('hls', target, security, {
+      host: 'direct', id: 'context-cache', contextToken: firstToken, accessToken: firstAccessToken
+    })
     const first = await app.inject({ method: 'GET', url: firstPath })
     expect(first.body).toContain(`gsc=${firstToken}`)
+    expect(first.body).toContain('gt=')
     const cachedFiles = (await readdir(path.join(cacheRoot, 'files'), { recursive: true }))
       .filter((file) => file.endsWith('.cache'))
     const cachedManifest = await readFile(path.join(cacheRoot, 'files', cachedFiles[0] ?? ''), 'utf8')
     expect(cachedManifest).toContain('gsc=__GPLAYER_PROVIDER_CONTEXT__')
+    expect(cachedManifest).toContain('gt=__GPLAYER_STREAM_ACCESS__')
     expect(cachedManifest).not.toContain(firstToken)
+    expect(cachedManifest).not.toContain(firstAccessToken)
     expect(cachedManifest).not.toContain('session=first')
 
     const secondToken = providerContexts.register({ host: 'direct', targets: [target], cookies: ['session=second'] }) ?? ''
-    const secondPath = createStreamingProxyPath('hls', target, security, { host: 'direct', id: 'context-cache', contextToken: secondToken })
+    const secondAccessToken = createStreamingAccessToken('192.0.2.11', security) ?? ''
+    const secondPath = createStreamingProxyPath('hls', target, security, {
+      host: 'direct', id: 'context-cache', contextToken: secondToken, accessToken: secondAccessToken
+    })
     const second = await app.inject({ method: 'GET', url: secondPath })
     expect(second.headers['x-cache']).toBe('HIT')
     expect(second.body).toContain(`gsc=${secondToken}`)
+    expect(second.body).toContain(`gt=${encodeURIComponent(secondAccessToken)}`)
     expect(second.body).not.toContain(firstToken)
+    expect(second.body).not.toContain(encodeURIComponent(firstAccessToken))
     expect(upstreamHits.get('/cross-origin-master.m3u8')).toBe(1)
 
     const childPath = second.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''

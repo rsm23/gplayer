@@ -9,7 +9,12 @@ import {
 } from '../core/player-query.js'
 import type { MediaResult, MediaSource, MediaTrack } from '../core/source-resolver.js'
 import { createMediaProxyPath } from './media-routes.js'
-import { createStreamingProxyPath, type StreamingRoute } from './streaming-routes.js'
+import {
+  createStreamingAccessToken,
+  createStreamingProxyPath,
+  type StreamingIdentity,
+  type StreamingRoute
+} from './streaming-routes.js'
 import { Security } from '../security/security.js'
 import type { CountryCodeLookup } from '../security/geoip-country.js'
 import { legacyVastConfiguration, loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
@@ -437,10 +442,13 @@ export function createSourceResponse(
     userAgent: upstream.userAgent,
     language: upstream.language
   }) ?? undefined
-  const identity = {
+  const accessToken = createStreamingAccessToken(requestContext.clientIp, security)
+  const identity: StreamingIdentity = {
     host: upstream.host,
     id: upstream.id,
-    ...(contextToken === undefined ? {} : { contextToken })
+    ...(contextToken === undefined ? {} : { contextToken }),
+    ...(accessToken === undefined ? {} : { accessToken }),
+    ...(requestContext.downloadable ? { downloadable: true } : {})
   }
   const poster = proxyPoster(
     posterSource,
@@ -511,7 +519,7 @@ export async function selectedDeliveryBaseUrl(
 function proxySource(
   source: MediaSource,
   security: Security,
-  identity: Readonly<{ host: string; id: string }>,
+  identity: StreamingIdentity,
   applicationBaseUrl: URL,
   deliveryBaseUrl: URL
 ): readonly MediaSource[] {

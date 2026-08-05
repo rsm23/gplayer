@@ -5,7 +5,7 @@ import type { AppConfig } from '../config.js'
 import type { HostingData } from '../core/hosting-data.js'
 import { buildPlayerQuery, parsePlayerQuery, playerMediaCandidates, type PlayerMediaQuery } from '../core/player-query.js'
 import { createMediaProxyPath } from './media-routes.js'
-import { createStreamingProxyPath } from './streaming-routes.js'
+import { createStreamingAccessToken, createStreamingProxyPath } from './streaming-routes.js'
 import { loadRuntimeAdsSettings, runtimeVastConfiguration, type AdsSettingsLoader } from '../settings/ads-runtime.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import type { PlayerSettings } from '../settings/player-settings.js'
@@ -375,7 +375,7 @@ export async function registerPlayerRoutes(
           deliveryBaseUrl
         )
     const media = sourceResponse === null
-      ? proxyPlayerMedia(withDefaultPoster(playableMedia, player), security)
+      ? proxyPlayerMedia(withDefaultPoster(playableMedia, player), security, request.ip)
       : playableMedia
     const p2pMode = playerP2pMode(player, media, sourceResponse)
     applyEmbedHeaders(reply, ads, p2pMode, player)
@@ -985,17 +985,26 @@ function applyDownloadHeaders(reply: Parameters<FastifyRequest['routeOptions']['
     .header('x-robots-tag', 'noindex, nofollow')
 }
 
-function proxyPlayerMedia(media: PlayerMediaQuery, security: Security): PlayerMediaQuery {
+function proxyPlayerMedia(media: PlayerMediaQuery, security: Security, clientIp: string): PlayerMediaQuery {
   const { id: _id, poster: _poster, sub: _sub, subs: _subs, ...shared } = media
   let id = media.id
+  const accessToken = createStreamingAccessToken(clientIp, security)
   if (media.host === 'direct' && media.id !== undefined) {
     try {
       const target = new URL(media.id)
       const pathname = target.pathname.toLowerCase()
       if (pathname.endsWith('.m3u8')) {
-        id = createStreamingProxyPath('hls', target, security, { host: 'direct', id: media.id })
+        id = createStreamingProxyPath('hls', target, security, {
+          host: 'direct',
+          id: media.id,
+          ...(accessToken === undefined ? {} : { accessToken })
+        })
       } else if (pathname.endsWith('.mpd')) {
-        id = createStreamingProxyPath('mpd', target, security, { host: 'direct', id: media.id })
+        id = createStreamingProxyPath('mpd', target, security, {
+          host: 'direct',
+          id: media.id,
+          ...(accessToken === undefined ? {} : { accessToken })
+        })
       }
     } catch {
       // Invalid direct URLs remain unchanged and are rejected by the renderer.

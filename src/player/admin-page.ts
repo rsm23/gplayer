@@ -1015,7 +1015,7 @@ export function renderAdminGeneralSettings(input: Readonly<{
         ${settingsToggle('gdrive_copy', 'Drive copy fallback', 'Permit configured Drive mirrors to copy an unavailable source.', checked('gdrive_copy'))}
         ${settingsToggle('gdrive_copy_all', 'Copy every Drive source', 'Apply the copy workflow to all eligible Drive sources.', checked('gdrive_copy_all'))}
         ${settingsToggle('load_balancer_rand', 'Random alternative source', 'Choose one alternative video source randomly instead of showing the complete fallback list.', checked('load_balancer_rand'))}
-        ${settingsToggle('disable_validation', 'Disable source validation', 'Retain the legacy override for installations that validate upstream links elsewhere.', checked('disable_validation'))}
+        ${settingsToggle('disable_validation', 'Disable source validation', 'Skip client binding for top-level media links. URL, DNS, redirect, and TLS validation remain active.', checked('disable_validation'))}
         ${settingsToggle('select_active_connections', 'Prefer active-connection counts', 'Use connection telemetry when selecting a load balancer.', checked('select_active_connections'))}
       </div>
     </section>

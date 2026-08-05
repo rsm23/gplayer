@@ -496,6 +496,23 @@ export async function buildApp(
         mode: general.cache_mode as 'php' | 'apache' | 'litespeed' | 'nginx'
       })
     },
+    loadAccessSettings: async () => {
+      const [general, player, publicSettings] = await Promise.all([
+        loadGeneralSettings(),
+        loadPlayerSettings(),
+        loadPublicSettings()
+      ])
+      return Object.freeze({
+        disableValidation: general.disable_validation === true,
+        p2p: player.p2p === true,
+        downloadPageEnabled: publicSettings.enable_download_page === true
+      })
+    },
+    geoIpDetailsLookup,
+    validateAdminToken: async (token, userAgent) => {
+      const user = await authService.authenticate(token, userAgent)
+      return user?.role === 0 && user.status === 1
+    },
     maximumBytesPerSecond: config.maxDownloadSpeed
   })
 

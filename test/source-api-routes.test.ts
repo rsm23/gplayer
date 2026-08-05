@@ -346,6 +346,9 @@ describe('legacy player source API routes', () => {
       expect.objectContaining({ file: expect.stringMatching(/^https:\/\/player\.example\/hls\//), type: 'hls', label: 'Original' })
     ])
     expect(decoded.sources[0].file).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
+    const protectedSource = new URL(decoded.sources[0].file)
+    expect(protectedSource.searchParams.get('dl')).toBe('1')
+    expect(security.decryptURLStrict(protectedSource.searchParams.get('gt'))).toBe('127.0.0.1')
     expect(JSON.stringify(decoded)).not.toContain('provider-secret')
     expect(JSON.stringify(decoded)).not.toContain('https://origin.example.test/')
     expect(decoded.poster).not.toContain('gsc=')
@@ -493,6 +496,7 @@ describe('legacy player source API routes', () => {
     const identityToken = sourceUrl.pathname.split('/')[2] ?? ''
 
     expect(security.decryptURLStrict(identityToken)).toBe('youtube~alternative-id')
+    expect(security.decryptURLStrict(sourceUrl.searchParams.get('gt'))).toBe('127.0.0.1')
     expect(decoded.query).toMatchObject({ host: 'direct', id: 'https://primary.example/video.mp4' })
   })
 
