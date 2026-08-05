@@ -2,7 +2,7 @@ import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
 import type { CustomHeaderRule } from '../settings/custom-headers.js'
-import { shortenerProviderList, timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
+import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -467,6 +467,71 @@ export function renderAdminCustomHeaderSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminAdsSettings(input: Readonly<{
+  adminBase: string
+  values: AdsSettings
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const checked = (value: boolean): string => value ? ' checked' : ''
+  const scheduleLength = Math.max(input.values.vast_xml.length, 1)
+  const vastRows = Array.from({ length: scheduleLength }, (_value, index) => vastScheduleRow(
+    input.values.vast_offset[index] ?? '',
+    input.values.vast_xml[index] ?? '',
+    index
+  )).join('')
+
+  return adminDocument('Ads settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Monetization controls</p>
+  <div class="admin-dashboard-heading"><div><h1>Ads settings.</h1><p>Configure VAST schedules, popup and direct behavior, and banner placements using the legacy key contract.</p></div><span class="admin-role">19 keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'ads')}
+  <form class="admin-settings-form ads-settings-editor" action="${escapeHtml(input.adminBase)}/settings/ads/" method="post" data-max-vast="20">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="ads-vast-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / VAST</p><h2 id="ads-vast-title">Player advertising</h2><p>Choose the playback client, anti-adblock policy, and global skip delay.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('block_adblocker', 'Require AdBlock to be disabled', 'Show the legacy anti-adblock message before playback.', checked(input.values.block_adblocker))}
+        ${settingsToggle('disable_vast_ads', 'Disable VAST ads', 'Turn off all configured VAST and Google IMA schedules.', checked(input.values.disable_vast_ads))}
+        <div class="field"><label for="vast_client">Publisher client</label><select id="vast_client" name="vast_client" required>${stringOption('vast', 'VAST', input.values.vast_client)}${stringOption('googima', 'Google IMA', input.values.vast_client)}</select></div>
+        ${settingsInput('vast_skip', 'Skip ads after', escapeHtml(input.values.vast_skip), 'number', '5', true, 'Seconds before the player may show a skip control.', '0', '86400')}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="ads-schedule-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Schedule</p><h2 id="ads-schedule-title">VAST URLs</h2><p>Pair each HTTP(S) tag with an optional position: preroll, postroll, start, end, a percentage, seconds, or HH:MM:SS.</p></div>
+      <div><div class="settings-vast-list" data-vast-list>${vastRows}</div><button class="settings-add-rule" type="button" data-add-vast>+ Add VAST URL</button></div>
+    </section>
+    <section class="settings-section" aria-labelledby="ads-general-title">
+      <div class="settings-section-heading"><p class="panel-kicker">03 / General and direct</p><h2 id="ads-general-title">Outbound behavior</h2><p>Manage delayed popup code and direct-link actions around play and download interactions.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('disable_popup_ads', 'Disable general ads', 'Do not load the configured popup JavaScript or HTML code.', checked(input.values.disable_popup_ads))}
+        ${settingsToggle('disable_direct_ads', 'Disable direct ads', 'Do not open the direct advertising destination.', checked(input.values.disable_direct_ads))}
+        ${settingsToggle('visitads_onplay', 'Visit direct ad on play', 'Open the direct destination on the first play interaction.', checked(input.values.visitads_onplay))}
+        ${settingsToggle('show_iframeads', 'Fallback to iframe ads', 'Show iframe advertising when popup windows are blocked.', checked(input.values.show_iframeads))}
+        ${settingsInput('popup_load_offset', 'Popup delay', escapeHtml(input.values.popup_load_offset), 'number', '0', true, 'Delay in seconds.', '0', '86400')}
+        ${settingsInput('popup_ads_link', 'Popup JavaScript URL', escapeHtml(input.values.popup_ads_link), 'url', 'https://ads.example/script.js')}
+        ${settingsInput('direct_ads_link', 'Direct ad URL', escapeHtml(input.values.direct_ads_link), 'url', 'https://ads.example/campaign')}
+        <div class="field settings-wide"><label for="popup_ads_code">Popup HTML code</label><textarea id="popup_ads_code" name="popup_ads_code" maxlength="100000" rows="8" placeholder="HTML tags are retained for the player runtime.">${escapeHtml(input.values.popup_ads_code)}</textarea></div>
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="ads-banners-title">
+      <div class="settings-section-heading"><p class="panel-kicker">04 / Banners</p><h2 id="ads-banners-title">Page placements</h2><p>Keep separate HTML placements above and below the download and sharer page content.</p></div>
+      <div class="settings-grid">
+        ${settingsToggle('disable_banner_ads', 'Disable banner ads', 'Hide every download and sharer banner placement.', checked(input.values.disable_banner_ads))}
+        <div></div>
+        ${adsTextarea('dl_banner_top', 'Download page · top', input.values.dl_banner_top)}
+        ${adsTextarea('dl_banner_bottom', 'Download page · bottom', input.values.dl_banner_bottom)}
+        ${adsTextarea('sh_banner_top', 'Sharer page · top', input.values.sh_banner_top)}
+        ${adsTextarea('sh_banner_bottom', 'Sharer page · bottom', input.values.sh_banner_bottom)}
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update ads settings</span><span aria-hidden="true">↗</span></button><p>Settings are persisted now; rendering and execution in the player/download surfaces remain a separate runtime parity slice.</p></div>
+  </form>
+  <template data-vast-template>${vastScheduleRow('', '', '__INDEX__')}</template>
+</main>`)
+}
+
 export function renderAdminError(adminBase: string, status: 403 | 404 | 503, description: string): string {
   const title = status === 403 ? 'Access denied.' : status === 404 ? 'User not found.' : 'Service unavailable.'
   return adminDocument(String(status), `<main class="admin-error-main">
@@ -542,8 +607,8 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'ads'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
 }
 
 function customHeaderRow(rule: Pick<CustomHeaderRule, 'keywords' | 'headers'>, index: number | string): string {
@@ -557,6 +622,19 @@ function customHeaderRow(rule: Pick<CustomHeaderRule, 'keywords' | 'headers'>, i
       <div class="field"><label for="custom-header-values-${suffix}" data-custom-header-values-label>Headers</label><textarea id="custom-header-values-${suffix}" name="items[${suffix}][headers]" rows="5" placeholder="Referer: https://example.com/" data-custom-header-values>${headers}</textarea><p class="field-hint">One Header-Name: value pair per line.</p></div>
     </div>
   </article>`
+}
+
+function vastScheduleRow(offset: string, url: string, index: number | string): string {
+  const suffix = String(index)
+  return `<div class="settings-vast-row" data-vast-row>
+    <div class="field"><label for="vast-offset-${suffix}" data-vast-offset-label>Position</label><input id="vast-offset-${suffix}" name="vast_offset[]" type="text" maxlength="32" value="${escapeHtml(offset)}" placeholder="preroll" data-vast-offset></div>
+    <div class="field"><label for="vast-url-${suffix}" data-vast-url-label>VAST URL</label><input id="vast-url-${suffix}" name="vast_xml[]" type="url" maxlength="100000" value="${escapeHtml(url)}" placeholder="https://ads.example/vast.xml" data-vast-url></div>
+    <button type="button" aria-label="Remove VAST URL" data-remove-vast>Remove</button>
+  </div>`
+}
+
+function adsTextarea(name: string, label: string, value: string): string {
+  return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><textarea id="${name}" name="${name}" maxlength="100000" rows="5" placeholder="HTML tags are retained for the page runtime.">${escapeHtml(value)}</textarea></div>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {

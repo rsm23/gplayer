@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
+import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
 
@@ -25,6 +25,7 @@ export async function registerAdminSettingsRoutes(
   const siteUrl = `${adminBase}/settings/site/`
   const shortlinkUrl = `${adminBase}/settings/shortlink/`
   const customHeadersUrl = `${adminBase}/settings/custom-headers/`
+  const adsUrl = `${adminBase}/settings/ads/`
 
   app.get(`${adminBase}/settings/general`, async (_request, reply) => await reply.redirect(generalUrl, 308))
   app.get(`${adminBase}/settings/public`, async (_request, reply) => await reply.redirect(publicUrl, 308))
@@ -32,6 +33,7 @@ export async function registerAdminSettingsRoutes(
   app.get(`${adminBase}/settings/site`, async (_request, reply) => await reply.redirect(siteUrl, 308))
   app.get(`${adminBase}/settings/shortlink`, async (_request, reply) => await reply.redirect(shortlinkUrl, 308))
   app.get(`${adminBase}/settings/custom-headers`, async (_request, reply) => await reply.redirect(customHeadersUrl, 308))
+  app.get(`${adminBase}/settings/ads`, async (_request, reply) => await reply.redirect(adsUrl, 308))
 
   app.get(generalUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -334,6 +336,53 @@ export async function registerAdminSettingsRoutes(
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The custom-header settings could not be saved.'))
+    }
+  })
+
+  app.get(adsUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    try {
+      const values = await settings.adsSettings()
+      const message: AdminMessage | undefined = stringValue(objectValue(request.query).updated) === '1'
+        ? { kind: 'success', text: 'The Ads Settings have been successfully updated' }
+        : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminAdsSettings({
+        adminBase,
+        values,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-ads'),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The ads settings are temporarily unavailable.'))
+    }
+  })
+
+  app.post(adsUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-ads')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const result = await settings.saveAds(body)
+      if (result.status === 'ok') return await reply.redirect(`${adsUrl}?updated=1`, 303)
+      const values = await settings.adsSettings()
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminAdsSettings({
+        adminBase,
+        values,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-ads'),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The ads settings could not be saved.'))
     }
   })
 }

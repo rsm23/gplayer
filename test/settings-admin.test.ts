@@ -354,6 +354,70 @@ describe('settings administration service', () => {
       .resolves.toEqual({ status: 'invalid', message: 'Custom-header rule 1 contains a malformed header' })
     expect(store.writes).toHaveLength(writeCount)
   })
+
+  it('preserves and serializes the complete nineteen-key Ads Settings contract', async () => {
+    const store = new MemorySettingsStore({
+      block_adblocker: 'true',
+      vast_client: 'googima',
+      vast_xml: '["https://ads.example/preroll.xml"]',
+      vast_offset: '["preroll"]',
+      vast_skip: '7',
+      popup_ads_code: '<aside>Ad</aside>'
+    })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.adsSettings()).resolves.toEqual(expect.objectContaining({
+      block_adblocker: true,
+      disable_vast_ads: false,
+      vast_client: 'googima',
+      vast_xml: ['https://ads.example/preroll.xml'],
+      vast_offset: ['preroll'],
+      vast_skip: '7',
+      popup_ads_code: '<aside>Ad</aside>'
+    }))
+
+    await expect(settings.saveAds({
+      block_adblocker: ['false', 'true'],
+      disable_vast_ads: 'false',
+      vast_client: 'vast',
+      'vast_offset[]': ['preroll', '50%'],
+      'vast_xml[]': ['https://ads.example/pre.xml', 'https://ads.example/mid.xml'],
+      vast_skip: '0005',
+      disable_popup_ads: 'false',
+      popup_load_offset: '10',
+      popup_ads_link: 'https://ads.example/popup.js',
+      popup_ads_code: '<script src="/ad.js"></script>',
+      disable_banner_ads: 'true',
+      dl_banner_top: '<div>Download top</div>',
+      dl_banner_bottom: '<div>Download bottom</div>',
+      sh_banner_top: '<div>Sharer top</div>',
+      sh_banner_bottom: '<div>Sharer bottom</div>',
+      disable_direct_ads: 'false',
+      direct_ads_link: 'https://ads.example/campaign',
+      visitads_onplay: 'true',
+      show_iframeads: 'false',
+      unsupported_ads_key: 'blocked'
+    })).resolves.toEqual({ status: 'ok', message: 'The Ads Settings have been successfully updated' })
+    expect(store.writes.at(-1)).toHaveLength(19)
+    expect(store.values).toEqual(expect.objectContaining({
+      block_adblocker: 'true',
+      vast_client: 'vast',
+      vast_xml: '["https://ads.example/pre.xml","https://ads.example/mid.xml"]',
+      vast_offset: '["preroll","50%"]',
+      vast_skip: '5',
+      direct_ads_link: 'https://ads.example/campaign'
+    }))
+    expect(store.values).not.toHaveProperty('unsupported_ads_key')
+  })
+
+  it('rejects unsupported ad clients, malformed VAST schedules, and unsafe ad URLs', async () => {
+    const store = new MemorySettingsStore()
+    const settings = new SettingsAdminService(store)
+    await expect(settings.saveAds({ vast_client: 'other' })).resolves.toEqual({ status: 'invalid', message: 'The VAST client is invalid' })
+    await expect(settings.saveAds({ 'vast_xml[]': 'javascript:alert(1)', 'vast_offset[]': 'preroll' })).resolves.toEqual({ status: 'invalid', message: 'VAST URL 1 is invalid' })
+    await expect(settings.saveAds({ 'vast_xml[]': 'https://ads.example/tag.xml', 'vast_offset[]': 'middle-ish' })).resolves.toEqual({ status: 'invalid', message: 'VAST position 1 is invalid' })
+    await expect(settings.saveAds({ direct_ads_link: 'file:///tmp/ad.html' })).resolves.toEqual({ status: 'invalid', message: 'The direct ads link URL is invalid' })
+    expect(store.writes).toEqual([])
+  })
 })
 
 describe('site asset generation', () => {
@@ -623,6 +687,63 @@ describe('general settings administration routes', () => {
     expect(JSON.parse(store.values.custom_headers ?? '')).toEqual([
       { keywords: ['media.example'], headers: { Origin: 'https://app.example', 'X-Playback-Token': 'route-secret' } }
     ])
+  })
+
+  it('renders and updates Ads Settings with paired dynamic VAST schedule rows', async () => {
+    const store = new MemorySettingsStore({
+      vast_xml: '["https://ads.example/original.xml"]',
+      vast_offset: '["preroll"]',
+      vast_client: 'vast'
+    })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/ads/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1]
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Ads settings.')
+    expect(page.body).toContain('name="vast_xml[]"')
+    expect(page.body).toContain('value="https://ads.example/original.xml"')
+    expect(page.body).toContain('data-vast-template')
+
+    const payload = new URLSearchParams({
+      csrf: csrf ?? '',
+      block_adblocker: 'true',
+      disable_vast_ads: 'false',
+      vast_client: 'googima',
+      vast_skip: '6',
+      disable_popup_ads: 'true',
+      popup_load_offset: '12',
+      popup_ads_link: 'https://ads.example/popup.js',
+      popup_ads_code: '<aside>Route ad</aside>',
+      disable_banner_ads: 'false',
+      dl_banner_top: '',
+      dl_banner_bottom: '',
+      sh_banner_top: '',
+      sh_banner_bottom: '',
+      disable_direct_ads: 'true',
+      direct_ads_link: 'https://ads.example/direct',
+      visitads_onplay: 'false',
+      show_iframeads: 'true'
+    })
+    payload.append('vast_offset[]', 'preroll')
+    payload.append('vast_xml[]', 'https://ads.example/pre.xml')
+    payload.append('vast_offset[]', '00:10:00')
+    payload.append('vast_xml[]', 'https://ads.example/mid.xml')
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/ads/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: payload.toString()
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/ads/?updated=1')
+    expect(store.values).toEqual(expect.objectContaining({
+      block_adblocker: 'true',
+      vast_client: 'googima',
+      vast_xml: '["https://ads.example/pre.xml","https://ads.example/mid.xml"]',
+      vast_offset: '["preroll","00:10:00"]',
+      popup_ads_code: '<aside>Route ad</aside>',
+      show_iframeads: 'true'
+    }))
   })
 
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {

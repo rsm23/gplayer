@@ -941,6 +941,35 @@
   opacity: 0.45;
 }
 
+.settings-vast-list {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-vast-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1.55fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised), transparent 24%);
+}
+
+.settings-vast-row > button {
+  min-height: 48px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .settings-logo-preview {
   display: block;
   width: 76px;
@@ -1240,6 +1269,14 @@
 
   .settings-secret-grid {
     grid-template-columns: 1fr;
+  }
+
+  .settings-vast-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-vast-row > button {
+    min-height: 42px;
   }
 
   .settings-wide {

@@ -47,6 +47,16 @@ const PUBLIC_BOOLEAN_KEYS = [
 ] as const
 const SMTP_PROVIDERS = Object.freeze(['', 'gmail', 'ymail', 'outlook', 'other'] as const)
 const PWA_DISPLAYS = Object.freeze(['standalone', 'fullscreen', 'minimal-ui'] as const)
+const ADS_BOOLEAN_KEYS = Object.freeze([
+  'block_adblocker',
+  'disable_vast_ads',
+  'disable_popup_ads',
+  'disable_banner_ads',
+  'disable_direct_ads',
+  'visitads_onplay',
+  'show_iframeads'
+] as const)
+const VAST_CLIENTS = Object.freeze(['vast', 'googima'] as const)
 const SHORTENER_PROVIDERS = Object.freeze([
   Object.freeze({ id: 'random', name: 'Random', apiUrl: '' }),
   Object.freeze({ id: 'adtival_network', name: 'Adtival.Network', apiUrl: 'https://adtival.network/st?api=%s&url=%s' }),
@@ -117,6 +127,30 @@ export type ShortlinkSettings = Readonly<{
   disable_shortener_link: boolean
   additional_url_shortener: ShortenerProviderId
   providers: readonly Readonly<{ id: Exclude<ShortenerProviderId, 'random'>; name: string; configured: boolean }>[]
+}>
+
+export type VastClient = typeof VAST_CLIENTS[number]
+
+export type AdsSettings = Readonly<{
+  block_adblocker: boolean
+  disable_vast_ads: boolean
+  vast_client: VastClient
+  vast_offset: readonly string[]
+  vast_xml: readonly string[]
+  vast_skip: string
+  disable_popup_ads: boolean
+  popup_load_offset: string
+  popup_ads_link: string
+  popup_ads_code: string
+  disable_banner_ads: boolean
+  dl_banner_top: string
+  dl_banner_bottom: string
+  sh_banner_top: string
+  sh_banner_bottom: string
+  disable_direct_ads: boolean
+  direct_ads_link: string
+  visitads_onplay: boolean
+  show_iframeads: boolean
 }>
 
 export type SettingEntry = Readonly<{ key: string; value: string }>
@@ -383,6 +417,98 @@ export class SettingsAdminService {
     this.customHeaderCache = Object.freeze({ expiresAt: Date.now() + 60_000, rules: result.rules })
     return Object.freeze({ status: 'ok', message: 'The Custom Headers Settings have been successfully updated' })
   }
+
+  public async adsSettings(): Promise<AdsSettings> {
+    const raw = await this.store.getAll()
+    const client = raw.vast_client ?? ''
+    const rawVastUrls = jsonStringArray(raw.vast_xml).slice(0, 20)
+    const rawVastOffsets = jsonStringArray(raw.vast_offset).slice(0, rawVastUrls.length)
+    const vastSchedule = rawVastUrls.flatMap((value, index) => {
+      const url = normalizedOptionalHttpUrl(value)
+      if (url === null || url === '') return []
+      const offset = rawVastOffsets[index] ?? ''
+      return [{ url, offset: validVastOffset(offset) ? offset : '' }]
+    })
+    return Object.freeze({
+      block_adblocker: raw.block_adblocker === 'true',
+      disable_vast_ads: raw.disable_vast_ads === 'true',
+      vast_client: isVastClient(client) ? client : 'vast',
+      vast_offset: Object.freeze(vastSchedule.map(({ offset }) => offset)),
+      vast_xml: Object.freeze(vastSchedule.map(({ url }) => url)),
+      vast_skip: boundedIntegerString(raw.vast_skip, 0, 86_400) ?? '5',
+      disable_popup_ads: raw.disable_popup_ads === 'true',
+      popup_load_offset: boundedIntegerString(raw.popup_load_offset, 0, 86_400) ?? '0',
+      popup_ads_link: normalizedOptionalHttpUrl(raw.popup_ads_link) ?? '',
+      popup_ads_code: boundedText(raw.popup_ads_code, 100_000) ?? '',
+      disable_banner_ads: raw.disable_banner_ads === 'true',
+      dl_banner_top: boundedText(raw.dl_banner_top, 100_000) ?? '',
+      dl_banner_bottom: boundedText(raw.dl_banner_bottom, 100_000) ?? '',
+      sh_banner_top: boundedText(raw.sh_banner_top, 100_000) ?? '',
+      sh_banner_bottom: boundedText(raw.sh_banner_bottom, 100_000) ?? '',
+      disable_direct_ads: raw.disable_direct_ads === 'true',
+      direct_ads_link: normalizedOptionalHttpUrl(raw.direct_ads_link) ?? '',
+      visitads_onplay: raw.visitads_onplay === 'true',
+      show_iframeads: raw.show_iframeads === 'true'
+    })
+  }
+
+  public async saveAds(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const entries: SettingEntry[] = []
+    for (const key of ADS_BOOLEAN_KEYS) {
+      if (key in input) entries.push({ key, value: booleanValue(input[key]) ? 'true' : 'false' })
+    }
+
+    if ('vast_client' in input) {
+      const client = scalarValue(input.vast_client)
+      if (!isVastClient(client)) return invalid('The VAST client is invalid')
+      entries.push({ key: 'vast_client', value: client })
+    }
+
+    const hasVastSchedule = 'vast_xml[]' in input || 'vast_xml' in input || 'vast_offset[]' in input || 'vast_offset' in input
+    if (hasVastSchedule) {
+      const urls = scalarValues(input['vast_xml[]'] ?? input.vast_xml)
+      const offsets = scalarValues(input['vast_offset[]'] ?? input.vast_offset)
+      if (urls.length > 20 || offsets.length > 20) return invalid('No more than 20 VAST schedule entries are allowed')
+      const normalizedUrls: string[] = []
+      const normalizedOffsets: string[] = []
+      for (const [index, value] of urls.entries()) {
+        const url = normalizedOptionalHttpUrl(value)
+        if (url === null) return invalid(`VAST URL ${index + 1} is invalid`)
+        if (url === '') continue
+        const offset = scalarValue(offsets[index] ?? '')
+        if (!validVastOffset(offset)) return invalid(`VAST position ${index + 1} is invalid`)
+        normalizedUrls.push(url)
+        normalizedOffsets.push(offset)
+      }
+      entries.push({ key: 'vast_xml', value: JSON.stringify(normalizedUrls) })
+      entries.push({ key: 'vast_offset', value: JSON.stringify(normalizedOffsets) })
+    }
+
+    for (const [key, maximum] of Object.entries({ vast_skip: 86_400, popup_load_offset: 86_400 })) {
+      if (!(key in input)) continue
+      const value = boundedIntegerString(input[key], 0, maximum)
+      if (value === null) return invalid(`The ${key.replaceAll('_', ' ')} value is invalid`)
+      entries.push({ key, value })
+    }
+
+    for (const key of ['popup_ads_link', 'direct_ads_link'] as const) {
+      if (!(key in input)) continue
+      const value = normalizedOptionalHttpUrl(input[key])
+      if (value === null) return invalid(`The ${key.replaceAll('_', ' ')} URL is invalid`)
+      entries.push({ key, value })
+    }
+
+    for (const key of ['popup_ads_code', 'dl_banner_top', 'dl_banner_bottom', 'sh_banner_top', 'sh_banner_bottom'] as const) {
+      if (!(key in input)) continue
+      const value = scalarValue(input[key], false)
+      if (value.length > 100_000) return invalid(`The ${key.replaceAll('_', ' ')} value is too long`)
+      entries.push({ key, value })
+    }
+
+    if (entries.length === 0) return invalid('No supported settings were submitted')
+    await this.store.upsertMany(entries)
+    return Object.freeze({ status: 'ok', message: 'The Ads Settings have been successfully updated' })
+  }
 }
 
 export function generalSettings(raw: Readonly<Record<string, string>>, defaultBaseUrl: URL): GeneralSettings {
@@ -496,6 +622,29 @@ function scalarValue(value: unknown, trim = true): string {
   return trim ? result.trim() : result
 }
 
+function scalarValues(value: unknown): string[] {
+  return (Array.isArray(value) ? value : [value]).map((item) => scalarValue(item))
+}
+
+function jsonStringArray(value: unknown): string[] {
+  if (typeof value !== 'string') return []
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function validVastOffset(value: string): boolean {
+  if (value === '') return true
+  if (['preroll', 'postroll', 'start', 'end'].includes(value.toLowerCase())) return true
+  if (/^(?:100|\d{1,2})%$/.test(value)) return true
+  if (/^\d+$/.test(value)) return Number(value) <= 86_400
+  const time = value.match(/^(\d{2}):(\d{2}):(\d{2})$/)
+  return time !== null && Number(time[2]) < 60 && Number(time[3]) < 60
+}
+
 function isCacheMode(value: string): value is typeof CACHE_MODES[number] {
   return (CACHE_MODES as readonly string[]).includes(value)
 }
@@ -510,6 +659,10 @@ function isPwaDisplay(value: string): value is PwaDisplay {
 
 function isShortenerProviderId(value: string): value is ShortenerProviderId {
   return SHORTENER_PROVIDERS.some((provider) => provider.id === value)
+}
+
+function isVastClient(value: string): value is VastClient {
+  return (VAST_CLIENTS as readonly string[]).includes(value)
 }
 
 function invalid(message: string): SettingsMutationResult {
