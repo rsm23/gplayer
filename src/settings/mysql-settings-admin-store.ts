@@ -1,4 +1,4 @@
-import type { RowDataPacket } from 'mysql2/promise'
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import type { Database } from '../database/database.js'
 import type { SettingEntry, SettingsAdminStore } from './settings-admin-service.js'
 
@@ -22,5 +22,10 @@ export class MySqlSettingsAdminStore implements SettingsAdminStore {
       `INSERT INTO \`tb_settings\` (\`key\`, \`value\`) VALUES ${placeholders} ON DUPLICATE KEY UPDATE \`value\` = VALUES(\`value\`)`,
       values
     )
+  }
+
+  public async deleteAll(): Promise<number> {
+    const result = await this.database.write<ResultSetHeader>('DELETE FROM `tb_settings` WHERE `key` <> ?', [''])
+    return result.affectedRows
   }
 }

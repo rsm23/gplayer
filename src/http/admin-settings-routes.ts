@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminHostingSettings, renderAdminMiscSettings, renderAdminPlayerSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
+import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminHostingSettings, renderAdminMiscSettings, renderAdminPlayerSettings, renderAdminPublicSettings, renderAdminResetSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
 import { InvalidVastAssetError, type VastAssetManager } from '../settings/vast-assets-service.js'
@@ -34,6 +34,7 @@ export async function registerAdminSettingsRoutes(
   const hostingUrl = `${adminBase}/settings/hosting/`
   const miscUrl = `${adminBase}/settings/misc/`
   const adsUrl = `${adminBase}/settings/ads/`
+  const resetUrl = `${adminBase}/settings/reset/`
   const vastCreateUrl = `${adsUrl}vast/create/`
   const vastDeleteUrl = `${adsUrl}vast/delete/`
   const settingsAjaxUrl = `${adminBase}/ajax/settings/`
@@ -48,6 +49,7 @@ export async function registerAdminSettingsRoutes(
   app.get(`${adminBase}/settings/hosting`, async (_request, reply) => await reply.redirect(hostingUrl, 308))
   app.get(`${adminBase}/settings/misc`, async (_request, reply) => await reply.redirect(miscUrl, 308))
   app.get(`${adminBase}/settings/ads`, async (_request, reply) => await reply.redirect(adsUrl, 308))
+  app.get(`${adminBase}/settings/reset`, async (_request, reply) => await reply.redirect(resetUrl, 308))
 
   app.get(generalUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -444,6 +446,45 @@ export async function registerAdminSettingsRoutes(
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The hosting settings could not be saved.'))
+    }
+  })
+
+  app.get(resetUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const message: AdminMessage | undefined = stringValue(objectValue(request.query).reset) === '1'
+      ? { kind: 'success', text: 'The Reset Settings have been successfully reset' }
+      : undefined
+    return reply.type('text/html; charset=utf-8').send(renderAdminResetSettings({
+      adminBase,
+      csrfToken: csrfToken(config, tokenFor(request), 'settings-reset'),
+      ...(message === undefined ? {} : { message })
+    }))
+  })
+
+  app.post(resetUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-reset')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const result = await settings.resetSettings(body)
+      if (result.status === 'ok') return await reply.redirect(`${resetUrl}?reset=1`, 303)
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminResetSettings({
+        adminBase,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-reset'),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings could not be reset.'))
     }
   })
 

@@ -162,6 +162,7 @@ export type SettingEntry = Readonly<{ key: string; value: string }>
 export interface SettingsAdminStore {
   getAll(): Promise<Readonly<Record<string, string>>>
   upsertMany(entries: readonly SettingEntry[]): Promise<void>
+  deleteAll?(): Promise<number>
 }
 
 export type SettingsMutationResult =
@@ -503,6 +504,19 @@ export class SettingsAdminService {
     if (result.status === 'invalid') return result
     await this.store.upsertMany(result.entries)
     return Object.freeze({ status: 'ok', message: 'The Hosting Settings have been successfully updated' })
+  }
+
+  public async resetSettings(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    if (scalarValue(input.confirmation, false) !== 'RESET SETTINGS') {
+      return invalid('Type RESET SETTINGS exactly to confirm the reset')
+    }
+    if (!booleanValue(input.acknowledge)) {
+      return invalid('Confirm that every saved setting will be removed')
+    }
+    if (this.store.deleteAll === undefined) throw new Error('The settings store does not support reset')
+    await this.store.deleteAll()
+    delete this.customHeaderCache
+    return Object.freeze({ status: 'ok', message: 'The Reset Settings have been successfully reset' })
   }
 
   public async saveAds(input: Record<string, unknown>): Promise<SettingsMutationResult> {

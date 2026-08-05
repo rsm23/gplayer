@@ -42,6 +42,12 @@ class MemorySettingsStore implements SettingsAdminStore {
     this.writes.push(entries.map((entry) => ({ ...entry })))
     for (const entry of entries) this.values[entry.key] = entry.value
   }
+
+  public async deleteAll(): Promise<number> {
+    const keys = Object.keys(this.values).filter((key) => key !== '')
+    for (const key of keys) delete this.values[key]
+    return keys.length
+  }
 }
 
 class RouteAuthStore implements AuthStore {
@@ -168,6 +174,23 @@ describe('settings administration service', () => {
     await expect(settings.saveGeneral({ cache_mode: 'shell' })).resolves.toEqual({ status: 'invalid', message: 'The cache mode is invalid' })
     await expect(settings.saveGeneral({ visit_counter: '0' })).resolves.toEqual({ status: 'invalid', message: 'The visit counter value is invalid' })
     expect(store.writes).toEqual([])
+  })
+
+  it('resets every non-empty legacy setting only after exact destructive confirmation', async () => {
+    const store = new MemorySettingsStore({ timezone: 'UTC', cookie_youtube: 'SID=private', '': 'reserved' })
+    const settings = new SettingsAdminService(store)
+
+    await expect(settings.resetSettings({ confirmation: 'reset settings', acknowledge: 'true' })).resolves.toEqual({
+      status: 'invalid',
+      message: 'Type RESET SETTINGS exactly to confirm the reset'
+    })
+    expect(store.values).toEqual({ timezone: 'UTC', cookie_youtube: 'SID=private', '': 'reserved' })
+
+    await expect(settings.resetSettings({ confirmation: 'RESET SETTINGS', acknowledge: 'true' })).resolves.toEqual({
+      status: 'ok',
+      message: 'The Reset Settings have been successfully reset'
+    })
+    expect(store.values).toEqual({ '': 'reserved' })
   })
 
   it('preserves the twelve-key public settings contract and validates ownership inputs', async () => {
@@ -667,7 +690,7 @@ describe('site asset generation', () => {
 })
 
 describe('MySqlSettingsAdminStore', () => {
-  it('reads and atomically upserts parameterized legacy setting rows', async () => {
+  it('reads, atomically upserts, and resets parameterized legacy setting rows', async () => {
     const database = {
       read: vi.fn().mockResolvedValue([{ key: 'timezone', value: 'UTC' }, { key: 'production_mode', value: 'true' }]),
       write: vi.fn().mockResolvedValue({ affectedRows: 3 })
@@ -675,11 +698,13 @@ describe('MySqlSettingsAdminStore', () => {
     const store = new MySqlSettingsAdminStore(database)
     await expect(store.getAll()).resolves.toEqual({ timezone: 'UTC', production_mode: 'true' })
     await store.upsertMany([{ key: 'timezone', value: 'Europe/Paris' }, { key: 'production_mode', value: 'false' }])
+    await expect(store.deleteAll()).resolves.toBe(3)
     expect(database.read).toHaveBeenCalledWith('SELECT `key`, `value` FROM `tb_settings`')
     expect(database.write).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO `tb_settings` (`key`, `value`) VALUES (?, ?), (?, ?) ON DUPLICATE KEY UPDATE'),
       ['timezone', 'Europe/Paris', 'production_mode', 'false']
     )
+    expect(database.write).toHaveBeenCalledWith('DELETE FROM `tb_settings` WHERE `key` <> ?', [''])
   })
 })
 
@@ -1060,6 +1085,41 @@ describe('general settings administration routes', () => {
     const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
     expect(updated.body).toContain('The Hosting Settings have been successfully updated')
     expect(updated.body).not.toContain('SID=replacement')
+  })
+
+  it('renders and executes the signed Reset Settings contract only after exact confirmation', async () => {
+    const store = new MemorySettingsStore({ timezone: 'Europe/Paris', cookie_youtube: 'SID=private' })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/reset/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Reset settings.')
+    expect(page.body).toContain('Type <code>RESET SETTINGS</code> to continue')
+    expect(page.body).toContain('name="acknowledge"')
+    expect(page.body).not.toContain('SID=private')
+
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/reset/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, confirmation: 'wrong', acknowledge: 'true' }).toString()
+    })
+    expect(rejected.statusCode).toBe(400)
+    expect(rejected.body).toContain('Type RESET SETTINGS exactly to confirm the reset')
+    expect(store.values).toEqual({ timezone: 'Europe/Paris', cookie_youtube: 'SID=private' })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/reset/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, confirmation: 'RESET SETTINGS', acknowledge: 'true' }).toString()
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/reset/?reset=1')
+    expect(store.values).toEqual({})
+
+    const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
+    expect(updated.body).toContain('The Reset Settings have been successfully reset')
   })
 
   it('renders and updates every Misc Settings field without exposing proxy credentials', async () => {

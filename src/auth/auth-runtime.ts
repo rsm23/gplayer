@@ -68,7 +68,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   }
   const lazySettingsStore: SettingsAdminStore = {
     getAll: async () => await currentSettingsStore().getAll(),
-    upsertMany: async (entries) => await currentSettingsStore().upsertMany(entries)
+    upsertMany: async (entries) => await currentSettingsStore().upsertMany(entries),
+    deleteAll: async () => await currentSettingsStore().deleteAll()
   }
 
   app.addHook('onClose', async () => {

@@ -97,7 +97,7 @@
     if (!(navigation instanceof HTMLElement) || !(active instanceof HTMLElement)) return
     const activeRight = active.offsetLeft + active.offsetWidth
     const visibleRight = navigation.scrollLeft + navigation.clientWidth
-    if (activeRight > visibleRight) navigation.scrollLeft = active.offsetLeft
+    if (activeRight > visibleRight) navigation.scrollLeft = Math.max(0, activeRight - navigation.clientWidth + 4)
     else if (active.offsetLeft < navigation.scrollLeft) navigation.scrollLeft = Math.max(0, active.offsetLeft - 4)
   }
 

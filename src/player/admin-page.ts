@@ -704,6 +704,32 @@ export function renderAdminHostingSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminResetSettings(input: Readonly<{
+  adminBase: string
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  return adminDocument('Reset settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page admin-reset-settings-page">
+  <p class="eyebrow"><span></span>Destructive operation</p>
+  <div class="admin-dashboard-heading"><div><h1>Reset settings.</h1><p>Remove every saved application setting and return the Node.js runtime to its bundled defaults.</p></div><span class="admin-role">All keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'reset')}
+  <form class="admin-settings-form reset-settings-form" action="${escapeHtml(input.adminBase)}/settings/reset/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section reset-settings-warning" aria-labelledby="reset-settings-title">
+      <div class="settings-section-heading"><p class="panel-kicker">Permanent reset</p><h2 id="reset-settings-title">Are you serious?</h2><p>This reproduces the supplied reset contract: all non-empty keys in the legacy settings table are deleted and in-process settings caches are invalidated.</p></div>
+      <div class="reset-settings-controls">
+        <div class="reset-settings-impact" role="note"><strong>What stays intact</strong><p>User accounts, sessions, video rows, generated VAST files, logos, subtitles, and other uploads are not removed by this action.</p></div>
+        <div class="field"><label for="reset-confirmation">Type <code>RESET SETTINGS</code> to continue</label><input id="reset-confirmation" name="confirmation" type="text" value="" maxlength="14" pattern="RESET SETTINGS" autocomplete="off" autocapitalize="characters" spellcheck="false" required><p class="field-hint">The confirmation is case-sensitive.</p></div>
+        <label class="reset-settings-acknowledgement"><input name="acknowledge" type="checkbox" value="true" required><span>I understand that every saved setting will be removed immediately.</span></label>
+        <button class="generate-button reset-settings-submit" type="submit"><span>Reset all settings</span><span aria-hidden="true">↗</span></button>
+      </div>
+    </section>
+  </form>
+</main>`)
+}
+
 export function renderAdminAdsSettings(input: Readonly<{
   adminBase: string
   values: AdsSettings
@@ -873,8 +899,8 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'hosting' | 'misc' | 'ads'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'hosting' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/hosting/">Hosting</a><a${current === 'misc' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/misc/">Misc</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'hosting' | 'misc' | 'ads' | 'reset'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'hosting' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/hosting/">Hosting</a><a${current === 'misc' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/misc/">Misc</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a><a${current === 'reset' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/reset/">Reset</a></nav>`
 }
 
 function playerSettingLabel(value: string): string {

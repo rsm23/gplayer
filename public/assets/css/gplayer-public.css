@@ -1380,6 +1380,76 @@
   text-align: right;
 }
 
+.reset-settings-warning {
+  border-color: color-mix(in srgb, #ff665a, transparent 54%);
+  background: #151a16;
+}
+
+.reset-settings-warning .panel-kicker,
+.reset-settings-warning code {
+  color: #ff9d94;
+}
+
+.reset-settings-controls {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.reset-settings-impact {
+  padding: 17px 19px;
+  border: 1px solid color-mix(in srgb, #ff665a, transparent 72%);
+  border-radius: 11px;
+  background: color-mix(in srgb, #2e0f0d, transparent 24%);
+}
+
+.reset-settings-impact strong {
+  color: #ffc3be;
+  font-size: 13px;
+}
+
+.reset-settings-impact p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.reset-settings-acknowledgement {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  cursor: pointer;
+}
+
+.reset-settings-acknowledgement input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: #ff665a;
+}
+
+.reset-settings-acknowledgement input:focus-visible {
+  outline: 2px solid #ff9d94;
+  outline-offset: 3px;
+}
+
+.reset-settings-submit.generate-button {
+  width: min(100%, 320px);
+  border-color: #ff665a;
+  background: #ff665a;
+  color: #180705;
+}
+
+.reset-settings-submit.generate-button:hover {
+  border-color: #ff9d94;
+  background: #ff9d94;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1499,7 +1569,7 @@
 
   .settings-subnav {
     width: 100%;
-    gap: 3px;
+    gap: 2px;
     padding: 3px;
   }
 
