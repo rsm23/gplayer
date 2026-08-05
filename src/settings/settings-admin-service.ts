@@ -50,6 +50,11 @@ const PUBLIC_BOOLEAN_KEYS = [
   'save_public_video'
 ] as const
 const SMTP_PROVIDERS = Object.freeze(['', 'gmail', 'ymail', 'outlook', 'other'] as const)
+const SMTP_PROVIDER_HOSTS = Object.freeze({
+  gmail: 'smtp.gmail.com',
+  ymail: 'smtp.mail.yahoo.com',
+  outlook: 'smtp.office365.com'
+} as const)
 const PWA_DISPLAYS = Object.freeze(['standalone', 'fullscreen', 'minimal-ui'] as const)
 const ADS_BOOLEAN_KEYS = Object.freeze([
   'block_adblocker',
@@ -120,6 +125,35 @@ export type SmtpSettings = Readonly<{
   smtp_reply_email: string
   smtp_reply_name: string
 }>
+
+export type SmtpRuntimeSettings = Readonly<{
+  host: string
+  port: number
+  startTls: boolean
+  username: string
+  password: string
+  senderName: string
+  replyEmail: string
+  replyName: string
+}>
+
+export type AccountLifecycleSettings = Readonly<{
+  enableRegistration: boolean
+  disableConfirmation: boolean
+  siteName: string
+  recaptchaSiteKey: string
+  recaptchaSecretKey: string
+  smtp: SmtpRuntimeSettings | null
+}>
+
+export const DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS: AccountLifecycleSettings = Object.freeze({
+  enableRegistration: false,
+  disableConfirmation: true,
+  siteName: 'GDPlayer',
+  recaptchaSiteKey: '',
+  recaptchaSecretKey: '',
+  smtp: null
+})
 
 export type PwaDisplay = typeof PWA_DISPLAYS[number]
 
@@ -308,6 +342,44 @@ export class SettingsAdminService {
       smtp_sender: boundedText(raw.smtp_sender, 255) ?? '',
       smtp_reply_email: optionalEmail(raw.smtp_reply_email) ?? '',
       smtp_reply_name: boundedText(raw.smtp_reply_name, 255) ?? ''
+    })
+  }
+
+  /** Server-only account settings. The SMTP password must never be rendered or logged. */
+  public async accountLifecycleSettings(): Promise<AccountLifecycleSettings> {
+    const raw = await this.store.getAll()
+    const provider = isSmtpProvider(raw.smtp_provider ?? '') ? raw.smtp_provider as SmtpProvider : ''
+    const configuredHost = normalizedSmtpHost(raw.smtp_host)
+    const providerHost = provider === 'gmail' || provider === 'ymail' || provider === 'outlook'
+      ? SMTP_PROVIDER_HOSTS[provider]
+      : ''
+    const host = configuredHost === null || configuredHost === '' ? providerHost : configuredHost
+    const startTls = raw.smtp_tls === 'true'
+    const configuredPort = optionalPort(raw.smtp_port)
+    const port = configuredPort === null || configuredPort === '' ? (startTls ? 587 : 465) : Number(configuredPort)
+    const username = optionalEmail(raw.smtp_email) ?? ''
+    const rawPassword = raw.smtp_password ?? ''
+    const password = rawPassword.length <= 4_096 ? rawPassword : ''
+    const smtp = host === '' || username === '' || password === '' || !Number.isInteger(port)
+      ? null
+      : Object.freeze({
+          host,
+          port,
+          startTls,
+          username,
+          password,
+          senderName: boundedText(raw.smtp_sender, 255) || 'No-Reply',
+          replyEmail: optionalEmail(raw.smtp_reply_email) || username,
+          replyName: boundedText(raw.smtp_reply_name, 255) || boundedText(raw.smtp_sender, 255) || 'No-Reply'
+        })
+
+    return Object.freeze({
+      enableRegistration: raw.enable_registration === 'true',
+      disableConfirmation: raw.disable_confirm === 'true',
+      siteName: boundedText(raw.site_name, 255) || 'GDPlayer',
+      recaptchaSiteKey: boundedText(raw.recaptcha_site_key, 4_096) ?? '',
+      recaptchaSecretKey: boundedText(raw.recaptcha_secret_key, 4_096) ?? '',
+      smtp
     })
   }
 

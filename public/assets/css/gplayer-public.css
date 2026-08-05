@@ -366,6 +366,50 @@
   margin-top: 28px;
 }
 
+.admin-account-main {
+  grid-template-columns: minmax(0, 0.86fr) minmax(520px, 0.9fr);
+}
+
+.admin-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-auth-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-auth-links a {
+  color: var(--brand-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.admin-auth-links > span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 14px;
+}
+
+.admin-auth-links a:hover,
+.admin-auth-links a:focus-visible {
+  color: var(--ink);
+}
+
+.admin-account-captcha {
+  max-width: 100%;
+  overflow: auto hidden;
+  padding: 4px 0;
+}
+
 .admin-check {
   display: flex;
   align-items: center;
@@ -2583,6 +2627,10 @@ button.user-state:focus-visible {
 
   .admin-auth-panel {
     padding: 24px 20px;
+  }
+
+  .admin-account-grid {
+    grid-template-columns: 1fr;
   }
 
   .admin-dashboard-heading {

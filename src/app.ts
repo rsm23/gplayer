@@ -10,9 +10,11 @@ import { createAuthRuntime } from './auth/auth-runtime.js'
 import { AUTH_COOKIE_NAME, authTokenFromRequest, type AuthService, type AuthUser } from './auth/auth-service.js'
 import type { SessionAdminService } from './auth/session-admin-service.js'
 import type { UserAdminService } from './auth/user-admin-service.js'
+import { AccountLifecycleService, type AccountSettingsLoader } from './auth/account-lifecycle-service.js'
 import { loadConfig, type AppConfig } from './config.js'
 import { ExtractorFactory } from './hosting/extractor-factory.js'
 import { registerAdminRoutes } from './http/admin-routes.js'
+import { registerAccountRoutes } from './http/account-routes.js'
 import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
 import { registerSubtitleAdminRoutes } from './http/subtitle-admin-routes.js'
 import { registerVideoAdminRoutes } from './http/video-admin-routes.js'
@@ -21,7 +23,7 @@ import { registerDriveMediaRoutes } from './http/drive-media-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
-import type { SettingsAdminService } from './settings/settings-admin-service.js'
+import { DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, type SettingsAdminService } from './settings/settings-admin-service.js'
 import { FileSystemSiteAssetManager, type SiteAssetManager } from './settings/site-assets-service.js'
 import { FileSystemVastAssetManager, type VastAssetManager } from './settings/vast-assets-service.js'
 import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/source-api-routes.js'
@@ -66,6 +68,7 @@ import { PluginSyncClient } from './plugins/plugin-sync-client.js'
 import { SystemActiveConnectionCounter } from './background/active-connections.js'
 import { LoadBalancerAdminService } from './load-balancers/load-balancer-admin-service.js'
 import { PluginAdminService } from './plugins/plugin-admin-service.js'
+import { NodemailerAccountMailer, type AccountMailer } from './email/smtp-mailer.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -74,6 +77,9 @@ export type AppDependencies = Readonly<{
   auth?: AuthService
   sessions?: SessionAdminService
   users?: UserAdminService
+  accounts?: AccountLifecycleService
+  accountMailer?: AccountMailer
+  accountSettings?: AccountSettingsLoader
   settings?: SettingsAdminService
   siteAssets?: SiteAssetManager
   vastAssets?: VastAssetManager
@@ -138,6 +144,7 @@ export async function buildApp(
   )
   const videoTransferRuntime = dependencies.videoTransfer ?? new VideoTransferService(videosRuntime, config.baseUrl)
   const driveHttp = new RemoteProviderHttpClient()
+  const recaptchaVerifier = dependencies.recaptchaVerifier ?? new RecaptchaVerifier(driveHttp)
   const driveApi = new DriveApiClient(authRuntime.driveAdminStore, driveHttp)
   const driveMediaRuntime = dependencies.driveMedia ?? new DriveMediaService(
     authRuntime.driveAdminStore,
@@ -274,13 +281,32 @@ export async function buildApp(
     isAuthenticated,
     background: driveBackgroundRuntime
   })
+  const loadAccountSettings: AccountSettingsLoader = dependencies.accountSettings ?? (
+    config.nodeEnv === 'test'
+      ? async () => DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS
+      : async () => await settingsRuntime.accountLifecycleSettings()
+  )
+  const accountRuntime = dependencies.accounts ?? new AccountLifecycleService(
+    authRuntime.accountLifecycleStore,
+    new Security(config.secureSalt),
+    dependencies.accountMailer ?? new NodemailerAccountMailer(),
+    loadAccountSettings,
+    {
+      registerUrl: new URL(`/${config.adminDirectory}/register/`, config.baseUrl),
+      resetPasswordUrl: new URL(`/${config.adminDirectory}/reset-password/`, config.baseUrl)
+    }
+  )
   await registerAdminRoutes(
     app,
     config,
     authService,
     dependencies.sessions ?? authRuntime.sessions,
-    dependencies.users ?? authRuntime.users
+    dependencies.users ?? authRuntime.users,
+    async () => (await loadAccountSettings()).enableRegistration
   )
+  await registerAccountRoutes(app, config, authService, accountRuntime, {
+    verifyRecaptcha: async (secret, responseToken, remoteIp) => await recaptchaVerifier.verify(secret, responseToken, remoteIp)
+  })
   await registerAdminSettingsRoutes(
     app,
     config,
@@ -338,7 +364,6 @@ export async function buildApp(
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const driveSharer = dependencies.driveSharer ?? new DriveSharerService(authRuntime.driveStore, driveHttp)
-  const recaptchaVerifier = dependencies.recaptchaVerifier ?? new RecaptchaVerifier(driveHttp)
   await registerPlayerRoutes(app, config, {
     loadAdsSettings,
     loadPlayerSettings,

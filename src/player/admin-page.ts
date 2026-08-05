@@ -19,7 +19,7 @@ export type AdminMessage = Readonly<{
   text: string
 }>
 
-export function renderAdminLoginPage(adminBase: string, message?: AdminMessage): string {
+export function renderAdminLoginPage(adminBase: string, message?: AdminMessage, enableRegistration = false): string {
   const loginUrl = `${adminBase}/login/`
   return adminDocument('Login', `<main class="admin-auth-main">
   <section class="admin-auth-copy" aria-labelledby="login-heading">
@@ -39,6 +39,109 @@ export function renderAdminLoginPage(adminBase: string, message?: AdminMessage):
       <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required></div>
       <label class="admin-check"><input name="remember" type="checkbox" value="1"><span>Keep me signed in for 7 days</span></label>
       <button class="generate-button" type="submit"><span>Sign in</span><span aria-hidden="true">↗</span></button>
+    </form>
+    <nav class="admin-auth-links" aria-label="Account help"><a href="${escapeHtml(adminBase)}/reset-password/">Forgot your password?</a>${enableRegistration ? `<span><a href="${escapeHtml(adminBase)}/register/">Create an account</a><a href="${escapeHtml(adminBase)}/register/resend/">Resend confirmation</a></span>` : ''}</nav>
+  </section>
+</main>`)
+}
+
+export type AccountPageInput = Readonly<{
+  adminBase: string
+  recaptchaSiteKey: string
+  message?: AdminMessage
+  values?: Readonly<Record<string, string>>
+}>
+
+export function renderAdminRegistrationPage(input: AccountPageInput): string {
+  const values = input.values ?? {}
+  return adminDocument('Register', `<main class="admin-auth-main admin-account-main">
+  <section class="admin-auth-copy" aria-labelledby="register-heading">
+    ${authWordmark()}
+    <p class="eyebrow"><span></span>Account creation</p>
+    <h1 id="register-heading">Join the control plane.</h1>
+    <p>Create a personal account for saved media, subtitles, and the authenticated administration tools made available by the site operator.</p>
+  </section>
+  <section class="admin-auth-panel" aria-label="Register an account">
+    <div><p class="panel-kicker">New account</p><h2>Register</h2></div>
+    ${renderMessage(input.message)}
+    <form class="admin-login-form" action="${escapeHtml(input.adminBase)}/register/" method="post">
+      <div class="admin-account-grid">
+        <div class="field"><label for="name">Full name</label><input id="name" name="name" type="text" value="${escapeHtml(values.name ?? '')}" autocomplete="name" maxlength="50" required></div>
+        <div class="field"><label for="user">Username</label><input id="user" name="user" type="text" value="${escapeHtml(values.user ?? '')}" autocomplete="username" maxlength="50" required></div>
+      </div>
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" value="${escapeHtml(values.email ?? '')}" autocomplete="email" maxlength="254" required></div>
+      <div class="admin-account-grid">
+        <div class="field"><label for="password">New password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required></div>
+        <div class="field"><label for="retype_password">Confirm password</label><input id="retype_password" name="retype_password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required></div>
+      </div>
+      ${renderAdminRecaptcha(input.recaptchaSiteKey)}
+      <button class="generate-button" type="submit" name="submit" value="1"><span>Create account</span><span aria-hidden="true">↗</span></button>
+    </form>
+    <nav class="admin-auth-links" aria-label="Account help"><a href="${escapeHtml(input.adminBase)}/login/">Already registered? Sign in</a><a href="${escapeHtml(input.adminBase)}/register/resend/">Resend confirmation</a></nav>
+  </section>
+</main>`)
+}
+
+export function renderAdminConfirmationRequestPage(input: AccountPageInput): string {
+  return adminDocument('Resend confirmation', `<main class="admin-auth-main admin-account-main">
+  <section class="admin-auth-copy" aria-labelledby="confirmation-request-heading">
+    ${authWordmark()}
+    <p class="eyebrow"><span></span>Account confirmation</p>
+    <h1 id="confirmation-request-heading">Send a fresh link.</h1>
+    <p>Enter the username or email address for a pending account. The replacement confirmation link remains valid for 10 minutes.</p>
+  </section>
+  <section class="admin-auth-panel" aria-label="Resend an account confirmation">
+    <div><p class="panel-kicker">Pending account</p><h2>Resend confirmation</h2></div>
+    ${renderMessage(input.message)}
+    <form class="admin-login-form" action="${escapeHtml(input.adminBase)}/register/resend/" method="post">
+      <div class="field"><label for="username">Username or email</label><input id="username" name="username" type="text" value="${escapeHtml(input.values?.username ?? '')}" autocomplete="username" maxlength="254" required></div>
+      ${renderAdminRecaptcha(input.recaptchaSiteKey)}
+      <button class="generate-button" type="submit" name="submit" value="1"><span>Send confirmation</span><span aria-hidden="true">↗</span></button>
+    </form>
+    <nav class="admin-auth-links" aria-label="Account help"><a href="${escapeHtml(input.adminBase)}/login/">Return to login</a></nav>
+  </section>
+</main>`)
+}
+
+export function renderAdminResetRequestPage(input: AccountPageInput): string {
+  return adminDocument('Reset password', `<main class="admin-auth-main admin-account-main">
+  <section class="admin-auth-copy" aria-labelledby="reset-request-heading">
+    ${authWordmark()}
+    <p class="eyebrow"><span></span>Account recovery</p>
+    <h1 id="reset-request-heading">Recover access.</h1>
+    <p>Enter the username or email address on your account. A single-use link remains valid for 10 minutes.</p>
+  </section>
+  <section class="admin-auth-panel" aria-label="Request a password reset">
+    <div><p class="panel-kicker">Password recovery</p><h2>Reset password</h2></div>
+    ${renderMessage(input.message)}
+    <form class="admin-login-form" action="${escapeHtml(input.adminBase)}/reset-password/" method="post">
+      <div class="field"><label for="username">Username or email</label><input id="username" name="username" type="text" value="${escapeHtml(input.values?.username ?? '')}" autocomplete="username" maxlength="254" required></div>
+      <input type="hidden" name="action" value="confirm">
+      ${renderAdminRecaptcha(input.recaptchaSiteKey)}
+      <button class="generate-button" type="submit" name="submit" value="1"><span>Send reset link</span><span aria-hidden="true">↗</span></button>
+    </form>
+    <nav class="admin-auth-links" aria-label="Account help"><a href="${escapeHtml(input.adminBase)}/login/">Return to login</a></nav>
+  </section>
+</main>`)
+}
+
+export function renderAdminResetPasswordPage(input: AccountPageInput & Readonly<{ token: string }>): string {
+  return adminDocument('Choose a new password', `<main class="admin-auth-main admin-account-main">
+  <section class="admin-auth-copy" aria-labelledby="reset-password-heading">
+    ${authWordmark()}
+    <p class="eyebrow"><span></span>Single-use recovery</p>
+    <h1 id="reset-password-heading">Choose a new password.</h1>
+    <p>After the password changes, every active session for this account is revoked and this link stops working.</p>
+  </section>
+  <section class="admin-auth-panel" aria-label="Choose a new password">
+    <div><p class="panel-kicker">Secure reset</p><h2>New password</h2></div>
+    ${renderMessage(input.message)}
+    <form class="admin-login-form" action="${escapeHtml(input.adminBase)}/reset-password/" method="post" autocomplete="off">
+      <div class="field"><label for="password">New password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required></div>
+      <div class="field"><label for="retype_password">Confirm new password</label><input id="retype_password" name="retype_password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required></div>
+      <input type="hidden" name="action" value="save"><input type="hidden" name="token" value="${escapeHtml(input.token)}">
+      ${renderAdminRecaptcha(input.recaptchaSiteKey)}
+      <button class="generate-button" type="submit" name="submit" value="1"><span>Save new password</span><span aria-hidden="true">↗</span></button>
     </form>
   </section>
 </main>`)
@@ -1323,6 +1426,17 @@ function adminDocument(title: string, body: string): string {
 
 function renderMessage(message?: AdminMessage): string {
   return message === undefined ? '' : `<div class="admin-message admin-message-${message.kind}" role="alert">${escapeHtml(message.text)}</div>`
+}
+
+function authWordmark(): string {
+  return `<a class="wordmark" href="/" aria-label="GPlayer home"><span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span>G<span>PLAYER</span><small>NODE</small></span></a>`
+}
+
+function renderAdminRecaptcha(siteKey: string): string {
+  const normalized = siteKey.trim()
+  return normalized === ''
+    ? ''
+    : `<div class="admin-account-captcha"><div class="g-recaptcha" data-sitekey="${escapeHtml(normalized)}"></div></div><script src="https://www.google.com/recaptcha/api.js" async defer></script>`
 }
 
 function renderTimestamp(value: number, fallback: string): string {

@@ -292,6 +292,42 @@ describe('settings administration service', () => {
     expect(store.values).not.toHaveProperty('attacker_controlled_key')
   })
 
+  it('builds bounded server-only account, CAPTCHA, and SMTP runtime settings', async () => {
+    const store = new MemorySettingsStore({
+      enable_registration: 'true',
+      disable_confirm: 'false',
+      site_name: 'GPlayer Cloud',
+      recaptcha_site_key: 'site-key',
+      recaptcha_secret_key: 'secret-key',
+      smtp_provider: 'ymail',
+      smtp_tls: 'false',
+      smtp_email: 'mailer@example.test',
+      smtp_password: 'stored-secret',
+      smtp_sender: 'GPlayer Mailer'
+    })
+    const settings = new SettingsAdminService(store)
+
+    await expect(settings.accountLifecycleSettings()).resolves.toEqual({
+      enableRegistration: true,
+      disableConfirmation: false,
+      siteName: 'GPlayer Cloud',
+      recaptchaSiteKey: 'site-key',
+      recaptchaSecretKey: 'secret-key',
+      smtp: {
+        host: 'smtp.mail.yahoo.com',
+        port: 465,
+        startTls: false,
+        username: 'mailer@example.test',
+        password: 'stored-secret',
+        senderName: 'GPlayer Mailer',
+        replyEmail: 'mailer@example.test',
+        replyName: 'GPlayer Mailer'
+      }
+    })
+    const rendered = await settings.smtpSettings()
+    expect(rendered).not.toHaveProperty('smtp_password')
+  })
+
   it('validates SMTP transport fields and requires an explicit password removal', async () => {
     const store = new MemorySettingsStore({ smtp_password: 'preserve-me' })
     const settings = new SettingsAdminService(store)

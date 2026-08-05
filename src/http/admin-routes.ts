@@ -18,7 +18,8 @@ export async function registerAdminRoutes(
   config: AppConfig,
   auth: AuthService,
   sessions: SessionAdminService,
-  users: UserAdminService
+  users: UserAdminService,
+  loadRegistrationEnabled: () => Promise<boolean> = async () => false
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
   const loginUrl = `${adminBase}/login/`
@@ -60,12 +61,16 @@ export async function registerAdminRoutes(
       return reply.type('text/html; charset=utf-8').send(renderAdminLoginPage(adminBase, {
         kind: 'success',
         text: 'You have successfully logged out.'
-      }))
+      }, await registrationEnabled(loadRegistrationEnabled)))
     }
 
     const user = await currentUser(request, auth).catch(() => null)
     if (user !== null) return await reply.redirect(dashboardUrl, 302)
-    return reply.type('text/html; charset=utf-8').send(renderAdminLoginPage(adminBase))
+    return reply.type('text/html; charset=utf-8').send(renderAdminLoginPage(
+      adminBase,
+      accountLoginMessage(stringValue(query.account)),
+      await registrationEnabled(loadRegistrationEnabled)
+    ))
   })
 
   app.post(loginUrl, async (request, reply) => {
@@ -80,7 +85,7 @@ export async function registerAdminRoutes(
       return reply.code(400).type('text/html; charset=utf-8').send(renderAdminLoginPage(adminBase, {
         kind: 'error',
         text: 'Username and password are required.'
-      }))
+      }, await registrationEnabled(loadRegistrationEnabled)))
     }
 
     try {
@@ -97,7 +102,7 @@ export async function registerAdminRoutes(
           : result.status === 'inactive'
             ? { kind: 'error', text: 'Your account is currently inactive. Please contact an administrator.' }
             : { kind: 'error', text: 'Incorrect username or password. Try again.' }
-        return reply.code(401).type('text/html; charset=utf-8').send(renderAdminLoginPage(adminBase, message))
+        return reply.code(401).type('text/html; charset=utf-8').send(renderAdminLoginPage(adminBase, message, await registrationEnabled(loadRegistrationEnabled)))
       }
 
       reply.setCookie(AUTH_COOKIE_NAME, result.token, {
@@ -470,6 +475,22 @@ function clearAuthCookie(reply: FastifyReply, config: AppConfig): void {
     secure: config.baseUrl.protocol === 'https:',
     sameSite: 'strict'
   })
+}
+
+async function registrationEnabled(loader: () => Promise<boolean>): Promise<boolean> {
+  try {
+    return await loader()
+  } catch {
+    return false
+  }
+}
+
+function accountLoginMessage(value: string): AdminMessage | undefined {
+  if (value === 'confirmed') return { kind: 'success', text: 'Your account has been successfully activated! Now you can log in' }
+  if (value === 'registered') return { kind: 'success', text: 'Registration has been successful! Now you can log in' }
+  if (value === 'password-reset') return { kind: 'success', text: 'Reset password has been successful! Now you can log in' }
+  if (value === 'invalid-token') return { kind: 'error', text: 'The token is invalid' }
+  return undefined
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

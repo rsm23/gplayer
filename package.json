@@ -32,6 +32,7 @@
     "fastify": "5.11.2",
     "maxmind": "5.0.7",
     "mysql2": "3.23.2",
+    "nodemailer": "9.0.4",
     "png-to-ico": "3.0.2",
     "sharp": "0.35.3",
     "youtubei.js": "17.2.0",
@@ -39,6 +40,7 @@
   },
   "devDependencies": {
     "@types/node": "26.1.2",
+    "@types/nodemailer": "8.0.1",
     "tsx": "4.23.5",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
