@@ -144,17 +144,16 @@ export function renderAdminVideos(input: Readonly<{
   message?: AdminMessage
 }>): string {
   const rows = input.videos.map((video) => `<tr>
-    <td><label class="video-export-choice"><input type="checkbox" name="ids[]" value="${escapeHtml(video.id)}" form="video-export-form" aria-label="Select ${escapeHtml(video.title || `video ${video.id}`)} for export"><span class="session-id">#${escapeHtml(video.id)}</span></label></td>
+    <td><label class="video-export-choice"><input type="checkbox" name="ids[]" value="${escapeHtml(video.id)}" form="video-export-form" data-video-selection aria-label="Select ${escapeHtml(video.title || `video ${video.id}`)}"><span class="session-id">#${escapeHtml(video.id)}</span></label></td>
     <td><a class="video-title-link" href="${escapeHtml(input.adminBase)}/videos/edit/?id=${escapeHtml(video.id)}"><strong>${escapeHtml(video.title || 'Untitled video')}</strong><span>${escapeHtml(video.slug)}</span></a></td>
     <td><a class="video-host-link" href="${escapeHtml(video.mainUrl)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(video.host)}</strong><span>Open source ↗</span></a></td>
-    <td><span class="video-state video-state-${video.status}">${escapeHtml(videoStatusLabel(video.status))}</span>${video.dmca > 0 ? '<span class="video-dmca">DMCA</span>' : ''}</td>
+    <td><span class="video-state video-state-${video.status}" data-video-status="${escapeHtml(video.id)}">${escapeHtml(videoStatusLabel(video.status))}</span>${video.dmca > 0 ? '<span class="video-dmca">DMCA</span>' : ''}</td>
     <td>${video.views.toLocaleString('en-US')}</td>
     <td>${escapeHtml(video.userName)}</td>
     <td>${renderTimestamp(video.updated, 'Not updated')}</td>
     <td><div class="video-row-actions">
       <a href="${escapeHtml(video.embedUrl)}" target="_blank" rel="noopener noreferrer">Embed</a>
       <a href="${escapeHtml(input.adminBase)}/videos/edit/?id=${escapeHtml(video.id)}">Edit</a>
-      <form action="${escapeHtml(input.adminBase)}/videos/status/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(video.id)}"><input type="hidden" name="sources" value="${video.status === 1 ? 'available' : ''}"><button type="submit">${video.status === 1 ? 'Mark active' : 'Mark failed'}</button></form>
       ${input.isAdmin ? `<form action="${escapeHtml(input.adminBase)}/videos/dmca/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(video.id)}"><input type="hidden" name="takedown" value="${video.dmca > 0 ? '0' : '1'}"><button type="submit">${video.dmca > 0 ? 'Restore' : 'DMCA'}</button></form>` : ''}
       <form action="${escapeHtml(input.adminBase)}/videos/delete/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(video.id)}"><button class="session-revoke" type="submit" aria-label="Delete ${escapeHtml(video.title || `video ${video.id}`)}">Delete</button></form>
     </div></td>
@@ -169,7 +168,7 @@ export function renderAdminVideos(input: Readonly<{
     <a class="hero-link-primary" href="${escapeHtml(input.adminBase)}/videos/new/">Add video <span aria-hidden="true">+</span></a>
     <form action="${escapeHtml(input.adminBase)}/videos/list/" method="get" role="search">
       <label class="sr-only" for="video-search">Search videos</label><input id="video-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search title, host, source ID, slug, or user">
-      <label class="sr-only" for="video-status-filter">Status</label><select id="video-status-filter" name="status"><option value="">Any status</option>${selectStringOption('0', 'Active', input.status)}${selectStringOption('1', 'Failed', input.status)}${selectStringOption('2', 'Checking', input.status)}</select>
+      <label class="sr-only" for="video-status-filter">Status</label><select id="video-status-filter" name="status"><option value="">Any status</option>${selectStringOption('0', 'Good', input.status)}${selectStringOption('1', 'Broken', input.status)}${selectStringOption('2', 'Warning', input.status)}</select>
       ${input.isAdmin ? `<label class="sr-only" for="video-dmca-filter">DMCA</label><select id="video-dmca-filter" name="dmca"><option value="">Any DMCA state</option>${selectStringOption('0', 'Available', input.dmca)}${selectStringOption('1', 'Takedown', input.dmca)}</select>` : ''}
       <button type="submit">Filter</button>
     </form>
@@ -185,6 +184,12 @@ export function renderAdminVideos(input: Readonly<{
       <input type="hidden" name="csrf" value="${escapeHtml(input.transferCsrfToken)}">
       <div><p class="panel-kicker">Export CSV</p><h2>Download selected videos</h2><p>Select rows below. Main sources, ordered alternatives, and attached subtitle labels are preserved.</p></div>
       <button class="admin-back-link" type="submit">Export selection</button>
+    </form>
+    <form class="video-transfer-card video-checker-card" action="${escapeHtml(input.adminBase)}/videos/check/" method="post" data-video-checker data-max-videos="100">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}">
+      <div><p class="panel-kicker">Video checker</p><h2>Validate selected videos</h2><p>Resolve each selected video and its ordered alternatives. Results are saved as Good or Broken.</p></div>
+      <button class="admin-back-link" type="submit">Check selection</button>
+      <div class="video-checker-progress" data-video-checker-progress hidden><progress max="1" value="0"></progress><output aria-live="polite">Ready</output></div>
     </form>
   </section>
   <section class="session-table-shell video-table-shell" aria-labelledby="videos-table-title">
@@ -1161,7 +1166,7 @@ function selectStringOption(value: string, label: string, selected: string): str
 }
 
 function videoStatusLabel(status: number): string {
-  return ['Active', 'Failed', 'Checking'][status] ?? 'Unknown'
+  return ['Good', 'Broken', 'Warning'][status] ?? 'Unknown'
 }
 
 function videoAlternativeRow(url: string, index: number | string): string {

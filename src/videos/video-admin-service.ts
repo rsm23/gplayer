@@ -419,6 +419,15 @@ export class VideoAdminService {
     if (identity === '') return null
     const record = await this.store.getPublicVideo(identity)
     if (record === null || record.dmca > 0) return null
+    return this.playerQuery(record)
+  }
+
+  public async sourceQuery(id: unknown, access: VideoAccess): Promise<PlayerMediaQuery | null> {
+    const record = await this.get(id, access)
+    return record === null ? null : this.playerQuery(record)
+  }
+
+  private playerQuery(record: StoredVideoDetail): PlayerMediaQuery {
     const firstAlternative = record.alternatives[0]
     const subtitles = record.subtitles.map((item) => item.link).filter((value) => safeHttpUrl(value) !== null)
     return Object.freeze({

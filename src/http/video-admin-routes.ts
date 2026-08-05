@@ -9,6 +9,7 @@ import { Security } from '../security/security.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import type { SubtitleAdminService } from '../subtitles/subtitle-admin-service.js'
 import { parseBulkSubtitleLines, type StoredVideoDetail, type VideoAccess, type VideoAdminService, type VideoFormSubmission, type VideoLinkSlugs, type VideoMutationResult } from '../videos/video-admin-service.js'
+import type { VideoCheckerService } from '../videos/video-checker-service.js'
 import { VIDEO_EXPORT_FAIL, VIDEO_EXPORT_SUCCESS, VIDEO_IMPORT_FAIL, type VideoTransferService } from '../videos/video-transfer-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: http: https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
@@ -24,6 +25,7 @@ export async function registerVideoAdminRoutes(
   videos: VideoAdminService,
   transfers: VideoTransferService,
   subtitles: SubtitleAdminService,
+  checker: VideoCheckerService,
   loadPlayerSettings?: PlayerSettingsLoader,
   loadImportFileSize?: () => Promise<number>
 ): Promise<void> {
@@ -40,6 +42,7 @@ export async function registerVideoAdminRoutes(
   const editUrl = `${adminBase}/videos/edit/`
   const deleteUrl = `${adminBase}/videos/delete/`
   const statusUrl = `${adminBase}/videos/status/`
+  const checkUrl = `${adminBase}/videos/check/`
   const dmcaUrl = `${adminBase}/videos/dmca/`
   const posterRemoveUrl = `${adminBase}/videos/poster/remove/`
   const ajaxUrl = `${adminBase}/ajax/videos/`
@@ -160,6 +163,27 @@ export async function registerVideoAdminRoutes(
 
   app.post(deleteUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.delete(body.id, access), true))
   app.post(statusUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.status(body.id, body.sources, access)))
+
+  app.post(checkUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    if (!hasSameOrigin(request, config)) return reply.code(403).send({ status: 'fail', message: 'The video request did not originate from this application.', result: null })
+    const user = await authenticatedUserJson(request, auth)
+    if (user === null) return reply.code(401).send({ status: 'fail', message: UNAUTHORIZED, result: null })
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'video-mutate')) {
+      return reply.code(403).send({ status: 'fail', message: 'The video request could not be verified.', result: null })
+    }
+    try {
+      return reply.send(await checker.check(body.id, accessFor(user), {
+        clientIp: request.ip,
+        userAgent: request.headers['user-agent'] ?? '',
+        language: request.headers['accept-language'] ?? ''
+      }))
+    } catch {
+      return reply.code(503).send({ status: 'fail', message: 'The video database is temporarily unavailable.', result: null })
+    }
+  })
   app.post(dmcaUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.dmca(body.id, body.takedown, access)))
   app.post(posterRemoveUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.removePoster(body.id, access)))
 

@@ -211,10 +211,97 @@
     reindex()
   }
 
+  const setupVideoChecker = () => {
+    const form = document.querySelector('[data-video-checker]')
+    const progressShell = form?.querySelector('[data-video-checker-progress]')
+    const progress = progressShell?.querySelector('progress')
+    const output = progressShell?.querySelector('output')
+    const submit = form?.querySelector('button[type="submit"]')
+    const csrf = form?.querySelector('input[name="csrf"]')
+    if (!(form instanceof HTMLFormElement) || !(progressShell instanceof HTMLElement) || !(progress instanceof HTMLProgressElement) || !(output instanceof HTMLOutputElement) || !(submit instanceof HTMLButtonElement) || !(csrf instanceof HTMLInputElement)) return
+
+    const statusFor = (id) => document.querySelector(`[data-video-status="${CSS.escape(id)}"]`)
+    const setStatus = (element, status, label) => {
+      if (!(element instanceof HTMLElement)) return
+      element.classList.remove('video-state-0', 'video-state-1', 'video-state-2')
+      element.classList.add(`video-state-${status}`)
+      element.textContent = label
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      const maximum = Number(form.dataset.maxVideos ?? '100')
+      const selected = [...document.querySelectorAll('[data-video-selection]:checked')]
+        .filter((item) => item instanceof HTMLInputElement)
+      progressShell.hidden = false
+      if (selected.length === 0) {
+        output.textContent = 'Select at least one video to check.'
+        return
+      }
+      if (!Number.isSafeInteger(maximum) || maximum < 1 || selected.length > maximum) {
+        output.textContent = `Select no more than ${Number.isSafeInteger(maximum) && maximum > 0 ? maximum : 100} videos at once.`
+        return
+      }
+      if (!window.confirm(`Check ${selected.length} selected video${selected.length === 1 ? '' : 's'} now?`)) return
+
+      const original = new Map()
+      let good = 0
+      let broken = 0
+      let failed = 0
+      progress.max = selected.length
+      progress.value = 0
+      submit.disabled = true
+      selected.forEach((item) => { item.disabled = true })
+
+      for (const [index, selection] of selected.entries()) {
+        const id = selection.value
+        const state = statusFor(id)
+        if (state instanceof HTMLElement) {
+          original.set(id, { className: state.className, text: state.textContent ?? '' })
+          state.setAttribute('aria-busy', 'true')
+          setStatus(state, 2, 'Checking')
+        }
+        output.textContent = `Checking ${index + 1} of ${selected.length}…`
+
+        try {
+          const response = await fetch(form.action, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body: new URLSearchParams({ csrf: csrf.value, id })
+          })
+          const payload = await response.json()
+          const videoStatus = payload?.result?.videoStatus
+          if (!response.ok || payload?.status !== 'ok' || (videoStatus !== 0 && videoStatus !== 1)) throw new Error(payload?.message || 'The video availability check failed')
+          setStatus(state, videoStatus, videoStatus === 0 ? 'Good' : 'Broken')
+          state?.setAttribute('title', payload.message ?? '')
+          if (videoStatus === 0) good += 1
+          else broken += 1
+        } catch (error) {
+          failed += 1
+          const previous = original.get(id)
+          if (state instanceof HTMLElement && previous !== undefined) {
+            state.className = previous.className
+            state.textContent = previous.text
+            state.setAttribute('title', error instanceof Error ? error.message : 'The video availability check failed')
+          }
+        } finally {
+          state?.removeAttribute('aria-busy')
+          progress.value = index + 1
+        }
+      }
+
+      selected.forEach((item) => { item.disabled = false })
+      submit.disabled = false
+      output.textContent = `${good} Good · ${broken} Broken${failed > 0 ? ` · ${failed} not updated` : ''}`
+    })
+  }
+
   setupCustomHeaders()
   setupVastSchedule()
   setupPlayerSettings()
   setupHostingSettings()
   setupVideoEditor()
+  setupVideoChecker()
   revealActiveSettingsTab()
 })()

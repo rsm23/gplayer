@@ -29,6 +29,7 @@ import {
   type VideoPosterAsset,
   type VideoPosterAssetManager
 } from '../src/videos/video-assets-service.js'
+import { VideoCheckerService } from '../src/videos/video-checker-service.js'
 import {
   VIDEO_EXPORT_SUCCESS,
   VIDEO_IMPORT_SUCCESS,
@@ -390,6 +391,56 @@ describe('video administration service', () => {
     await expect(videos.deleteByHostnames(['direct'], adminAccess)).resolves.toEqual({ status: 'ok', message: 'The video has been successfully deleted' })
     expect(store.videos).toHaveLength(0)
   })
+
+  it('checks saved videos sequentially, writes Good or Broken, preserves state on transport failure, and rejects overlap', async () => {
+    const store = new MemoryVideoStore()
+    const videos = service(store)
+    const available = (): MediaResult => Object.freeze({
+      sources: Object.freeze([{ file: 'https://cdn.example/movie.mp4', type: 'video/mp4' }]),
+      tracks: Object.freeze([]),
+      referer: '',
+      title: '',
+      email: '',
+      image: '',
+      cookies: Object.freeze([]),
+      filmstrip: '',
+      clientip: '127.0.0.1'
+    })
+    const unavailable = (): MediaResult => Object.freeze({ ...available(), sources: Object.freeze([]) })
+    const resolver = vi.fn(async () => available())
+    const checker = new VideoCheckerService(videos, resolver)
+    const context = { clientIp: '127.0.0.1', userAgent, language: 'en' }
+
+    await expect(checker.check('2', memberAccess, context)).resolves.toEqual({
+      status: 'ok',
+      message: 'The video is available',
+      result: { id: '2', videoStatus: 0, sources: 1 }
+    })
+    expect(resolver).toHaveBeenLastCalledWith(expect.objectContaining({ host: 'direct', uid: '2' }), expect.objectContaining({ downloadable: false }))
+    expect((await store.getVideo('2', memberAccess))?.status).toBe(0)
+
+    resolver.mockResolvedValueOnce(unavailable())
+    await expect(checker.check('2', memberAccess, context)).resolves.toEqual({
+      status: 'ok',
+      message: 'The video is broken',
+      result: { id: '2', videoStatus: 1, sources: 0 }
+    })
+    expect((await store.getVideo('2', memberAccess))?.status).toBe(1)
+
+    await videos.status('2', ['available'], memberAccess)
+    resolver.mockRejectedValueOnce(new Error('upstream unavailable'))
+    await expect(checker.check('2', memberAccess, context)).resolves.toEqual({ status: 'fail', message: 'The video availability check failed', result: null })
+    expect((await store.getVideo('2', memberAccess))?.status).toBe(0)
+    await expect(checker.check('1', memberAccess, context)).resolves.toEqual({ status: 'fail', message: 'The video was not found', result: null })
+
+    let release: ((value: MediaResult) => void) | undefined
+    resolver.mockImplementationOnce(async () => await new Promise<MediaResult>((resolve) => { release = resolve }))
+    const first = checker.check('2', memberAccess, context)
+    await vi.waitFor(() => expect(resolver).toHaveBeenCalledTimes(4))
+    await expect(checker.check('2', memberAccess, context)).resolves.toEqual({ status: 'fail', message: 'The video is already being checked', result: null })
+    release?.(available())
+    await expect(first).resolves.toEqual(expect.objectContaining({ status: 'ok', result: expect.objectContaining({ videoStatus: 0 }) }))
+  })
 })
 
 describe('MySqlVideoAdminStore', () => {
@@ -483,12 +534,55 @@ describe('video administration and saved-video routes', () => {
     expect(list.body).not.toContain('Database movie')
     expect(list.body).not.toContain('>Settings</a>')
     expect(list.body).not.toContain(token)
+    expect(list.body).toContain('data-video-checker')
+    expect(list.body).toContain('data-video-selection')
+    expect(list.body).toContain('<option value="0">Good</option>')
+    expect(list.body).toContain('<option value="1">Broken</option>')
+    expect(list.body).toContain('<option value="2">Warning</option>')
     expect(list.headers['cache-control']).toBe('no-store')
     const editor = await context.app.inject({ method: 'GET', url: '/administrator/videos/new/', headers })
     expect(editor.body).toContain('data-video-editor')
     expect(editor.body).toContain('data-add-video-alternative')
     expect(editor.body).toContain('name="multiAltUrls"')
     expect(editor.body).toContain('name="multiSubFiles"')
+  })
+
+  it('checks an owned video through the signed modern route and rejects foreign, forged, and cross-origin requests', async () => {
+    const context = await createApp(member)
+    const page = await context.app.inject({ method: 'GET', url: '/administrator/videos/list/', headers })
+    const csrf = csrfFor(page.body, '/administrator/videos/check/')
+    const checked = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/check/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, id: '2' }).toString()
+    })
+    expect(checked.statusCode).toBe(200)
+    expect(checked.json()).toEqual({ status: 'ok', message: 'The video is available', result: { id: '2', videoStatus: 0, sources: 1 } })
+    expect(context.resolver).toHaveBeenCalledWith(expect.objectContaining({ uid: '2' }), expect.objectContaining({ clientIp: '127.0.0.1', downloadable: false }))
+
+    const foreign = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/check/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, id: '1' }).toString()
+    })
+    expect(foreign.json()).toEqual({ status: 'fail', message: 'The video was not found', result: null })
+
+    const forged = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/check/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'csrf=forged&id=2'
+    })
+    expect(forged.statusCode).toBe(403)
+    const crossOrigin = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/check/',
+      headers: { ...headers, origin: 'https://attacker.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, id: '2' }).toString()
+    })
+    expect(crossOrigin.statusCode).toBe(403)
   })
 
   it('creates a video through a signed multipart form with real poster and subtitle bytes', async () => {
