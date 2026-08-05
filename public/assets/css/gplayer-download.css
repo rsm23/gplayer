@@ -141,6 +141,28 @@ h1 {
 .notice strong { color: var(--text); }
 .notice-error { border-color: rgba(248, 113, 113, 0.35); background: rgba(248, 113, 113, 0.08); }
 
+.ad-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.ad-frame-banner {
+  min-height: 7.5rem;
+  margin: 1.25rem 0;
+}
+
+.ad-frame-popup {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

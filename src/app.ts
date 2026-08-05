@@ -79,8 +79,13 @@ export async function buildApp(
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl)
   )
-  await registerPlayerRoutes(app, config)
-  await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
+  const loadAdsSettings = async () => await settingsRuntime.adsSettings()
+  await registerPlayerRoutes(app, config, { loadAdsSettings })
+  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config)
+  await registerSourceApiRoutes(app, config, {
+    ...sourceApiRuntime,
+    loadAdsSettings
+  })
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {
     customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target)

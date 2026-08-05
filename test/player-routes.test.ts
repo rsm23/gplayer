@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { parsePlayerQuery } from '../src/core/player-query.js'
 import { Security } from '../src/security/security.js'
+import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -80,6 +81,68 @@ describe('player HTTP routes', () => {
     expect(response.body).toMatch(/poster="\/poster\/[A-Za-z0-9_,\-]+\.jpg"/)
     expect(response.body).toMatch(/src="\/subtitle\/[A-Za-z0-9_,\-]+\.vtt"/)
     expect(response.body).not.toContain('src="https://cdn.example/en.vtt"')
+  })
+
+  it('consumes direct, popup, banner, and anti-adblock settings in isolated public runtimes', async () => {
+    const values = {
+      block_adblocker: 'true',
+      disable_vast_ads: 'true',
+      disable_popup_ads: 'false',
+      popup_load_offset: '4',
+      popup_ads_link: 'https://ads.example/popup.js',
+      popup_ads_code: '<script>globalThis.popupLoaded = true</script>',
+      disable_banner_ads: 'false',
+      dl_banner_top: '<a href="https://sponsor.example/top">Top sponsor</a>',
+      dl_banner_bottom: '<div>Bottom sponsor</div>',
+      disable_direct_ads: 'false',
+      direct_ads_link: 'https://campaign.example/visit',
+      visitads_onplay: 'true',
+      show_iframeads: 'true'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => values,
+        upsertMany: async () => {}
+      })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+
+    const embed = await app.inject({ method: 'GET', url: `/e/?${token}` })
+    expect(embed.statusCode).toBe(200)
+    expect(embed.headers['content-security-policy']).toContain('https://campaign.example')
+    expect(embed.body).toContain('data-block-adblocker="true"')
+    expect(embed.body).toContain('data-direct-ad-url="https://campaign.example/visit"')
+    expect(embed.body).toContain('data-direct-ad-on-play="true"')
+    expect(embed.body).toContain('data-direct-ad-iframe="true"')
+    expect(embed.body).toContain('data-popup-frame-url="/ads/frame/popup"')
+    expect(embed.body).toContain('data-popup-delay-seconds="4"')
+    expect(embed.body).toContain('data-direct-ad-panel')
+    expect(embed.body).toContain('data-adblock-notice')
+    expect(embed.body).toContain('/assets/js/gplayer-embed.js')
+
+    const popup = await app.inject({ method: 'GET', url: '/ads/frame/popup' })
+    expect(popup.statusCode).toBe(200)
+    expect(popup.headers['content-security-policy']).toContain('sandbox allow-scripts allow-forms allow-popups')
+    expect(popup.headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(popup.body).toContain('<script>globalThis.popupLoaded = true</script>')
+    expect(popup.body).toContain('src="https://ads.example/popup.js"')
+
+    const download = await app.inject({ method: 'GET', url: `/d/?${token}` })
+    expect(download.statusCode).toBe(200)
+    expect(download.headers['content-security-policy']).toContain("frame-src 'self'")
+    expect(download.body).toContain('src="/ads/frame/download-top"')
+    expect(download.body).toContain('src="/ads/frame/download-bottom"')
+    expect(download.body).toContain('src="/ads/frame/popup"')
+    expect(download.body).not.toContain('Top sponsor')
+
+    const top = await app.inject({ method: 'GET', url: '/ads/frame/download-top' })
+    expect(top.statusCode).toBe(200)
+    expect(top.body).toContain('<a href="https://sponsor.example/top">Top sponsor</a>')
+
+    const bait = await app.inject({ method: 'GET', url: '/ads/advertisement.png' })
+    expect(bait.statusCode).toBe(200)
+    expect(bait.headers['content-type']).toBe('image/png')
+    expect(bait.rawPayload.length).toBeGreaterThan(40)
   })
 
   it('renders the legacy single-subs field through the WebVTT compatibility route', async () => {

@@ -6,6 +6,7 @@ import { buildPlayerQuery, type PlayerMediaQuery } from '../src/core/player-quer
 import { emptyMediaResult, type MediaResult } from '../src/core/source-resolver.js'
 import type { SourceApiResolver } from '../src/http/source-api-routes.js'
 import { Security } from '../src/security/security.js'
+import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
 
 const secureSalt = 'source-api-route-test-salt'
 const config = loadConfig({
@@ -71,6 +72,71 @@ describe('legacy player source API routes', () => {
       directAdsLink: '',
       showIframeAds: true,
       productionMode: false
+    })
+  })
+
+  it('maps persisted VAST, anti-adblock, and direct-ad settings into both legacy configurations', async () => {
+    await app.close()
+    const values = {
+      block_adblocker: 'true',
+      disable_vast_ads: 'false',
+      vast_client: 'googima',
+      vast_xml: '["https://ads.example/pre.xml","https://ads.example/mid.xml","https://ads.example/post.xml"]',
+      vast_offset: '["start","15","75%"]',
+      vast_skip: '7',
+      disable_direct_ads: 'false',
+      direct_ads_link: 'https://ads.example/campaign',
+      visitads_onplay: 'false',
+      show_iframeads: 'false'
+    }
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({
+        getAll: async () => values,
+        upsertMany: async () => {}
+      })
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
+    const embed = await app.inject({
+      method: 'GET',
+      url: `/api-config/${request.queryToken}?p=${request.passwordToken}`
+    })
+    const embedConfig = decryptJson(embed.body, request.password)
+    expect(embedConfig).toMatchObject({
+      blockADB: true,
+      visitAdsOnplay: false,
+      showIframeAds: false,
+      disableDirectAds: false,
+      directAdsLink: 'https://ads.example/campaign',
+      vastAds: {
+        client: 'googima',
+        schedule: [
+          { tag: 'https://ads.example/pre.xml', offset: 'preroll' },
+          { tag: 'https://ads.example/mid.xml', offset: '00:00:15' },
+          { tag: 'https://ads.example/post.xml', offset: '75%' }
+        ],
+        skipoffset: 7,
+        skipmessage: 'Skip XX',
+        creativeTimeout: 60_000,
+        loadVideoTimeout: 60_000,
+        vastLoadTimeout: 60_000,
+        requestTimeout: 60_000,
+        placement: 'interstitial',
+        vpaidmode: 'insecure',
+        withCredentials: false,
+        omidSupport: 'enabled',
+        maxRedirects: 20
+      }
+    })
+
+    const download = await app.inject({
+      method: 'GET',
+      url: `/api-config/${request.queryToken}?dl=1&p=${request.passwordToken}`
+    })
+    expect(decryptJson(download.body, request.password)).toMatchObject({
+      disableDirectAds: false,
+      directAdsLink: 'https://ads.example/campaign',
+      showIframeAds: false
     })
   })
 

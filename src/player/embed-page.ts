@@ -7,7 +7,29 @@ type RenderedSource = Readonly<{
   message?: string
 }>
 
-export function renderEmbedPage(media: PlayerMediaQuery, options: PlayerPublicOptions): string {
+export type EmbedAdsOptions = Readonly<{
+  blockAdblocker: boolean
+  directAdUrl: string
+  directAdOnPlay: boolean
+  showIframeAds: boolean
+  popupFrameUrl: string
+  popupDelaySeconds: number
+}>
+
+const DISABLED_EMBED_ADS: EmbedAdsOptions = Object.freeze({
+  blockAdblocker: false,
+  directAdUrl: '',
+  directAdOnPlay: false,
+  showIframeAds: false,
+  popupFrameUrl: '',
+  popupDelaySeconds: 0
+})
+
+export function renderEmbedPage(
+  media: PlayerMediaQuery,
+  options: PlayerPublicOptions,
+  ads: EmbedAdsOptions = DISABLED_EMBED_ADS
+): string {
   const source = resolveRenderedSource(media)
   const poster = safePlayerResource(media.poster ?? '', '/poster/')
   const tracks = renderTracks(
@@ -30,6 +52,18 @@ export function renderEmbedPage(media: PlayerMediaQuery, options: PlayerPublicOp
     player = `<video id="media-player" controls playsinline preload="metadata"${videoAttributes}${sourceAttribute}${poster ? ` poster="${escapeHtmlAttribute(poster)}"` : ''} data-source="${escapeHtmlAttribute(source.url)}" data-source-kind="${source.kind}">${tracks}<p>Your browser cannot play this media.</p></video>`
   }
 
+  const directEnabled = ads.directAdOnPlay && ads.directAdUrl.length > 0
+  const delayedPopupEnabled = ads.popupFrameUrl.length > 0 && ads.popupDelaySeconds > 0
+  const providerGate = source.kind === 'provider' && (directEnabled || delayedPopupEnabled)
+    ? '<button class="provider-ad-gate" type="button" data-provider-ad-gate aria-label="Continue to the video"><span aria-hidden="true">▶</span></button>'
+    : ''
+  const directFallback = directEnabled && ads.showIframeAds
+    ? `<section class="direct-ad-panel" data-direct-ad-panel hidden aria-label="Advertisement"><button class="direct-ad-close" type="button" data-direct-ad-close aria-label="Close advertisement">&times;</button><iframe data-direct-ad-frame title="Advertisement" referrerpolicy="no-referrer" sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"></iframe></section>`
+    : ''
+  const adblockNotice = ads.blockAdblocker
+    ? '<section class="adblock-notice" data-adblock-notice hidden role="alert"><strong>Ad blocker detected</strong><span>Please disable your ad blocker and reload the player to continue.</span></section>'
+    : ''
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -39,9 +73,12 @@ export function renderEmbedPage(media: PlayerMediaQuery, options: PlayerPublicOp
   <title>GDPlayer</title>
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
-<body>
-  <main class="player-stage">${player}</main>
-  ${source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>\n  <script src="/assets/js/gplayer-embed.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>\n  <script src="/assets/js/gplayer-embed.js"></script>' : ''}
+<body data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}">
+  <main class="player-stage">${player}${providerGate}</main>
+  ${directFallback}
+  ${adblockNotice}
+  ${source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>' : ''}
+  <script src="/assets/js/gplayer-embed.js"></script>
 </body>
 </html>`
 }

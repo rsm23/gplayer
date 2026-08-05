@@ -30,6 +30,7 @@ body {
 .player-stage {
   display: grid;
   place-items: center;
+  position: relative;
 }
 
 video,
@@ -73,4 +74,134 @@ video,
 
 .player-error span {
   color: var(--danger);
+}
+
+.player-fallback {
+  position: absolute;
+  inset: auto 1rem 1rem;
+  z-index: 4;
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(255, 127, 141, 0.35);
+  border-radius: 0.6rem;
+  background: rgba(17, 17, 24, 0.94);
+  color: var(--danger);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.provider-ad-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+}
+
+.provider-ad-gate span {
+  display: grid;
+  width: clamp(3.5rem, 12vw, 5.5rem);
+  aspect-ratio: 1;
+  place-items: center;
+  padding-left: 0.25em;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  background: rgba(5, 5, 7, 0.78);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.45);
+  font-size: clamp(1.25rem, 5vw, 2rem);
+}
+
+.provider-ad-gate:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: -5px;
+}
+
+.direct-ad-panel,
+.adblock-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.direct-ad-panel {
+  background: var(--bg);
+}
+
+.direct-ad-panel iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: white;
+}
+
+.direct-ad-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  background: rgba(5, 5, 7, 0.86);
+  color: white;
+  cursor: pointer;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.direct-ad-close:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
+}
+
+.popup-ad-frame {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.adblock-notice {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 2rem;
+  background: rgba(5, 5, 7, 0.97);
+  text-align: center;
+}
+
+.adblock-notice strong {
+  color: var(--danger);
+  font-size: clamp(1.35rem, 5vw, 2.25rem);
+}
+
+.adblock-notice span {
+  max-width: 32rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.is-adblocked .player-stage {
+  pointer-events: none;
+}
+
+[hidden] {
+  display: none !important;
 }

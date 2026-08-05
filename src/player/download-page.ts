@@ -4,6 +4,9 @@ import type { PlayerMediaQuery } from '../core/player-query.js'
 export type DownloadPageOptions = Readonly<{
   embedUrl: string
   alternativeUrl?: string
+  bannerTopFrameUrl?: string
+  bannerBottomFrameUrl?: string
+  popupFrameUrl?: string
 }>
 
 type DownloadItem = Readonly<{
@@ -37,6 +40,7 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
       <p class="eyebrow">GDPlayer download</p>
       <h1 id="download-title">${escapeHtml(title)}</h1>
       <p class="intro">Choose the media or subtitle file you want to open.</p>
+      ${renderAdFrame(options.bannerTopFrameUrl, 'Advertisement above download options', 'banner')}
       <div class="actions">
         <a class="button button-watch" href="${escapeHtmlAttribute(options.embedUrl)}" target="_blank" rel="noopener noreferrer">Watch video</a>
         ${options.alternativeUrl === undefined ? '' : `<a class="button button-secondary" href="${escapeHtmlAttribute(options.alternativeUrl)}">Use alternative server</a>`}
@@ -47,8 +51,10 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
       ${adapterPending
         ? `<div class="notice"><strong>${escapeHtml(providerName(media.host ?? 'provider'))} source recognized</strong><span>The source page is available now. Direct-file extraction will be enabled when this provider adapter reaches parity.</span></div>`
         : ''}
+      ${renderAdFrame(options.bannerBottomFrameUrl, 'Advertisement below download options', 'banner')}
     </section>
   </main>
+  ${renderAdFrame(options.popupFrameUrl, 'Advertisement', 'popup')}
 </body>
 </html>`
 }
@@ -102,6 +108,11 @@ function subtitleDownloadItems(media: PlayerMediaQuery): DownloadItem[] {
 function renderDownloadItem(item: DownloadItem): string {
   const icon = item.kind === 'subtitle' ? 'CC' : item.kind === 'source' ? '↗' : '↓'
   return `<li><span class="file-icon" aria-hidden="true">${icon}</span><span class="file-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span><a class="button button-download" href="${escapeHtmlAttribute(item.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtmlAttribute(item.label)}">${item.kind === 'source' ? 'Open' : 'Download'}</a></li>`
+}
+
+function renderAdFrame(url: string | undefined, title: string, kind: 'banner' | 'popup'): string {
+  if (url === undefined || url.length === 0) return ''
+  return `<iframe class="ad-frame ad-frame-${kind}" src="${escapeHtmlAttribute(url)}" title="${escapeHtmlAttribute(title)}" referrerpolicy="no-referrer" sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"></iframe>`
 }
 
 function mediaTitle(media: PlayerMediaQuery): string {

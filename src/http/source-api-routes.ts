@@ -11,6 +11,8 @@ import type { MediaResult, MediaSource, MediaTrack } from '../core/source-resolv
 import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath, type StreamingRoute } from './streaming-routes.js'
 import { Security } from '../security/security.js'
+import { legacyVastConfiguration, loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
+import type { AdsSettings } from '../settings/settings-admin-service.js'
 
 const MAX_API_TOKEN_LENGTH = 65_536
 const SOURCE_TOKEN_SEPARATOR = '-,'
@@ -34,6 +36,7 @@ export type SourceApiResolver = (
 export type SourceApiRouteOptions = Readonly<{
   resolve: SourceApiResolver
   supportedHosts?: ReadonlySet<string>
+  loadAdsSettings?: AdsSettingsLoader
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -58,9 +61,10 @@ export async function registerSourceApiRoutes(
     const parsed = queryToken.length === 0
       ? null
       : parsePlayerQuery(queryToken, security, { secureSalt: config.secureSalt }).media
+    const ads = await loadRuntimeAdsSettings(options.loadAdsSettings)
     const output = isDownloadConfigRequest(request)
-      ? createDownloadConfiguration(config, parsed)
-      : createEmbedConfiguration(config, parsed, request.headers['user-agent'] ?? '')
+      ? createDownloadConfiguration(config, parsed, ads)
+      : createEmbedConfiguration(config, parsed, request.headers['user-agent'] ?? '', ads)
 
     return reply
       .type('text/plain; charset=utf-8')
@@ -150,7 +154,8 @@ function isDownloadConfigRequest(request: FastifyRequest): boolean {
 function createEmbedConfiguration(
   config: AppConfig,
   media: PlayerMediaQuery | null,
-  userAgent: string
+  userAgent: string,
+  ads: AdsSettings
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
@@ -176,13 +181,13 @@ function createEmbedConfiguration(
     displayRateControls: true,
     captionsColor: '#ffff00',
     playerSkin: 'netflix',
-    vastAds: [],
-    blockADB: false,
+    vastAds: legacyVastConfiguration(ads),
+    blockADB: ads.block_adblocker,
     enableSharer: true,
     logoHide: false,
     logoPosition: 'top-right',
-    visitAdsOnplay: true,
-    showIframeAds: true,
+    visitAdsOnplay: ads.visitads_onplay,
+    showIframeAds: ads.show_iframeads,
     logoImage: '',
     logoLink: '',
     torrentList: [
@@ -191,8 +196,8 @@ function createEmbedConfiguration(
       'wss://tracker.openwebtorrent.com',
       'wss://tracker.btorrent.xyz'
     ],
-    disableDirectAds: true,
-    directAdsLink: '',
+    disableDirectAds: ads.disable_direct_ads,
+    directAdsLink: ads.direct_ads_link,
     smallLogoFile: '',
     smallLogoLink: '',
     playerColor: '#e50914',
@@ -214,16 +219,17 @@ function createEmbedConfiguration(
 
 function createDownloadConfiguration(
   config: AppConfig,
-  media: PlayerMediaQuery | null
+  media: PlayerMediaQuery | null,
+  ads: AdsSettings
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
     apiURL: valid ? config.baseUrl.toString() : '',
     message: valid ? '' : 'Bad Request',
     hosts: mediaHosts(media),
-    disableDirectAds: true,
-    directAdsLink: '',
-    showIframeAds: true,
+    disableDirectAds: ads.disable_direct_ads,
+    directAdsLink: ads.direct_ads_link,
+    showIframeAds: ads.show_iframeads,
     productionMode: false
   }
 }
