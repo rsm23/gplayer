@@ -45,6 +45,20 @@ const PUBLIC_BOOLEAN_KEYS = [
 ] as const
 const SMTP_PROVIDERS = Object.freeze(['', 'gmail', 'ymail', 'outlook', 'other'] as const)
 const PWA_DISPLAYS = Object.freeze(['standalone', 'fullscreen', 'minimal-ui'] as const)
+const SHORTENER_PROVIDERS = Object.freeze([
+  Object.freeze({ id: 'random', name: 'Random', apiUrl: '' }),
+  Object.freeze({ id: 'adtival_network', name: 'Adtival.Network', apiUrl: 'https://adtival.network/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'clicksfly_com', name: 'ClicksFly.com', apiUrl: 'https://clicksfly.com/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'clk_sh', name: 'Clk.sh', apiUrl: 'https://clk.sh/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'cutpaid_com', name: 'Cutpaid.com', apiUrl: 'https://cutpaid.com/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'payskip_org', name: 'PaySkip.ORG', apiUrl: 'https://payskip.org/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'shrinkearn_com', name: 'ShrinkEarn.com', apiUrl: 'https://shrinkearn.com/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'shrinkme_io', name: 'ShrinkMe.io', apiUrl: 'https://shrinkme.io/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'shrtfly_com', name: 'ShrtFly.com', apiUrl: 'https://shrtfly.com/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'v2links_com', name: 'V2links.com', apiUrl: 'https://v2links.com/st?api=%s&url=%s' }),
+  Object.freeze({ id: 'ouo_io', name: 'ouo.io', apiUrl: 'https://ouo.io/qs/%s?s=%s' }),
+  Object.freeze({ id: 'safelinku_com', name: 'SafelinkU.com', apiUrl: 'https://semawur.com/full/?type=2&api=%s&url=%s' })
+] as const)
 const BOOLEAN_KEY_SET = new Set<string>(BOOLEAN_KEYS)
 const TIMEZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])
 
@@ -92,6 +106,15 @@ export type SiteSettings = Readonly<{
   pwa_themecolor: string
   pwa_backgroundcolor: string
   pwa_display: PwaDisplay
+}>
+
+export type ShortenerProvider = typeof SHORTENER_PROVIDERS[number]
+export type ShortenerProviderId = ShortenerProvider['id']
+
+export type ShortlinkSettings = Readonly<{
+  disable_shortener_link: boolean
+  additional_url_shortener: ShortenerProviderId
+  providers: readonly Readonly<{ id: Exclude<ShortenerProviderId, 'random'>; name: string; configured: boolean }>[]
 }>
 
 export type SettingEntry = Readonly<{ key: string; value: string }>
@@ -296,6 +319,46 @@ export class SettingsAdminService {
     await this.store.upsertMany(entries)
     return Object.freeze({ status: 'ok', message: 'The Site Settings have been successfully updated' })
   }
+
+  public async shortlinkSettings(): Promise<ShortlinkSettings> {
+    const raw = await this.store.getAll()
+    const selected = raw.additional_url_shortener ?? ''
+    return Object.freeze({
+      disable_shortener_link: raw.disable_shortener_link === 'true',
+      additional_url_shortener: isShortenerProviderId(selected) ? selected : 'random',
+      providers: Object.freeze(SHORTENER_PROVIDERS.flatMap((provider) => provider.id === 'random' ? [] : [Object.freeze({
+        id: provider.id,
+        name: provider.name,
+        configured: (raw[`additional_url_shortener_${provider.id}`] ?? '') !== ''
+      })]))
+    })
+  }
+
+  public async saveShortlink(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const entries: SettingEntry[] = []
+    if ('disable_shortener_link' in input) entries.push({ key: 'disable_shortener_link', value: booleanValue(input.disable_shortener_link) ? 'true' : 'false' })
+    if ('additional_url_shortener' in input) {
+      const selected = scalarValue(input.additional_url_shortener)
+      if (!isShortenerProviderId(selected)) return invalid('The URL shortener provider is invalid')
+      entries.push({ key: 'additional_url_shortener', value: selected })
+    }
+
+    for (const provider of SHORTENER_PROVIDERS) {
+      if (provider.id === 'random') continue
+      const key = `additional_url_shortener_${provider.id}`
+      const clearKey = `clear_${key}`
+      const apiKey = scalarValue(input[key])
+      const clear = booleanValue(input[clearKey])
+      if (apiKey !== '' && clear) return invalid(`Choose either a new ${provider.name} API key or remove the stored key`)
+      if (apiKey.length > 4_096) return invalid(`The ${provider.name} API key is too long`)
+      if (clear) entries.push({ key, value: '' })
+      else if (apiKey !== '') entries.push({ key, value: apiKey })
+    }
+
+    if (entries.length === 0) return invalid('No supported settings were submitted')
+    await this.store.upsertMany(entries)
+    return Object.freeze({ status: 'ok', message: 'The Shortlink Settings have been successfully updated' })
+  }
 }
 
 export function generalSettings(raw: Readonly<Record<string, string>>, defaultBaseUrl: URL): GeneralSettings {
@@ -318,6 +381,10 @@ export function generalBooleanKeys(): ReadonlySet<string> {
 
 export function timezoneList(): readonly string[] {
   return Object.freeze([...TIMEZONES].sort((left, right) => left.localeCompare(right)))
+}
+
+export function shortenerProviderList(): readonly ShortenerProvider[] {
+  return SHORTENER_PROVIDERS
 }
 
 function normalizedHttpUrl(value: unknown): string | null {
@@ -415,6 +482,10 @@ function isSmtpProvider(value: string): value is SmtpProvider {
 
 function isPwaDisplay(value: string): value is PwaDisplay {
   return (PWA_DISPLAYS as readonly string[]).includes(value)
+}
+
+function isShortenerProviderId(value: string): value is ShortenerProviderId {
+  return SHORTENER_PROVIDERS.some((provider) => provider.id === value)
 }
 
 function invalid(message: string): SettingsMutationResult {

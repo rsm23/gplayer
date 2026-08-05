@@ -9,7 +9,7 @@ import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type Sess
 import { UserAdminService, type AdminUserRecord, type UserAdminStore } from '../src/auth/user-admin-service.js'
 import { loadConfig } from '../src/config.js'
 import { MySqlSettingsAdminStore } from '../src/settings/mysql-settings-admin-store.js'
-import { SettingsAdminService, type SettingEntry, type SettingsAdminStore } from '../src/settings/settings-admin-service.js'
+import { SettingsAdminService, shortenerProviderList, type SettingEntry, type SettingsAdminStore } from '../src/settings/settings-admin-service.js'
 import { FileSystemSiteAssetManager, type SiteAssetManager } from '../src/settings/site-assets-service.js'
 
 const token = 'settings-admin-token-1234567890'
@@ -263,6 +263,63 @@ describe('settings administration service', () => {
     await expect(settings.saveSite({ pwa_display: 'browser' })).resolves.toEqual({ status: 'invalid', message: 'The PWA display mode is invalid' })
     expect(store.writes).toEqual([])
   })
+
+  it('preserves the exact thirteen-key shortlink contract without returning stored API keys', async () => {
+    const store = new MemorySettingsStore({
+      disable_shortener_link: 'true',
+      additional_url_shortener: 'ouo_io',
+      additional_url_shortener_ouo_io: 'never-return-this'
+    })
+    const settings = new SettingsAdminService(store)
+    const values = await settings.shortlinkSettings()
+    expect(values.disable_shortener_link).toBe(true)
+    expect(values.additional_url_shortener).toBe('ouo_io')
+    expect(values.providers.find((provider) => provider.id === 'ouo_io')).toEqual({ id: 'ouo_io', name: 'ouo.io', configured: true })
+    expect(JSON.stringify(values)).not.toContain('never-return-this')
+    expect(shortenerProviderList().map(({ id, apiUrl }) => [id, apiUrl])).toEqual([
+      ['random', ''],
+      ['adtival_network', 'https://adtival.network/st?api=%s&url=%s'],
+      ['clicksfly_com', 'https://clicksfly.com/st?api=%s&url=%s'],
+      ['clk_sh', 'https://clk.sh/st?api=%s&url=%s'],
+      ['cutpaid_com', 'https://cutpaid.com/st?api=%s&url=%s'],
+      ['payskip_org', 'https://payskip.org/st?api=%s&url=%s'],
+      ['shrinkearn_com', 'https://shrinkearn.com/st?api=%s&url=%s'],
+      ['shrinkme_io', 'https://shrinkme.io/st?api=%s&url=%s'],
+      ['shrtfly_com', 'https://shrtfly.com/st?api=%s&url=%s'],
+      ['v2links_com', 'https://v2links.com/st?api=%s&url=%s'],
+      ['ouo_io', 'https://ouo.io/qs/%s?s=%s'],
+      ['safelinku_com', 'https://semawur.com/full/?type=2&api=%s&url=%s']
+    ])
+
+    const submitted = Object.fromEntries(shortenerProviderList()
+      .filter((provider) => provider.id !== 'random')
+      .map((provider) => [`additional_url_shortener_${provider.id}`, `key-for-${provider.id}`]))
+    await expect(settings.saveShortlink({
+      disable_shortener_link: ['false', 'true'],
+      additional_url_shortener: 'random',
+      ...submitted,
+      unsupported_shortener_key: 'blocked'
+    })).resolves.toEqual({ status: 'ok', message: 'The Shortlink Settings have been successfully updated' })
+    expect(store.writes.at(-1)).toHaveLength(13)
+    expect(store.values).not.toHaveProperty('unsupported_shortener_key')
+  })
+
+  it('preserves blank shortlink secrets and requires an explicit, unambiguous removal', async () => {
+    const store = new MemorySettingsStore({ additional_url_shortener_ouo_io: 'preserve-me' })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.saveShortlink({ disable_shortener_link: 'false', additional_url_shortener: 'ouo_io', additional_url_shortener_ouo_io: '' }))
+      .resolves.toEqual({ status: 'ok', message: 'The Shortlink Settings have been successfully updated' })
+    expect(store.values.additional_url_shortener_ouo_io).toBe('preserve-me')
+
+    await expect(settings.saveShortlink({ clear_additional_url_shortener_ouo_io: 'true' }))
+      .resolves.toEqual({ status: 'ok', message: 'The Shortlink Settings have been successfully updated' })
+    expect(store.values.additional_url_shortener_ouo_io).toBe('')
+    const writeCount = store.writes.length
+    await expect(settings.saveShortlink({ additional_url_shortener: 'unknown' })).resolves.toEqual({ status: 'invalid', message: 'The URL shortener provider is invalid' })
+    await expect(settings.saveShortlink({ additional_url_shortener_ouo_io: 'new-key', clear_additional_url_shortener_ouo_io: 'true' }))
+      .resolves.toEqual({ status: 'invalid', message: 'Choose either a new ouo.io API key or remove the stored key' })
+    expect(store.writes).toHaveLength(writeCount)
+  })
 })
 
 describe('site asset generation', () => {
@@ -466,6 +523,41 @@ describe('general settings administration routes', () => {
     expect(store.values).toEqual(expect.objectContaining({ site_name: 'GPlayer Node', custom_color: 'ccea59', pwa_themecolor: '0b0e0c' }))
     expect(assets.updates).toHaveLength(1)
     expect(assets.updates[0]?.logo).toEqual(logo)
+  })
+
+  it('renders and updates shortlink settings without reflecting stored or submitted API keys', async () => {
+    const store = new MemorySettingsStore({
+      additional_url_shortener: 'ouo_io',
+      additional_url_shortener_ouo_io: 'stored-shortlink-secret'
+    })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/shortlink/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1]
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Shortlink settings.')
+    expect(page.body).toContain('<option value="ouo_io" selected>ouo.io</option>')
+    expect(page.body).toContain('Leave blank to preserve the stored key.')
+    expect(page.body).not.toContain('stored-shortlink-secret')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/shortlink/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `csrf=${csrf}&disable_shortener_link=false&additional_url_shortener=clicksfly_com&additional_url_shortener_clicksfly_com=submitted-shortlink-secret&additional_url_shortener_ouo_io=`
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/shortlink/?updated=1')
+    expect(store.values).toEqual(expect.objectContaining({
+      disable_shortener_link: 'false',
+      additional_url_shortener: 'clicksfly_com',
+      additional_url_shortener_clicksfly_com: 'submitted-shortlink-secret',
+      additional_url_shortener_ouo_io: 'stored-shortlink-secret'
+    }))
+
+    const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
+    expect(updated.body).toContain('The Shortlink Settings have been successfully updated')
+    expect(updated.body).not.toContain('stored-shortlink-secret')
+    expect(updated.body).not.toContain('submitted-shortlink-secret')
   })
 
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {

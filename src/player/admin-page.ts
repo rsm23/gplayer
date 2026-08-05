@@ -1,7 +1,7 @@
 import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
-import { timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
+import { shortenerProviderList, timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -391,6 +391,51 @@ export function renderAdminSiteSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminShortlinkSettings(input: Readonly<{
+  adminBase: string
+  values: ShortlinkSettings
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const checked = (value: boolean): string => value ? ' checked' : ''
+  const providerOptions = shortenerProviderList()
+    .map((provider) => stringOption(provider.id, provider.name, input.values.additional_url_shortener))
+    .join('')
+  const secretFields = input.values.providers.map((provider) => {
+    const key = `additional_url_shortener_${provider.id}`
+    const status = provider.configured ? 'Configured' : 'No key stored'
+    return `<div class="settings-secret-card">
+      <div class="settings-secret-heading"><label for="${key}">${escapeHtml(provider.name)}</label><span class="settings-secret-status${provider.configured ? ' is-configured' : ''}">${status}</span></div>
+      <input id="${key}" name="${key}" type="password" value="" maxlength="4096" placeholder="${provider.configured ? 'Stored API key' : 'Provider API key'}" autocomplete="new-password">
+      <p class="field-hint">${provider.configured ? 'Leave blank to preserve the stored key.' : 'Enter a key to configure this provider.'}</p>
+      ${provider.configured ? `<label class="settings-clear-secret"><input name="clear_${key}" type="checkbox" value="true"><span>Remove stored key</span></label>` : ''}
+    </div>`
+  }).join('')
+
+  return adminDocument('Shortlink settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Outbound links</p>
+  <div class="admin-dashboard-heading"><div><h1>Shortlink settings.</h1><p>Control optional URL shortening and keep every provider credential server-side.</p></div><span class="admin-role">13 keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'shortlink')}
+  <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/settings/shortlink/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="shortlink-policy-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Behavior</p><h2 id="shortlink-policy-title">Selection policy</h2><p>Disable shortened links entirely or choose the provider used for generated download destinations.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('disable_shortener_link', 'Disable shortener links', 'Return direct destinations instead of sending them through a configured shortener.', checked(input.values.disable_shortener_link))}
+        <div class="field"><label for="additional_url_shortener">Selected provider</label><select id="additional_url_shortener" name="additional_url_shortener" required>${providerOptions}</select><p class="field-hint">Random retains the legacy provider-selection mode; only providers with a stored key can be used.</p></div>
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="shortlink-credentials-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Credentials</p><h2 id="shortlink-credentials-title">Provider API keys</h2><p>Credentials are write-only. The page reports whether a key exists but never returns its value to the browser.</p></div>
+      <div class="settings-secret-grid">${secretFields}</div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update shortlink settings</span><span aria-hidden="true">↗</span></button><p>The shortener runtime will consume these settings when outbound link transformation is connected to the download flow.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminError(adminBase: string, status: 403 | 404 | 503, description: string): string {
   const title = status === 403 ? 'Access denied.' : status === 404 ? 'User not found.' : 'Service unavailable.'
   return adminDocument(String(status), `<main class="admin-error-main">
@@ -465,8 +510,8 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a></nav>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {
