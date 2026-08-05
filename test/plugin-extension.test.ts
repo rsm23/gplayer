@@ -11,6 +11,7 @@ import { PluginAdminService, type PluginAdminRecord, type PluginAdminStore, type
 import { parsePluginManifest } from '../src/plugins/plugin-archive.js'
 import { PluginExtensionRuntime } from '../src/plugins/plugin-extension-runtime.js'
 import type { PluginRecord } from '../src/plugins/plugin-maintenance-worker.js'
+import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
 
 const secureSalt = '1234567890123456'
 const token = 'plugin-extension-token-1234567890'
@@ -146,18 +147,26 @@ describe('plugin extension HTTP routes', () => {
     root = await mkdtemp(path.join(tmpdir(), 'gplayer-extension-routes-'))
     const store = new MemoryStore()
     await installFixture(root, store, 'sample', 1, {
-      overrides: { frontend: { changelog: 'views/frontend/changelog.html' } },
+      overrides: { frontend: { changelog: 'views/frontend/changelog.html', e: 'views/frontend/player.html', watch: 'views/frontend/player.html' } },
       widgets: { 'backend.dashboard.bottom': [{ template: 'widgets/dashboard.html' }] },
       config_fields: [{ name: 'endpoint', label: 'Endpoint', type: 'url', required: true }]
     }, {
       'views/frontend/index.html': '<h1>Plugin page</h1><link rel="stylesheet" href="{{plugin_asset_base}}app.css">',
       'views/frontend/changelog.html': '<h1>Overridden changelog</h1>',
+      'views/frontend/report.html': '<h1>Nested plugin report</h1>',
+      'views/backend/report.html': '<h1>Nested admin plugin report</h1>',
+      'views/frontend/player.html': '<h1>Must not override player controllers</h1>',
       'widgets/dashboard.html': '<aside data-plugin-widget>Widget</aside>',
       'assets/app.css': 'h1{color:red}'
     }, { endpoint: 'https://old.example/' })
     const runtime = new PluginExtensionRuntime(store, root)
     const adminService = new PluginAdminService(store, root, { reconcile: async () => ({ started: 0, stopped: 0, running: 0, unsupportedPhp: 0, invalid: 0 }) } as never)
-    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), { auth: new AuthService(new RouteAuthStore()), plugins: adminService, pluginExtensions: runtime })
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(new RouteAuthStore()),
+      plugins: adminService,
+      pluginExtensions: runtime,
+      settings: new SettingsAdminService({ getAll: async () => ({ slug_embed: 'watch' }), upsertMany: async () => {} })
+    })
 
     const page = await app.inject({ method: 'GET', url: '/p/sample/' })
     expect(page.statusCode).toBe(200)
@@ -165,6 +174,24 @@ describe('plugin extension HTTP routes', () => {
     expect(page.body).toContain('/plugins/sample/assets/app.css')
     const overridden = await app.inject({ method: 'GET', url: '/changelog/' })
     expect(overridden.body).toContain('Overridden changelog')
+    const [dottedOverride, customOverride, nestedPage, nestedAdminPage] = await Promise.all([
+      app.inject({ method: 'GET', url: '/changelog.php/ignored/path' }),
+      app.inject({ method: 'GET', url: '/changelog.custom/ignored/path' }),
+      app.inject({ method: 'GET', url: '/p/sample/report/ignored/path' }),
+      app.inject({ method: 'GET', url: '/administrator/p/sample/report/ignored/path', headers })
+    ])
+    expect(dottedOverride.body).toContain('Overridden changelog')
+    expect(customOverride.body).toContain('Overridden changelog')
+    expect(nestedPage.body).toContain('Nested plugin report')
+    expect(nestedAdminPage.body).toContain('Nested admin plugin report')
+    const [builtInPlayer, configuredPlayer] = await Promise.all([
+      app.inject({ method: 'GET', url: '/e.php/?invalid-player-token' }),
+      app.inject({ method: 'GET', url: '/watch.custom/?invalid-player-token' })
+    ])
+    expect(builtInPlayer.statusCode).toBe(400)
+    expect(configuredPlayer.statusCode).toBe(400)
+    expect(builtInPlayer.body).not.toContain('Must not override player controllers')
+    expect(configuredPlayer.body).not.toContain('Must not override player controllers')
     const asset = await app.inject({ method: 'GET', url: '/plugins/sample/assets/app.css' })
     expect(asset.headers['content-type']).toContain('text/css')
     expect(asset.body).toBe('h1{color:red}')

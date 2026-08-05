@@ -14,7 +14,10 @@ export async function registerPluginExtensionRoutes(
   app: FastifyInstance,
   config: AppConfig,
   auth: AuthService,
-  runtime: PluginExtensionRuntime
+  runtime: PluginExtensionRuntime,
+  options: Readonly<{
+    loadPlayerSlugs?: () => Promise<Readonly<{ slug_embed: string; slug_download: string; slug_request: string }>>
+  }> = {}
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
   const loginUrl = `${adminBase}/login/`
@@ -22,11 +25,10 @@ export async function registerPluginExtensionRoutes(
   app.addHook('preHandler', async (request, reply) => {
     if (reply.sent || !['GET', 'POST'].includes(request.method) || request.isMultipart()) return
     const pathname = requestPath(request.url)
-    if (/\.(?:css|js|mjs|map|png|jpe?g|gif|webp|svg|ico|woff2?|txt|xml|json|webmanifest)$/i.test(pathname)) return
     const segments = pathname.split('/').filter(Boolean)
     const backend = segments[0] === config.adminDirectory
-    const page = backend ? segments[1] ?? 'index' : segments[0] ?? 'index'
-    if (SKIPPED_OVERRIDE_PREFIXES.has(page) || page === 'p' || backend && ['login', 'logout', 'register', 'reset-password', '403', '404'].includes(page)) return
+    const page = legacyPageName(backend ? segments[1] : segments[0])
+    if (SKIPPED_OVERRIDE_PREFIXES.has(page) || legacyPlayerControllerPage(page, config) || page === 'p' || backend && ['login', 'logout', 'register', 'reset-password', '403', '404'].includes(page)) return
     let user: AuthUser | null = null
     if (backend) {
       user = await authenticate(request, auth).catch(() => null)
@@ -34,6 +36,10 @@ export async function registerPluginExtensionRoutes(
     }
     const result = await runtime.overridePage(page, backend, pageInput(request, config, user, page)).catch(() => null)
     if (result !== null) {
+      if (!backend && options.loadPlayerSlugs !== undefined) {
+        const playerSlugs = await options.loadPlayerSlugs().catch(() => null)
+        if (playerSlugs === null || [playerSlugs.slug_embed, playerSlugs.slug_download, playerSlugs.slug_request].includes(page)) return
+      }
       if (request.method === 'POST' && !sameOrigin(request, config)) return reply.code(403).type('text/plain; charset=utf-8').send('The plugin request did not originate from this application.')
       sendPluginPage(reply, result, config)
     }
@@ -55,8 +61,8 @@ export async function registerPluginExtensionRoutes(
     return sendPluginPage(reply, result, config)
   }
 
-  for (const route of ['/p/:plugin', '/p/:plugin/', '/p/:plugin/:page', '/p/:plugin/:page/']) app.route({ method: ['GET', 'POST'], url: route, handler: async (request, reply) => await dispatch(request, reply, false) })
-  for (const route of [`${adminBase}/p/:plugin`, `${adminBase}/p/:plugin/`, `${adminBase}/p/:plugin/:page`, `${adminBase}/p/:plugin/:page/`]) app.route({ method: ['GET', 'POST'], url: route, handler: async (request, reply) => await dispatch(request, reply, true) })
+  for (const route of ['/p/:plugin', '/p/:plugin/', '/p/:plugin/:page', '/p/:plugin/:page/', '/p/:plugin/:page/*']) app.route({ method: ['GET', 'POST'], url: route, handler: async (request, reply) => await dispatch(request, reply, false) })
+  for (const route of [`${adminBase}/p/:plugin`, `${adminBase}/p/:plugin/`, `${adminBase}/p/:plugin/:page`, `${adminBase}/p/:plugin/:page/`, `${adminBase}/p/:plugin/:page/*`]) app.route({ method: ['GET', 'POST'], url: route, handler: async (request, reply) => await dispatch(request, reply, true) })
 
   app.get('/plugins/:plugin/*', async (request, reply) => {
     const params = objectValue(request.params)
@@ -197,6 +203,10 @@ function pageInput(request: FastifyRequest, config: AppConfig, user: AuthUser | 
 function publicUser(user: AuthUser | null): Readonly<Record<string, unknown>> | null { return user === null ? null : Object.freeze({ id: user.id, name: user.name, username: user.username, email: user.email, role: user.role, status: user.status }) }
 function cloneable(value: Record<string, unknown>): Readonly<Record<string, unknown>> { try { return Object.freeze(structuredClone(value)) } catch { return Object.freeze({}) } }
 function requestPath(url: string): string { try { return new URL(url, 'http://gplayer.invalid').pathname } catch { return '/' } }
+function legacyPageName(value: string | undefined): string { return (value ?? '').split('.', 1)[0]?.trim() || 'index' }
+function legacyPlayerControllerPage(page: string, config: AppConfig): boolean {
+  return ['e', 'd', 'r', config.slugs.embed, config.slugs.download, config.slugs.request].includes(page)
+}
 function objectValue(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
 function scalar(value: unknown): string { const item = Array.isArray(value) ? value.at(-1) : value; return typeof item === 'string' || typeof item === 'number' ? String(item).trim().slice(0, 100_000) : '' }
 function tokenFor(request: FastifyRequest): string { return authTokenFromRequest({ authorization: request.headers.authorization, cookie: request.cookies[AUTH_COOKIE_NAME] }) }

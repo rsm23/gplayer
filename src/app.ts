@@ -367,7 +367,7 @@ export async function buildApp(
     const user = await authenticateRequest(request)
     return user !== null && user.status === 1 && user.role === 0
   }
-  await registerPluginExtensionRoutes(app, config, authService, pluginExtensionRuntime)
+  await registerPluginExtensionRoutes(app, config, authService, pluginExtensionRuntime, { loadPlayerSlugs: loadPlayerSettings })
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
     loadGeneralSettings,
