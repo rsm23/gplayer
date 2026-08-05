@@ -34,6 +34,8 @@
     menuButton?.setAttribute('aria-expanded', 'false')
   })
 
+  configurePublicUtilities()
+
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register(new URL('sw.js', document.baseURI)).catch(() => {
@@ -174,5 +176,83 @@
     if (!(message instanceof HTMLElement)) return
     message.textContent = ''
     message.classList.remove('success')
+  }
+
+  function configurePublicUtilities() {
+    const sharedUrl = location.href
+    const sharedTitle = document.title
+    const encodedUrl = encodeURIComponent(sharedUrl)
+    const encodedTitle = encodeURIComponent(sharedTitle)
+    const destinations = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+      x: `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`,
+      whatsapp: `https://api.whatsapp.com/send?text=${encodedTitle}%20${encodedUrl}`,
+      telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedTitle}`
+    }
+
+    document.querySelectorAll('[data-share-network]').forEach((link) => {
+      if (!(link instanceof HTMLAnchorElement)) return
+      const destination = destinations[link.dataset.shareNetwork]
+      if (destination !== undefined) link.href = destination
+    })
+
+    const status = document.querySelector('[data-share-status]')
+    document.querySelector('[data-share-more]')?.addEventListener('click', async () => {
+      try {
+        if (typeof navigator.share === 'function') {
+          await navigator.share({ title: sharedTitle, url: sharedUrl })
+          announceShareStatus(status, 'Share menu opened.')
+          return
+        }
+        await copyShareUrl(sharedUrl)
+        announceShareStatus(status, 'Link copied.')
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        try {
+          await copyShareUrl(sharedUrl)
+          announceShareStatus(status, 'Link copied.')
+        } catch {
+          announceShareStatus(status, 'Copy the link from the address bar.')
+        }
+      }
+    })
+
+    const gotoTop = document.querySelector('#gotoTop')
+    if (!(gotoTop instanceof HTMLButtonElement)) return
+    let scrollFrame = 0
+    const updateGotoTop = () => {
+      scrollFrame = 0
+      gotoTop.hidden = globalThis.scrollY <= 200
+    }
+    globalThis.addEventListener('scroll', () => {
+      if (scrollFrame !== 0) return
+      scrollFrame = globalThis.requestAnimationFrame(updateGotoTop)
+    }, { passive: true })
+    gotoTop.addEventListener('click', () => {
+      const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+      globalThis.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
+    })
+    updateGotoTop()
+  }
+
+  async function copyShareUrl(url) {
+    if (navigator.clipboard?.writeText !== undefined) {
+      await navigator.clipboard.writeText(url)
+      return
+    }
+    const input = document.createElement('textarea')
+    input.value = url
+    input.readOnly = true
+    input.style.position = 'fixed'
+    input.style.opacity = '0'
+    document.body.append(input)
+    input.select()
+    const copied = document.execCommand('copy')
+    input.remove()
+    if (!copied) throw new Error('Clipboard unavailable')
+  }
+
+  function announceShareStatus(status, text) {
+    if (status instanceof HTMLElement) status.textContent = text
   }
 })()

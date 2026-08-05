@@ -72,6 +72,7 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
     <article class="public-article">${options.body}</article>
   </main>
   ${renderFooter(navigation, site)}
+  ${renderPublicUtilities()}
 </body>
 </html>`
 }
@@ -228,6 +229,18 @@ function renderFooter(navigation: PublicNavigationOptions, site: SiteSettings): 
   </nav>
   <p class="copyright">© <span id="copyright-year">2026</span> ${siteName}</p>
 </footer>`
+}
+
+function renderPublicUtilities(): string {
+  return `<aside class="public-share-rail" aria-label="Share this page">
+  <a href="#" data-share-network="facebook" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on Facebook"><span aria-hidden="true">f</span></a>
+  <a href="#" data-share-network="x" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on X"><span aria-hidden="true">X</span></a>
+  <a href="#" data-share-network="whatsapp" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on WhatsApp"><span aria-hidden="true">WA</span></a>
+  <a href="#" data-share-network="telegram" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on Telegram"><span aria-hidden="true">TG</span></a>
+  <button type="button" data-share-more aria-label="Share this page or copy its link"><span aria-hidden="true">↗</span></button>
+  <span class="sr-only" data-share-status aria-live="polite"></span>
+</aside>
+<button type="button" id="gotoTop" class="goto-top" aria-label="Go to top" title="Go to top" hidden><span aria-hidden="true">↑</span></button>`
 }
 
 function publicSiteSettings(value: SiteSettings | undefined): SiteSettings {
