@@ -5,7 +5,7 @@ import type { HostingData } from '../core/hosting-data.js'
 import { buildPlayerQuery, parsePlayerQuery, type PlayerMediaQuery } from '../core/player-query.js'
 import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath } from './streaming-routes.js'
-import { loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
+import { loadRuntimeAdsSettings, runtimeVastConfiguration, type AdsSettingsLoader } from '../settings/ads-runtime.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import type { PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
@@ -517,8 +517,10 @@ function applyEmbedHeaders(
 function embedAdsOptions(ads: AdsSettings): EmbedAdsOptions {
   const popupEnabled = !ads.disable_popup_ads && (ads.popup_ads_link.length > 0 || ads.popup_ads_code.trim().length > 0)
   const directEnabled = !ads.disable_direct_ads && ads.visitads_onplay && ads.direct_ads_link.length > 0
+  const vastAds = runtimeVastConfiguration(ads)
   return Object.freeze({
     blockAdblocker: ads.block_adblocker,
+    vastAds: vastAds !== null && vastAds.schedule.length > 0 ? vastAds : null,
     directAdUrl: directEnabled ? ads.direct_ads_link : '',
     directAdOnPlay: directEnabled,
     showIframeAds: directEnabled && ads.show_iframeads,
@@ -580,6 +582,7 @@ function applyAdFrameHeaders(reply: Parameters<FastifyRequest['routeOptions']['h
 }
 
 function embedContentSecurityPolicy(ads: AdsSettings): string {
+  const scripts = ["'self'"]
   const frames = [
     "'self'",
     'https://www.youtube-nocookie.com',
@@ -587,6 +590,10 @@ function embedContentSecurityPolicy(ads: AdsSettings): string {
     'https://www.dailymotion.com',
     'https://drive.google.com'
   ]
+  if (!ads.disable_vast_ads && ads.vast_xml.length > 0) {
+    scripts.push("'unsafe-eval'", 'https://imasdk.googleapis.com')
+    frames.push('http:', 'https:', 'blob:')
+  }
   if (!ads.disable_direct_ads && ads.show_iframeads && ads.direct_ads_link.length > 0) {
     try {
       const origin = new URL(ads.direct_ads_link).origin
@@ -595,7 +602,7 @@ function embedContentSecurityPolicy(ads: AdsSettings): string {
       // Settings validation normally guarantees a URL; omit invalid values defensively.
     }
   }
-  return `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src http: https:; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
+  return `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src http: https:; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
 }
 
 function toArray(value: string | string[] | undefined): string[] {

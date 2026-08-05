@@ -25,6 +25,45 @@
 
   if (!enforceEmbedOnly()) return
 
+  const readVastConfiguration = () => {
+    const element = document.querySelector('[data-vast-config]')
+    if (!(element instanceof HTMLScriptElement)) return null
+    try {
+      const parsed = JSON.parse(element.textContent || '')
+      if (parsed === null || typeof parsed !== 'object' || !['vast', 'googima'].includes(parsed.client)) return null
+      if (!Array.isArray(parsed.schedule) || parsed.schedule.length > 20) return null
+      const schedule = parsed.schedule.flatMap((item) => {
+        if (item === null || typeof item !== 'object' || typeof item.tag !== 'string' || typeof item.offset !== 'string') return []
+        try {
+          const tag = new URL(item.tag)
+          if (!['http:', 'https:'].includes(tag.protocol) || tag.username || tag.password || item.offset.length > 32) return []
+          return [{ tag: tag.toString(), offset: item.offset }]
+        } catch {
+          return []
+        }
+      })
+      if (schedule.length !== parsed.schedule.length) return null
+      const boundedInteger = (value, fallbackValue, maximum) => Number.isInteger(value) && value >= 0 && value <= maximum ? value : fallbackValue
+      return {
+        client: parsed.client,
+        schedule,
+        skipoffset: boundedInteger(parsed.skipoffset, 0, 86_400),
+        skipmessage: 'Skip XX',
+        creativeTimeout: boundedInteger(parsed.creativeTimeout, 60_000, 60_000),
+        loadVideoTimeout: boundedInteger(parsed.loadVideoTimeout, 60_000, 60_000),
+        vastLoadTimeout: boundedInteger(parsed.vastLoadTimeout, 60_000, 60_000),
+        requestTimeout: boundedInteger(parsed.requestTimeout, 60_000, 60_000),
+        placement: 'interstitial',
+        vpaidmode: 'insecure',
+        withCredentials: false,
+        omidSupport: 'enabled',
+        maxRedirects: boundedInteger(parsed.maxRedirects, 20, 20)
+      }
+    } catch {
+      return null
+    }
+  }
+
   const loadRuntimeScript = (source, key) => new Promise((resolve, reject) => {
     if (document.querySelector(`script[data-player-runtime="${key}"]`)) {
       resolve()
@@ -120,6 +159,7 @@
     if (!(video instanceof HTMLVideoElement)) return null
     const fallback = nativeController(video)
     body.dataset.activePlayer = 'native'
+    const vastConfig = readVastConfiguration()
     if (body.dataset.playerLibrary === 'plyr') {
       try {
         await loadRuntimeScript('/assets/vendor/plyr/3.6.3/plyr-custom.polyfilled.min.js', 'plyr')
@@ -129,6 +169,7 @@
           controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
           settings: speedEnabled ? ['captions', 'speed'] : ['captions'],
           captions: { active: true, update: true },
+          ...(vastConfig?.schedule.length ? { ads: { enabled: true, tagUrl: vastConfig.schedule[0].tag } } : {}),
           speed: { selected: 1, options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
           tooltips: { controls: true, seek: true }
         })
@@ -188,6 +229,7 @@
           windowOpacity: captionOpacity('captionWindowOpacity', 0),
           windowColor: body.dataset.captionWindowColor
         },
+        ...(vastConfig !== null ? { advertising: vastConfig } : {}),
         ...(skin ? { skin: { name: skin } } : {}),
         abouttext: 'GPlayer',
         aboutlink: 'https://github.com/rsm23/gplayer',

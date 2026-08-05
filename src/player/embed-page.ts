@@ -1,6 +1,7 @@
 import { Hosting } from '../core/hosting.js'
 import type { HostingData } from '../core/hosting-data.js'
 import type { PlayerMediaQuery, PlayerPublicOptions } from '../core/player-query.js'
+import type { RuntimeVastConfiguration } from '../settings/ads-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 
 type RenderedSource = Readonly<{
@@ -11,6 +12,7 @@ type RenderedSource = Readonly<{
 
 export type EmbedAdsOptions = Readonly<{
   blockAdblocker: boolean
+  vastAds: RuntimeVastConfiguration | null
   directAdUrl: string
   directAdOnPlay: boolean
   showIframeAds: boolean
@@ -28,6 +30,7 @@ export type EmbedPlayerOptions = Readonly<{
 
 const DISABLED_EMBED_ADS: EmbedAdsOptions = Object.freeze({
   blockAdblocker: false,
+  vastAds: null,
   directAdUrl: '',
   directAdOnPlay: false,
   showIframeAds: false,
@@ -97,6 +100,7 @@ export function renderEmbedPage(
   const resumePrompt = settings?.continue_watching === true
     ? `<section class="player-resume" data-player-resume hidden role="dialog" aria-modal="true" aria-labelledby="player-resume-text"><p id="player-resume-text" data-player-resume-text>${escapeHtml(settings.text_resume)}</p><div><button type="button" data-player-resume-yes>${escapeHtml(settings.text_resume_yes)}</button><button type="button" data-player-resume-no>${escapeHtml(settings.text_resume_no)}</button></div></section>`
     : ''
+  const vastConfiguration = renderVastConfiguration(ads.vastAds)
   const documentTitle = settings === undefined
     ? 'GPlayer'
     : settings.text_title.replaceAll('{title}', title).replaceAll('{siteName}', 'GPlayer')
@@ -117,6 +121,7 @@ export function renderEmbedPage(
   ${directFallback}
   ${adblockNotice}
   ${resumePrompt}
+  ${vastConfiguration}
   ${settings?.player === 'jwplayer' ? '' : source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>' : ''}
   <script src="/assets/js/gplayer-embed.js"></script>
 </body>
@@ -226,6 +231,17 @@ function renderPlayerStyles(settings: PlayerSettings): string {
   return !settings.player_skin
     ? ''
     : `<link rel="stylesheet" href="/assets/skin/jwplayer/${settings.player_skin}.min.css">`
+}
+
+function renderVastConfiguration(config: RuntimeVastConfiguration | null): string {
+  if (config === null) return ''
+  const json = JSON.stringify(config)
+    .replaceAll('&', '\\u0026')
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029')
+  return `<script type="application/json" data-vast-config>${json}</script>`
 }
 
 function playerTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {

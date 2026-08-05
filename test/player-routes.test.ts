@@ -323,6 +323,8 @@ describe('player HTTP routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['cache-control']).toBe('private, no-store')
     expect(response.headers['content-security-policy']).toContain("default-src 'none'")
+    expect(response.headers['content-security-policy']).not.toContain("'unsafe-eval'")
+    expect(response.headers['content-security-policy']).not.toContain('imasdk.googleapis.com')
     expect(response.body).toContain('<video id="media-player"')
     expect(response.body).toContain(' autoplay muted loop')
     expect(response.body).toContain('data-source-kind="hls"')
@@ -397,6 +399,50 @@ describe('player HTTP routes', () => {
     expect(bait.statusCode).toBe(200)
     expect(bait.headers['content-type']).toBe('image/png')
     expect(bait.rawPayload.length).toBeGreaterThan(40)
+  })
+
+  it('serializes the complete VAST schedule for the local player runtime', async () => {
+    const values = {
+      player: 'jwplayer',
+      disable_vast_ads: 'false',
+      vast_client: 'googima',
+      vast_xml: '["https://ads.example/pre.xml","https://ads.example/mid.xml","https://ads.example/post.xml"]',
+      vast_offset: '["start","15","75%"]',
+      vast_skip: '7'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => values,
+        upsertMany: async () => {}
+      })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4')
+
+    const embed = await app.inject({ method: 'GET', url: `/e/?${token}` })
+    expect(embed.statusCode).toBe(200)
+    expect(embed.headers['content-security-policy']).toContain("script-src 'self' 'unsafe-eval' https://imasdk.googleapis.com")
+    expect(embed.headers['content-security-policy']).toContain('http: https: blob:')
+    const serialized = embed.body.match(/<script type="application\/json" data-vast-config>([\s\S]*?)<\/script>/)?.[1]
+    expect(serialized).toBeDefined()
+    expect(JSON.parse(serialized ?? '')).toEqual({
+      client: 'googima',
+      schedule: [
+        { tag: 'https://ads.example/pre.xml', offset: 'preroll' },
+        { tag: 'https://ads.example/mid.xml', offset: '00:00:15' },
+        { tag: 'https://ads.example/post.xml', offset: '75%' }
+      ],
+      skipoffset: 7,
+      skipmessage: 'Skip XX',
+      creativeTimeout: 60_000,
+      loadVideoTimeout: 60_000,
+      vastLoadTimeout: 60_000,
+      requestTimeout: 60_000,
+      placement: 'interstitial',
+      vpaidmode: 'insecure',
+      withCredentials: false,
+      omidSupport: 'enabled',
+      maxRedirects: 20
+    })
   })
 
   it('uses configured player slugs, embed markup, query policy, and native presentation settings', async () => {

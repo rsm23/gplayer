@@ -2,6 +2,22 @@ import type { AdsSettings } from './settings-admin-service.js'
 
 export type AdsSettingsLoader = () => Promise<AdsSettings>
 
+export type RuntimeVastConfiguration = Readonly<{
+  client: AdsSettings['vast_client']
+  schedule: readonly Readonly<{ tag: string; offset: string }>[]
+  skipoffset: number
+  skipmessage: 'Skip XX'
+  creativeTimeout: 60_000
+  loadVideoTimeout: 60_000
+  vastLoadTimeout: 60_000
+  requestTimeout: 60_000
+  placement: 'interstitial'
+  vpaidmode: 'insecure'
+  withCredentials: false
+  omidSupport: 'enabled'
+  maxRedirects: 20
+}>
+
 export const DEFAULT_RUNTIME_ADS: AdsSettings = Object.freeze({
   block_adblocker: false,
   disable_vast_ads: true,
@@ -33,8 +49,8 @@ export async function loadRuntimeAdsSettings(loader?: AdsSettingsLoader): Promis
   }
 }
 
-export function legacyVastConfiguration(ads: AdsSettings): readonly unknown[] | Readonly<Record<string, unknown>> {
-  if (ads.disable_vast_ads) return Object.freeze([])
+export function runtimeVastConfiguration(ads: AdsSettings): RuntimeVastConfiguration | null {
+  if (ads.disable_vast_ads) return null
   const schedule = ads.vast_xml.map((tag, index) => Object.freeze({
     tag,
     offset: legacyVastOffset(ads.vast_offset[index] ?? '')
@@ -54,6 +70,10 @@ export function legacyVastConfiguration(ads: AdsSettings): readonly unknown[] | 
     omidSupport: 'enabled',
     maxRedirects: 20
   })
+}
+
+export function legacyVastConfiguration(ads: AdsSettings): readonly unknown[] | RuntimeVastConfiguration {
+  return runtimeVastConfiguration(ads) ?? Object.freeze([])
 }
 
 function legacyVastOffset(value: string): string {

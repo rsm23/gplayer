@@ -316,5 +316,7 @@ describe('legacy-compatible system routes', () => {
     expect(embedScript.body).toContain('window.gdPlyr = instance')
     expect(embedScript.body).toContain('window.jwp = instance')
     expect(embedScript.body).toContain("body.dataset.activePlayer = 'native'")
+    expect(embedScript.body).toContain('tagUrl: vastConfig.schedule[0].tag')
+    expect(embedScript.body).toContain('advertising: vastConfig')
   })
 })
