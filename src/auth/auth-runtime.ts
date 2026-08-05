@@ -40,6 +40,8 @@ import { MySqlDashboardAdminStore } from '../dashboard/mysql-dashboard-admin-sto
 import type { DashboardAdminStore } from '../dashboard/dashboard-admin-service.js'
 import { MySqlPrivateAdminStore } from '../system/mysql-private-admin-store.js'
 import type { PrivateAdminStore } from '../system/private-admin-service.js'
+import { MySqlSettingsMaintenanceStore } from '../settings/mysql-settings-maintenance-store.js'
+import type { SettingsMaintenanceStore } from '../settings/settings-maintenance-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -62,6 +64,7 @@ export type AuthRuntime = Readonly<{
   accountLifecycleStore: AccountLifecycleStore
   dashboardStore: DashboardAdminStore
   privateAdminStore: PrivateAdminStore
+  settingsMaintenanceStore: SettingsMaintenanceStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -85,6 +88,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let accountLifecycleStore: MySqlAccountLifecycleStore | undefined
   let dashboardStore: MySqlDashboardAdminStore | undefined
   let privateAdminStore: MySqlPrivateAdminStore | undefined
+  let settingsMaintenanceStore: MySqlSettingsMaintenanceStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -165,6 +169,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentPrivateAdminStore = (): MySqlPrivateAdminStore => {
     privateAdminStore ??= new MySqlPrivateAdminStore(currentDatabase())
     return privateAdminStore
+  }
+  const currentSettingsMaintenanceStore = (): MySqlSettingsMaintenanceStore => {
+    settingsMaintenanceStore ??= new MySqlSettingsMaintenanceStore(currentDatabase())
+    return settingsMaintenanceStore
   }
 
   const lazyStore: AuthStore = {
@@ -325,6 +333,13 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     clearVideoSources: async (id) => await currentPrivateAdminStore().clearVideoSources(id),
     clearLoadBalancerSources: async (link) => await currentPrivateAdminStore().clearLoadBalancerSources(link)
   }
+  const lazySettingsMaintenanceStore: SettingsMaintenanceStore = {
+    clearAllSourceCaches: async () => await currentSettingsMaintenanceStore().clearAllSourceCaches(),
+    clearLoadBalancerSources: async (id) => await currentSettingsMaintenanceStore().clearLoadBalancerSources(id),
+    disableBlacklistedVideos: async (prefixes) => await currentSettingsMaintenanceStore().disableBlacklistedVideos(prefixes),
+    loadSetting: async (key) => await currentSettingsMaintenanceStore().loadSetting(key),
+    saveSetting: async (key, value) => await currentSettingsMaintenanceStore().saveSetting(key, value)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -350,6 +365,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     pluginAdminStore: lazyPluginAdminStore,
     accountLifecycleStore: lazyAccountLifecycleStore,
     dashboardStore: lazyDashboardStore,
-    privateAdminStore: lazyPrivateAdminStore
+    privateAdminStore: lazyPrivateAdminStore,
+    settingsMaintenanceStore: lazySettingsMaintenanceStore
   })
 }

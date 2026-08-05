@@ -1510,8 +1510,15 @@ export function renderAdminHostingSettings(input: Readonly<{
 export function renderAdminResetSettings(input: Readonly<{
   adminBase: string
   csrfToken: string
+  maintenanceCsrfToken: string
   message?: AdminMessage
 }>): string {
+  const maintenanceAction = (action: string, title: string, description: string, danger = false): string => `<form class="settings-maintenance-card" action="${escapeHtml(input.adminBase)}/settings/reset/maintenance/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.maintenanceCsrfToken)}">
+    <input type="hidden" name="action" value="${escapeHtml(action)}">
+    <div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(description)}</p></div>
+    <button type="submit" aria-label="Run ${escapeHtml(title)}"${danger ? ' class="danger"' : ''}>Run action</button>
+  </form>`
   return adminDocument('Reset settings', `${adminHeader(input.adminBase, 'settings')}
 <main class="admin-dashboard admin-settings-page admin-reset-settings-page">
   <p class="eyebrow"><span></span>Destructive operation</p>
@@ -1530,6 +1537,17 @@ export function renderAdminResetSettings(input: Readonly<{
       </div>
     </section>
   </form>
+  <section class="settings-section settings-maintenance-section" id="runtime-maintenance" aria-labelledby="runtime-maintenance-title">
+    <div class="settings-section-heading"><p class="panel-kicker">Scoped maintenance</p><h2 id="runtime-maintenance-title">Runtime cleanup</h2><p>Clear only the selected cache scope, restore bundled bypass defaults, or apply the saved title blacklist. Every operation requires an active administrator and a same-origin signed request.</p></div>
+    <div class="settings-maintenance-grid">
+      ${maintenanceAction('clearSettingsCache', 'Settings cache', 'Invalidate in-process settings and clear temporary runtime files.')}
+      ${maintenanceAction('clearVideosCache', 'Video source cache', 'Delete temporary and resolved source rows plus generated media cache files.')}
+      ${maintenanceAction('clearVideosFiles', 'Generated video files', 'Clear media cache files and temporary image and subtitle assets.')}
+      ${maintenanceAction('resetHosts', 'Bypassed host defaults', 'Restore the bundled default provider bypass selection.')}
+      ${maintenanceAction('disableBlacklistedVideos', 'Apply title blacklist', 'Deactivate matching video rows and invalidate their source cache entries.')}
+      ${maintenanceAction('clearAllCache', 'All runtime caches', 'Clear every scoped runtime cache, temporary source row, and temporary upload directory.', true)}
+    </div>
+  </section>
 </main>`)
 }
 

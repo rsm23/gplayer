@@ -7,6 +7,7 @@ import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminErr
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
 import { InvalidVastAssetError, type VastAssetManager } from '../settings/vast-assets-service.js'
+import type { SettingsMaintenanceService } from '../settings/settings-maintenance-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
@@ -18,6 +19,7 @@ export async function registerAdminSettingsRoutes(
   users: UserAdminService,
   siteAssets: SiteAssetManager,
   vastAssets: VastAssetManager,
+  maintenance: SettingsMaintenanceService,
   supportedHosts: ReadonlySet<string>,
   hostingHosts: ReadonlySet<string> = supportedHosts
 ): Promise<void> {
@@ -39,6 +41,7 @@ export async function registerAdminSettingsRoutes(
   const vastCreateUrl = `${adsUrl}vast/create/`
   const vastDeleteUrl = `${adsUrl}vast/delete/`
   const settingsAjaxUrl = `${adminBase}/ajax/settings/`
+  const maintenanceUrl = `${resetUrl}maintenance/`
 
   app.get(`${adminBase}/settings/general`, async (_request, reply) => await reply.redirect(generalUrl, 308))
   app.get(`${adminBase}/settings/public`, async (_request, reply) => await reply.redirect(publicUrl, 308))
@@ -454,12 +457,14 @@ export async function registerAdminSettingsRoutes(
     applyAdminHeaders(reply, config)
     const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
     if (user === null || reply.sent) return
-    const message: AdminMessage | undefined = stringValue(objectValue(request.query).reset) === '1'
+    const query = objectValue(request.query)
+    const message: AdminMessage | undefined = stringValue(query.reset) === '1'
       ? { kind: 'success', text: 'The Reset Settings have been successfully reset' }
-      : undefined
+      : maintenanceMessage(stringValue(query.maintenance), stringValue(query.status))
     return reply.type('text/html; charset=utf-8').send(renderAdminResetSettings({
       adminBase,
       csrfToken: csrfToken(config, tokenFor(request), 'settings-reset'),
+      maintenanceCsrfToken: csrfToken(config, tokenFor(request), 'settings-maintenance'),
       ...(message === undefined ? {} : { message })
     }))
   })
@@ -482,11 +487,31 @@ export async function registerAdminSettingsRoutes(
       return reply.code(400).type('text/html; charset=utf-8').send(renderAdminResetSettings({
         adminBase,
         csrfToken: csrfToken(config, tokenFor(request), 'settings-reset'),
+        maintenanceCsrfToken: csrfToken(config, tokenFor(request), 'settings-maintenance'),
         message: { kind: 'error', text: result.message }
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings could not be reset.'))
     }
+  })
+
+  app.post(maintenanceUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-maintenance')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+    const action = stringValue(body.action)
+    if (!VISIBLE_MAINTENANCE_ACTIONS.has(action)) {
+      return reply.code(404).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 404, 'The settings maintenance action is not supported.'))
+    }
+    const result = await maintenance.action(action, body)
+    return await reply.redirect(`${resetUrl}?maintenance=${encodeURIComponent(action)}&status=${result.status}#runtime-maintenance`, 303)
   })
 
   app.post(syncUrl, async (request, reply) => {
@@ -699,8 +724,36 @@ export async function registerAdminSettingsRoutes(
       }
     }
 
+    if (SETTINGS_MAINTENANCE_ACTIONS.has(action)) {
+      const result = await maintenance.action(action, body)
+      if (action === 'saveLicense') return reply.send({ status: result.status, message: result.message })
+      return reply.send(result)
+    }
+
     return reply.code(400).send({ status: 'fail', message: 'The settings action is not supported' })
   })
+}
+
+const SETTINGS_MAINTENANCE_ACTIONS = new Set([
+  'clearAllCache', 'clearLoadBalancer', 'clearSettingsCache', 'clearVideosCache', 'clearVideosFiles',
+  'disableBlacklistedVideos', 'getDependencies', 'hideExtDialog', 'resetHosts', 'saveLicense'
+])
+
+const VISIBLE_MAINTENANCE_ACTIONS = new Set([
+  'clearAllCache', 'clearSettingsCache', 'clearVideosCache', 'clearVideosFiles', 'disableBlacklistedVideos', 'resetHosts'
+])
+
+function maintenanceMessage(action: string, status: string): AdminMessage | undefined {
+  if (!VISIBLE_MAINTENANCE_ACTIONS.has(action) || (status !== 'ok' && status !== 'fail')) return undefined
+  const messages: Readonly<Record<string, readonly [string, string]>> = Object.freeze({
+    clearAllCache: ['All runtime caches were cleared successfully.', 'The runtime caches could not be cleared.'],
+    clearSettingsCache: ['The settings cache was cleared successfully.', 'The settings cache could not be cleared.'],
+    clearVideosCache: ['The video source cache was cleared successfully.', 'The video source cache could not be cleared.'],
+    clearVideosFiles: ['The generated video files were cleared successfully.', 'The generated video files could not be cleared.'],
+    disableBlacklistedVideos: ['Blacklisted videos were deactivated successfully.', 'Blacklisted videos could not be deactivated.'],
+    resetHosts: ['Bypassed host defaults were restored successfully.', 'Bypassed host defaults could not be restored.']
+  })
+  return { kind: status === 'ok' ? 'success' : 'error', text: messages[action]?.[status === 'ok' ? 0 : 1] ?? 'The maintenance action could not be completed.' }
 }
 
 async function siteSubmission(request: FastifyRequest): Promise<Readonly<{ fields: Record<string, unknown>; logo?: Buffer }>> {

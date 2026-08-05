@@ -2383,6 +2383,79 @@ button.user-state:focus-visible {
   background: #ff9d94;
 }
 
+.settings-maintenance-section {
+  margin-top: 28px;
+}
+
+.settings-maintenance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-maintenance-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel), #fff 2%);
+}
+
+.settings-maintenance-card strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-maintenance-card p {
+  margin: 6px 0 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.settings-maintenance-card button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-maintenance-card button:hover,
+.settings-maintenance-card button:focus-visible {
+  border-color: var(--brand);
+  color: var(--brand-soft);
+}
+
+.settings-maintenance-card button.danger {
+  border-color: color-mix(in srgb, #ff665a, transparent 35%);
+  color: #ff9d94;
+}
+
+@media (max-width: 760px) {
+  .settings-maintenance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-maintenance-card {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-maintenance-card button {
+    width: 100%;
+  }
+}
+
 .admin-subtitles-page {
   padding-top: clamp(56px, 7vw, 86px);
 }

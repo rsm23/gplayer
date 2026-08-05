@@ -77,6 +77,8 @@ import { NodeSystemInspector } from './system/system-inspector.js'
 import { FileSystemPrivateCacheManager } from './system/private-cache-manager.js'
 import { PrivateAdminService } from './system/private-admin-service.js'
 import { registerPrivateAdminRoutes } from './http/private-admin-routes.js'
+import { FileSystemSettingsMaintenanceFiles } from './settings/settings-maintenance-files.js'
+import { SettingsMaintenanceService } from './settings/settings-maintenance-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -115,6 +117,7 @@ export type AppDependencies = Readonly<{
   logs?: LogAdminService
   dashboard?: DashboardAdminService
   privateAdmin?: PrivateAdminService
+  settingsMaintenance?: SettingsMaintenanceService
 }>
 
 export async function buildApp(
@@ -288,6 +291,20 @@ export async function buildApp(
       clearRuntimeCache
     }
   )
+  const settingsMaintenanceRuntime = dependencies.settingsMaintenance ?? new SettingsMaintenanceService(
+    authRuntime.settingsMaintenanceStore,
+    new FileSystemSettingsMaintenanceFiles({
+      temporaryRoot: path.resolve(currentDirectory, '../tmp'),
+      cacheRoot,
+      uploadsRoot: path.join(publicRoot, 'uploads')
+    }),
+    undefined,
+    {
+      clearRuntimeCache,
+      loadBlacklist: async () => (await settingsRuntime.miscSettings(supportedHosts)).word_blacklisted,
+      supportedHosts
+    }
+  )
   const authenticateRequest = async (request: FastifyRequest): Promise<AuthUser | null> => {
     const token = authTokenFromRequest({
       authorization: request.headers.authorization,
@@ -350,6 +367,7 @@ export async function buildApp(
     dependencies.users ?? authRuntime.users,
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl),
+    settingsMaintenanceRuntime,
     supportedHosts,
     hostingHosts
   )
