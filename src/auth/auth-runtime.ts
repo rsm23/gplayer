@@ -44,6 +44,7 @@ import { MySqlSettingsMaintenanceStore } from '../settings/mysql-settings-mainte
 import type { SettingsMaintenanceStore } from '../settings/settings-maintenance-service.js'
 import { MySqlViewCounterStore } from '../stats/mysql-view-counter-store.js'
 import type { ViewCounterStore } from '../stats/view-counter-service.js'
+import type { LoadBalancerSelectionStore } from '../load-balancers/load-balancer-selector.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -63,6 +64,7 @@ export type AuthRuntime = Readonly<{
   sourceRefreshStore: SourceRefreshStore
   mediaDownloadStore: MediaDownloadStore
   loadBalancerAdminStore: LoadBalancerAdminStore
+  loadBalancerSelectionStore: LoadBalancerSelectionStore
   pluginAdminStore: PluginAdminStore
   accountLifecycleStore: AccountLifecycleStore
   dashboardStore: DashboardAdminStore
@@ -312,6 +314,9 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     deleteLoadBalancer: async (id) => await currentLoadBalancerAdminStore().deleteLoadBalancer(id),
     updateStatus: async (id, status, updated) => await currentLoadBalancerAdminStore().updateStatus(id, status, updated)
   }
+  const lazyLoadBalancerSelectionStore: LoadBalancerSelectionStore = {
+    selectLoadBalancer: async (query) => await currentLoadBalancerAdminStore().selectLoadBalancer(query)
+  }
   const lazyPluginAdminStore: PluginAdminStore = {
     listPlugins: async (query) => await currentPluginAdminStore().listPlugins(query),
     listPluginRecords: async () => await currentPluginAdminStore().listPluginRecords(),
@@ -374,6 +379,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     sourceRefreshStore: lazySourceRefreshStore,
     mediaDownloadStore: lazyMediaDownloadStore,
     loadBalancerAdminStore: lazyLoadBalancerAdminStore,
+    loadBalancerSelectionStore: lazyLoadBalancerSelectionStore,
     pluginAdminStore: lazyPluginAdminStore,
     accountLifecycleStore: lazyAccountLifecycleStore,
     dashboardStore: lazyDashboardStore,

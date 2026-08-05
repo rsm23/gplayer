@@ -1,6 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import type { Database } from '../database/database.js'
 import type { LoadBalancerAdminRecord, LoadBalancerAdminStore, LoadBalancerListQuery, LoadBalancerListResult, LoadBalancerWrite } from './load-balancer-admin-service.js'
+import type { LoadBalancerSelectionQuery, LoadBalancerSelectionStore } from './load-balancer-selector.js'
 
 type LoadBalancerRow = RowDataPacket & Readonly<{
   id: number | string
@@ -24,7 +25,7 @@ const ORDER_COLUMNS = Object.freeze({
 })
 const SELECT_COLUMNS = '`id`, `name`, `link`, `connections`, `playbacks`, `status`, `public`, `created`, `updated`, `disallow_hosts`, `disallow_continent`'
 
-export class MySqlLoadBalancerAdminStore implements LoadBalancerAdminStore {
+export class MySqlLoadBalancerAdminStore implements LoadBalancerAdminStore, LoadBalancerSelectionStore {
   public constructor(private readonly database: Pick<Database, 'read' | 'write'>) {}
 
   public async listLoadBalancers(query: LoadBalancerListQuery): Promise<LoadBalancerListResult> {
@@ -70,6 +71,23 @@ export class MySqlLoadBalancerAdminStore implements LoadBalancerAdminStore {
   public async updateStatus(id: string, status: number, updated: number): Promise<boolean> {
     const result = await this.database.write<ResultSetHeader>('UPDATE `tb_loadbalancers` SET `status` = ?, `updated` = ? WHERE `id` = ?', [status, updated, id])
     return result.affectedRows > 0
+  }
+
+  public async selectLoadBalancer(query: LoadBalancerSelectionQuery): Promise<string | null> {
+    const orderBy = query.metric === 'connections' ? '`connections`' : '`playbacks`'
+    const exclude = query.excludeUrl === undefined ? '' : ' AND `link` <> ?'
+    const values = query.excludeUrl === undefined
+      ? [query.host, query.continent]
+      : [query.host, query.continent, query.excludeUrl]
+    const rows = await this.database.read<LoadBalancerRow[]>(
+      `SELECT ${SELECT_COLUMNS} FROM \`vw_loadbalancers\` WHERE \`status\` = 1` +
+      " AND JSON_CONTAINS(IF(JSON_VALID(`disallow_hosts`), `disallow_hosts`, '[]'), JSON_QUOTE(?)) = 0" +
+      " AND JSON_CONTAINS(IF(JSON_VALID(`disallow_continent`), `disallow_continent`, '[]'), JSON_QUOTE(?)) = 0" +
+      `${exclude} ORDER BY ${orderBy} ASC, \`id\` ASC LIMIT 1`,
+      values
+    )
+    const selected = rows[0]?.link
+    return typeof selected === 'string' && selected.trim() !== '' ? selected : null
   }
 }
 

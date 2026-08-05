@@ -59,6 +59,53 @@ describe('legacy player source API routes', () => {
     expect(resolve).not.toHaveBeenCalled()
   })
 
+  it('routes config and proxied media through the eligible least-connections delivery server', async () => {
+    await app.close()
+    const selectDeliveryBaseUrl = vi.fn(async () => new URL('https://edge.example/media/'))
+    resolve.mockResolvedValue({
+      ...mediaResult(),
+      upstream: {
+        host: 'youtube',
+        id: 'alternative-id',
+        userAgent: 'Provider Browser',
+        language: 'en;q=0.9'
+      }
+    })
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']), selectDeliveryBaseUrl },
+      settings: new SettingsAdminService({
+        getAll: async () => ({ select_active_connections: 'true' }),
+        upsertMany: async () => {}
+      })
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/master.m3u8' })
+    const configuration = await app.inject({ method: 'GET', url: `/api-config/${request.queryToken}?p=${request.passwordToken}` })
+    expect(decryptJson(configuration.body, request.password)).toMatchObject({ apiURL: 'https://edge.example/media/' })
+    expect(selectDeliveryBaseUrl).toHaveBeenNthCalledWith(1, {
+      clientIp: '127.0.0.1',
+      host: 'direct',
+      leastConnections: true
+    })
+
+    const source = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const decoded = decryptJson(source.body, request.password)
+    expect(decoded.embed_url).toBe(`https://player.example/e/?${request.queryToken}`)
+    expect(decoded.sources[0].file).toMatch(/^https:\/\/edge\.example\/hls\//)
+    expect(decoded.poster).toMatch(/^https:\/\/edge\.example\/poster\//)
+    expect(decoded.filmstrip).toMatch(/^https:\/\/edge\.example\/filmstrip\//)
+    expect(decoded.tracks[0].file).toMatch(/^https:\/\/edge\.example\/subtitle\//)
+    expect(selectDeliveryBaseUrl).toHaveBeenNthCalledWith(2, {
+      clientIp: '127.0.0.1',
+      host: 'youtube',
+      leastConnections: true
+    })
+  })
+
   it('applies the bounded plugin response-filter pipeline before encryption', async () => {
     await app.close()
     const filterResponse = vi.fn(async (response: unknown, query: Readonly<Record<string, unknown>>) => ({ ...(response as Record<string, unknown>), plugin_filter: query.route }))

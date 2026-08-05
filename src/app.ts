@@ -69,6 +69,7 @@ import { PluginMaintenanceWorker } from './plugins/plugin-maintenance-worker.js'
 import { PluginSyncClient } from './plugins/plugin-sync-client.js'
 import { SystemActiveConnectionCounter } from './background/active-connections.js'
 import { LoadBalancerAdminService } from './load-balancers/load-balancer-admin-service.js'
+import { LoadBalancerSelector } from './load-balancers/load-balancer-selector.js'
 import { PluginAdminService } from './plugins/plugin-admin-service.js'
 import { PluginExtensionRuntime } from './plugins/plugin-extension-runtime.js'
 import { NodemailerAccountMailer, type AccountMailer } from './email/smtp-mailer.js'
@@ -180,6 +181,9 @@ export async function buildApp(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb'),
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-ASN.mmdb')
   )
+  const defaultLoadBalancerSelector = dependencies.sourceApi === undefined
+    ? new LoadBalancerSelector(authRuntime.loadBalancerSelectionStore, geoIpDetailsLookup, config.baseUrl)
+    : undefined
   const statsWorkerRuntime = dependencies.statsWorker ?? new StatsWorker(authRuntime.statsWorkerStore, geoIpDetailsLookup)
   const viewCounterRuntime = dependencies.viewCounter ?? new ViewCounterService(authRuntime.viewCounterStore, geoIpDetailsLookup)
   const pluginsRoot = path.resolve(currentDirectory, '../plugins')
@@ -458,6 +462,11 @@ export async function buildApp(
     loadGeneralSettings,
     countryCodeLookup,
     supportedHosts,
+    ...(sourceApiRuntime.selectDeliveryBaseUrl !== undefined
+      ? { selectDeliveryBaseUrl: sourceApiRuntime.selectDeliveryBaseUrl }
+      : defaultLoadBalancerSelector === undefined
+        ? {}
+        : { selectDeliveryBaseUrl: async (input) => await defaultLoadBalancerSelector.select(input) }),
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
     capturePublicVideo: async (media, result) => {
       const settings = await loadPublicSettings()

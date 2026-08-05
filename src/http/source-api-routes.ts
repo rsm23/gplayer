@@ -20,6 +20,7 @@ import type { AdsSettings } from '../settings/settings-admin-service.js'
 import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
 import { loadRuntimeGeneralSettings, visitCounterRuntime, type GeneralSettingsLoader } from '../settings/general-runtime.js'
 import type { GeneralSettings } from '../settings/settings-admin-service.js'
+import type { DeliveryBaseUrlSelector } from '../load-balancers/load-balancer-selector.js'
 
 const MAX_API_TOKEN_LENGTH = 65_536
 const SOURCE_TOKEN_SEPARATOR = '-,'
@@ -52,6 +53,7 @@ export type SourceApiRouteOptions = Readonly<{
   filterResponse?: (response: unknown, query: Readonly<Record<string, unknown>>) => Promise<unknown>
   capturePublicVideo?: (media: PlayerMediaQuery, result: MediaResult) => Promise<unknown>
   providerContexts?: ProviderStreamContextRegistry
+  selectDeliveryBaseUrl?: DeliveryBaseUrlSelector
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -87,9 +89,14 @@ export async function registerSourceApiRoutes(
     ])
     if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(resolved, misc.disable_host)) return plaintextFailure(reply)
     const configuredMedia = withoutDisabledAlternatives(resolved, misc.disable_host)
+    const deliveryBaseUrl = await selectedDeliveryBaseUrl(config, options.selectDeliveryBaseUrl, {
+      clientIp: request.ip,
+      host: configuredMedia?.host ?? '',
+      leastConnections: general.select_active_connections === true
+    })
     const output = isDownloadConfigRequest(request)
-      ? createDownloadConfiguration(config, configuredMedia, ads, general)
-      : createEmbedConfiguration(config, configuredMedia, request.headers['user-agent'] ?? '', ads, player, general)
+      ? createDownloadConfiguration(deliveryBaseUrl, configuredMedia, ads, general)
+      : createEmbedConfiguration(deliveryBaseUrl, configuredMedia, request.headers['user-agent'] ?? '', ads, player, general)
     const filtered = await filterResponse(options.filterResponse, output, Object.freeze({ route: 'api-config', media: configuredMedia }))
 
     return reply
@@ -129,7 +136,15 @@ export async function registerSourceApiRoutes(
     await options.capturePublicVideo?.(playableMedia, result).catch(() => undefined)
     result = Object.freeze({ ...result, sources: filterSourcesByResolution(result.sources, misc.disable_resolution) })
 
-    const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    const [player, general] = await Promise.all([
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
+    ])
+    const deliveryBaseUrl = await selectedDeliveryBaseUrl(config, options.selectDeliveryBaseUrl, {
+      clientIp: request.ip,
+      host: result.upstream?.host ?? playableMedia.host ?? '',
+      leastConnections: general.select_active_connections === true
+    })
     const output = createSourceResponse(
       config,
       security,
@@ -138,7 +153,8 @@ export async function registerSourceApiRoutes(
       result,
       player,
       requestContext,
-      options.providerContexts
+      options.providerContexts,
+      deliveryBaseUrl
     )
     const filtered = await filterResponse(options.filterResponse, output, Object.freeze({ route: 'api', media: playableMedia }))
     return reply
@@ -282,7 +298,7 @@ function isDownloadConfigRequest(request: FastifyRequest): boolean {
 }
 
 function createEmbedConfiguration(
-  config: AppConfig,
+  deliveryBaseUrl: URL,
   media: PlayerMediaQuery | null,
   userAgent: string,
   ads: AdsSettings,
@@ -291,7 +307,7 @@ function createEmbedConfiguration(
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
-    apiURL: valid ? config.baseUrl.toString() : '',
+    apiURL: valid ? deliveryBaseUrl.toString() : '',
     defaultSubtitle: languageEntry(playerSettings.default_subtitle),
     defaultAudio: languageEntry(playerSettings.default_audio),
     embedOnly: legacyBoolean(media?.onlylink),
@@ -345,14 +361,14 @@ function createEmbedConfiguration(
 }
 
 function createDownloadConfiguration(
-  config: AppConfig,
+  deliveryBaseUrl: URL,
   media: PlayerMediaQuery | null,
   ads: AdsSettings,
   generalSettings: GeneralSettings
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
-    apiURL: valid ? config.baseUrl.toString() : '',
+    apiURL: valid ? deliveryBaseUrl.toString() : '',
     message: valid ? '' : 'Bad Request',
     hosts: mediaHosts(media),
     disableDirectAds: ads.disable_direct_ads,
@@ -370,7 +386,8 @@ function createSourceResponse(
   result: MediaResult,
   playerSettings: PlayerSettings,
   requestContext: SourceApiRequestContext,
-  providerContexts: ProviderStreamContextRegistry | undefined
+  providerContexts: ProviderStreamContextRegistry | undefined,
+  deliveryBaseUrl: URL
 ): Readonly<Record<string, unknown>> {
   const canonicalToken = queryToken.length > 0
     ? queryToken
@@ -407,7 +424,7 @@ function createSourceResponse(
   const poster = proxyPoster(
     posterSource,
     security,
-    config.baseUrl,
+    deliveryBaseUrl,
     posterSource !== '' && posterSource === result.image ? contextToken : undefined
   )
 
@@ -425,9 +442,9 @@ function createSourceResponse(
     download_url: absolutePlayerUrl(config, playerSettings.slug_download, canonicalToken),
     title,
     poster,
-    filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, config.baseUrl, contextToken),
-    sources: result.sources.flatMap((source) => proxySource(source, security, identity, config.baseUrl)),
-    tracks: result.tracks.flatMap((track) => proxyTrack(track, security, config.baseUrl, contextToken))
+    filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, deliveryBaseUrl, contextToken),
+    sources: result.sources.flatMap((source) => proxySource(source, security, identity, config.baseUrl, deliveryBaseUrl)),
+    tracks: result.tracks.flatMap((track) => proxyTrack(track, security, deliveryBaseUrl, contextToken))
   }
 }
 
@@ -441,11 +458,29 @@ function sourceTargets(source: MediaSource): URL[] {
   }
 }
 
+async function selectedDeliveryBaseUrl(
+  config: AppConfig,
+  selector: DeliveryBaseUrlSelector | undefined,
+  input: Parameters<DeliveryBaseUrlSelector>[0]
+): Promise<URL> {
+  if (selector === undefined) return new URL(config.baseUrl)
+  try {
+    const selected = new URL(await selector(input))
+    if ((selected.protocol !== 'http:' && selected.protocol !== 'https:') || selected.username !== '' || selected.password !== '') return new URL(config.baseUrl)
+    if (selected.hostname === '' || selected.search !== '' || selected.hash !== '') return new URL(config.baseUrl)
+    selected.pathname = `${selected.pathname.replace(/\/+$/, '')}/`
+    return selected
+  } catch {
+    return new URL(config.baseUrl)
+  }
+}
+
 function proxySource(
   source: MediaSource,
   security: Security,
   identity: Readonly<{ host: string; id: string }>,
-  baseUrl: URL
+  applicationBaseUrl: URL,
+  deliveryBaseUrl: URL
 ): readonly MediaSource[] {
   const file = typeof source.file === 'string' ? source.file : ''
   if (file.length === 0) return []
@@ -457,14 +492,14 @@ function proxySource(
     return [publicSource]
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') return []
-  if (source.proxy === false && target.origin === baseUrl.origin && target.pathname.startsWith('/gdrive-media/')) {
+  if (source.proxy === false && target.origin === applicationBaseUrl.origin && target.pathname.startsWith('/gdrive-media/')) {
     return [publicSource]
   }
 
   const route = streamingRoute(source, target)
   const label = typeof source.label === 'string' ? source.label : 'Original'
   const proxyPath = createStreamingProxyPath(route, target, security, { ...identity, label })
-  return [{ ...publicSource, file: new URL(proxyPath, baseUrl).toString() }]
+  return [{ ...publicSource, file: new URL(proxyPath, deliveryBaseUrl).toString() }]
 }
 
 function proxyTrack(track: MediaTrack, security: Security, baseUrl: URL, contextToken?: string): readonly MediaTrack[] {
