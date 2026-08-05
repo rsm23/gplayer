@@ -41,6 +41,10 @@ export type MiscSettings = Readonly<{
 }>
 
 export type MiscSettingEntry = Readonly<{ key: string; value: string }>
+export type RuntimeProxySettings = Readonly<{
+  disabled: boolean
+  proxies: readonly ProxyDefinition[]
+}>
 export type MiscSettingsMutation =
   | Readonly<{ status: 'ok'; entries: readonly MiscSettingEntry[] }>
   | Readonly<{ status: 'invalid'; message: string }>
@@ -73,6 +77,21 @@ export function miscSettings(
     banned_countries: storedJsonSelection(raw.banned_countries, COUNTRY_CODES),
     block_vpn: raw.block_vpn === 'true',
     block_vpn_list: storedNormalizedList(raw.block_vpn_list, normalizeVpnPrefix, MAX_LIST_ITEMS)
+  })
+}
+
+export function runtimeProxySettings(raw: Readonly<Record<string, string>>): RuntimeProxySettings {
+  const proxies: ProxyDefinition[] = []
+  const seen = new Set<string>()
+  for (const value of normalizedStoredLines(raw.proxy_list ?? '', MAX_PROXY_ITEMS)) {
+    const proxy = parseProxyDefinition(value)
+    if (proxy === null || seen.has(proxy.format)) continue
+    seen.add(proxy.format)
+    proxies.push(proxy)
+  }
+  return Object.freeze({
+    disabled: raw.disable_proxy === 'true',
+    proxies: Object.freeze(proxies)
   })
 }
 

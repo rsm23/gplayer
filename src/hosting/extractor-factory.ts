@@ -55,12 +55,14 @@ export class ExtractorFactory implements HostingExtractorFactory {
     directProbe?: DirectProbe
     providerHttpClient?: ProviderHttpClient
     providerHttpClientForHost?: (host: string) => ProviderHttpClient
+    providerProxyHttpClientForHost?: (host: string) => ProviderHttpClient | undefined
     dailymotion?: DailymotionExtractorOptions
     dood?: DoodExtractorOptions
     amazon?: AmazonExtractorOptions
     filemoon?: FilemoonExtractorOptions
     youtube?: YoutubeClient
     youtubeCookie?: () => Promise<string>
+    youtubeFetch?: typeof fetch
     gdrive?: Readonly<{
       privateSources?: DrivePrivateSourceResolver
       loadSettings?: DriveRuntimeSettingsLoader
@@ -68,6 +70,7 @@ export class ExtractorFactory implements HostingExtractorFactory {
   }> = {}) {
     const providerHttpClient = options.providerHttpClient ?? new RemoteProviderHttpClient()
     const clientFor = (host: string): ProviderHttpClient => options.providerHttpClientForHost?.(host) ?? providerHttpClient
+    const proxyClientFor = (host: string): ProviderHttpClient | undefined => options.providerProxyHttpClientForHost?.(host)
     this.register('aparat', (id) => new AparatExtractor(id, clientFor('aparat')))
     this.register('amazon', (id) => new AmazonExtractor(id, clientFor('amazon'), options.amazon ?? {}))
     this.register('archive', (id) => new ArchiveExtractor(id, clientFor('archive')))
@@ -79,7 +82,7 @@ export class ExtractorFactory implements HostingExtractorFactory {
     this.register('facebook', (id) => new FacebookExtractor(id, clientFor('facebook')))
     this.register('pixeldrain', (id) => new PixeldrainExtractor(id, clientFor('pixeldrain')))
     this.register('rumble', (id) => new RumbleExtractor(id, clientFor('rumble')))
-    this.register('sibnet', (id) => new SibnetExtractor(id, clientFor('sibnet')))
+    this.register('sibnet', (id) => new SibnetExtractor(id, clientFor('sibnet'), proxyClientFor('sibnet')))
     this.register('soundcloud', (id) => new SoundcloudExtractor(id, clientFor('soundcloud')))
     this.register('streamable', (id) => new StreamableExtractor(id, clientFor('streamable')))
     this.register('streamtape', (id) => new StreamtapeExtractor(id, clientFor('streamtape')))
@@ -94,7 +97,7 @@ export class ExtractorFactory implements HostingExtractorFactory {
     this.register('gdrive', (id) => new GdriveExtractor(id, clientFor('gdrive'), options.gdrive ?? {}))
     this.register('gofile', (id) => new GofileExtractor(id, clientFor('gofile')))
     this.register('googlephotos', (id) => new GooglePhotosExtractor(id, clientFor('googlephotos')))
-    this.register('hxfile', (id) => new HxFileExtractor(id, clientFor('hxfile')))
+    this.register('hxfile', (id) => new HxFileExtractor(id, clientFor('hxfile'), proxyClientFor('hxfile')))
     this.register('mediafire', (id) => new MediaFireExtractor(id, clientFor('mediafire')))
     this.register('mstream', (id) => new MStreamExtractor(id, clientFor('mstream')))
     this.register('mymailru', (id) => new MyMailRuExtractor(id, clientFor('mymailru')))
@@ -106,10 +109,10 @@ export class ExtractorFactory implements HostingExtractorFactory {
     this.register('yadisk', (id) => new YandexDiskExtractor(id, clientFor('yadisk')))
     this.register('turboviplay', (id) => new TurboVipPlayExtractor(id, clientFor('turboviplay')))
     this.register('vimeo', (id) => new VimeoExtractor(id, clientFor('vimeo')))
-    this.register('vk', (id) => new VkExtractor(id, clientFor('vk')))
+    this.register('vk', (id) => new VkExtractor(id, clientFor('vk'), proxyClientFor('vk')))
     this.register('voe', (id) => new VoeExtractor(id, clientFor('voe')))
     this.register('wetransfer', (id) => new WetransferExtractor(id, clientFor('wetransfer')))
-    const youtubeClient = options.youtube ?? new YoutubeInnertubeClient(options.youtubeCookie)
+    const youtubeClient = options.youtube ?? new YoutubeInnertubeClient(options.youtubeCookie, options.youtubeFetch)
     this.register('youtube', (id) => new YoutubeExtractor(id, youtubeClient))
     for (const [host, config] of Object.entries(xFileSharingAdapters)) {
       this.register(host, (id) => new XFileSharingExtractor(id, clientFor(host), config))

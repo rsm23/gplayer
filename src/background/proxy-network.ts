@@ -1,8 +1,9 @@
 import { lookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
-import { connect as netConnect, isIP, type Socket } from 'node:net'
-import { connect as tlsConnect, type TLSSocket } from 'node:tls'
+import type { Socket } from 'node:net'
+import type { TLSSocket } from 'node:tls'
 import { RemoteStream } from '../stream/remote-stream.js'
+import { openProxyTargetSocket } from '../stream/proxy-tunnel.js'
 import type { ProxyDefinition } from '../settings/misc-settings.js'
 import type { FreeProxySource, ProxyProbe } from './proxy-maintenance-worker.js'
 
@@ -40,101 +41,18 @@ export class NodeProxyProbe implements ProxyProbe {
     const timeoutError = new Error(`Proxy check timed out after ${timeoutMilliseconds}ms`)
     const timer = setTimeout(() => socket?.destroy(timeoutError), timeoutMilliseconds)
     try {
-      socket = await connectProxy(proxy, timeoutMilliseconds)
-      if (proxy.type === 'socks4' || proxy.type === 'socks4a') await openSocks4Tunnel(socket, proxy, target)
-      else if (proxy.type === 'socks5') await openSocks5Tunnel(socket, proxy, target)
-      else await openHttpTunnel(socket, proxy, target)
-      const secure = await secureTarget(socket, target)
-      socket = secure
-      return await requestTarget(secure, target)
+      const addresses = await lookup(target.hostname, { all: true, verbatim: true })
+      const selected = proxy.type === 'socks4' || proxy.type === 'socks4a'
+        ? addresses.find((address) => address.family === 4)
+        : addresses[0]
+      if (selected === undefined || (selected.family !== 4 && selected.family !== 6)) throw new Error('Proxy check target could not be resolved')
+      socket = await openProxyTargetSocket(proxy, target, { address: selected.address, family: selected.family }, timeoutMilliseconds)
+      return await requestTarget(socket as TLSSocket, target)
     } finally {
       clearTimeout(timer)
       socket?.destroy()
     }
   }
-}
-
-async function connectProxy(proxy: ProxyDefinition, timeoutMilliseconds: number): Promise<Socket | TLSSocket> {
-  const socket = proxy.type === 'https'
-    ? tlsConnect({ host: proxy.hostname, port: proxy.port, rejectUnauthorized: true })
-    : netConnect({ host: proxy.hostname, port: proxy.port })
-  const event = proxy.type === 'https' ? 'secureConnect' : 'connect'
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => socket.destroy(new Error(`Proxy connection timed out after ${timeoutMilliseconds}ms`)), timeoutMilliseconds)
-    socket.once(event, () => { clearTimeout(timeout); resolve() })
-    socket.once('error', (error) => { clearTimeout(timeout); reject(error) })
-  })
-  return socket
-}
-
-async function openHttpTunnel(socket: Socket | TLSSocket, proxy: ProxyDefinition, target: URL): Promise<void> {
-  const authority = `${target.hostname}:${target.port || '443'}`
-  const version = proxy.type === 'http1.0' ? '1.0' : '1.1'
-  const authentication = proxy.username === '' ? '' : `Proxy-Authorization: Basic ${Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64')}\r\n`
-  socket.write(`CONNECT ${authority} HTTP/${version}\r\nHost: ${authority}\r\n${authentication}Connection: keep-alive\r\n\r\n`)
-  const header = await readSocketUntil(socket, '\r\n\r\n', 16 * 1_024)
-  const status = Number(/^HTTP\/\d(?:\.\d)?\s+(\d{3})/i.exec(header)?.[1] ?? 0)
-  if (status !== 200) throw new Error(`HTTP proxy rejected CONNECT with status ${status || 'unknown'}`)
-}
-
-async function openSocks4Tunnel(socket: Socket | TLSSocket, proxy: ProxyDefinition, target: URL): Promise<void> {
-  const port = Number(target.port || 443)
-  const hostname = target.hostname
-  let address: Buffer
-  let suffix = Buffer.alloc(0)
-  if (proxy.type === 'socks4a') {
-    address = Buffer.from([0, 0, 0, 1])
-    suffix = Buffer.from(`${hostname}\0`, 'ascii')
-  } else {
-    const resolved = isIP(hostname) === 4 ? hostname : (await lookup(hostname, { family: 4 })).address
-    address = Buffer.from(resolved.split('.').map(Number))
-  }
-  const user = Buffer.from(proxy.username, 'utf8')
-  socket.write(Buffer.concat([
-    Buffer.from([4, 1, port >>> 8, port & 0xff]),
-    address,
-    user,
-    Buffer.from([0]),
-    suffix
-  ]))
-  const reply = await readSocketBytes(socket, 8)
-  if (reply[1] !== 90) throw new Error(`SOCKS4 proxy rejected connection with code ${reply[1] ?? 'unknown'}`)
-}
-
-async function openSocks5Tunnel(socket: Socket | TLSSocket, proxy: ProxyDefinition, target: URL): Promise<void> {
-  const hasCredentials = proxy.username !== ''
-  socket.write(hasCredentials ? Buffer.from([5, 2, 0, 2]) : Buffer.from([5, 1, 0]))
-  const greeting = await readSocketBytes(socket, 2)
-  if (greeting[0] !== 5 || greeting[1] === 255) throw new Error('SOCKS5 proxy did not accept an authentication method')
-  if (greeting[1] === 2) {
-    const username = Buffer.from(proxy.username, 'utf8')
-    const password = Buffer.from(proxy.password, 'utf8')
-    if (username.length === 0 || username.length > 255 || password.length > 255) throw new Error('SOCKS5 credentials exceed protocol limits')
-    socket.write(Buffer.concat([Buffer.from([1, username.length]), username, Buffer.from([password.length]), password]))
-    const authenticated = await readSocketBytes(socket, 2)
-    if (authenticated[1] !== 0) throw new Error('SOCKS5 proxy authentication failed')
-  } else if (greeting[1] !== 0) {
-    throw new Error(`SOCKS5 proxy selected unsupported authentication method ${greeting[1] ?? 'unknown'}`)
-  }
-
-  const hostname = Buffer.from(target.hostname, 'ascii')
-  if (hostname.length === 0 || hostname.length > 255) throw new Error('SOCKS5 target hostname exceeds protocol limits')
-  const port = Number(target.port || 443)
-  socket.write(Buffer.concat([Buffer.from([5, 1, 0, 3, hostname.length]), hostname, Buffer.from([port >>> 8, port & 0xff])]))
-  const reply = await readSocketBytes(socket, 4)
-  if (reply[0] !== 5 || reply[1] !== 0) throw new Error(`SOCKS5 proxy rejected connection with code ${reply[1] ?? 'unknown'}`)
-  const addressLength = reply[3] === 1 ? 4 : reply[3] === 4 ? 16 : reply[3] === 3 ? (await readSocketBytes(socket, 1))[0] ?? 0 : 0
-  if (addressLength === 0) throw new Error('SOCKS5 proxy returned an invalid address type')
-  await readSocketBytes(socket, addressLength + 2)
-}
-
-async function secureTarget(socket: Socket | TLSSocket, target: URL): Promise<TLSSocket> {
-  const secure = tlsConnect({ socket, servername: target.hostname, rejectUnauthorized: true })
-  await new Promise<void>((resolve, reject) => {
-    secure.once('secureConnect', resolve)
-    secure.once('error', reject)
-  })
-  return secure
 }
 
 async function requestTarget(socket: TLSSocket, target: URL): Promise<string> {
@@ -159,64 +77,6 @@ async function requestTarget(socket: TLSSocket, target: URL): Promise<string> {
       response.once('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
     })
     request.end()
-  })
-}
-
-async function readSocketBytes(socket: Socket | TLSSocket, length: number): Promise<Buffer> {
-  return await new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let size = 0
-    const onData = (chunk: Buffer): void => {
-      chunks.push(chunk)
-      size += chunk.length
-      if (size < length) return
-      cleanup()
-      const combined = Buffer.concat(chunks)
-      const remainder = combined.subarray(length)
-      if (remainder.length > 0) socket.unshift(remainder)
-      resolve(combined.subarray(0, length))
-    }
-    const onError = (error: Error): void => { cleanup(); reject(error) }
-    const onEnd = (): void => { cleanup(); reject(new Error('Proxy closed the connection unexpectedly')) }
-    const cleanup = (): void => {
-      socket.off('data', onData)
-      socket.off('error', onError)
-      socket.off('end', onEnd)
-    }
-    socket.on('data', onData)
-    socket.once('error', onError)
-    socket.once('end', onEnd)
-  })
-}
-
-async function readSocketUntil(socket: Socket | TLSSocket, marker: string, maximum: number): Promise<string> {
-  return await new Promise<string>((resolve, reject) => {
-    let content = Buffer.alloc(0)
-    const onData = (chunk: Buffer): void => {
-      content = Buffer.concat([content, chunk])
-      if (content.length > maximum) {
-        cleanup()
-        reject(new Error('Proxy response header exceeded the size limit'))
-        return
-      }
-      const index = content.indexOf(marker)
-      if (index < 0) return
-      cleanup()
-      const end = index + Buffer.byteLength(marker)
-      const remainder = content.subarray(end)
-      if (remainder.length > 0) socket.unshift(remainder)
-      resolve(content.subarray(0, end).toString('latin1'))
-    }
-    const onError = (error: Error): void => { cleanup(); reject(error) }
-    const onEnd = (): void => { cleanup(); reject(new Error('Proxy closed the connection unexpectedly')) }
-    const cleanup = (): void => {
-      socket.off('data', onData)
-      socket.off('error', onError)
-      socket.off('end', onEnd)
-    }
-    socket.on('data', onData)
-    socket.once('error', onError)
-    socket.once('end', onEnd)
   })
 }
 

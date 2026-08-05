@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { evaluateYoutubePlayerScript, YoutubeExtractor, type YoutubeClient, type YoutubeVideo } from '../src/hosting/youtube.js'
+import { createYoutubeProxyFetch, evaluateYoutubePlayerScript, YoutubeExtractor, type YoutubeClient, type YoutubeVideo } from '../src/hosting/youtube.js'
+import { parseProxyDefinition } from '../src/settings/misc-settings.js'
 
 function fixtureVideo(overrides: Partial<YoutubeVideo> = {}): YoutubeVideo {
   return {
@@ -76,5 +77,64 @@ describe('YouTube extractor', () => {
       output: 'return Function(\'return process\')();',
       exported: []
     }, {})).toThrow(/Code generation from strings disallowed/)
+  })
+
+  it('retries non-404 YouTube failures through the server proxy without cross-origin credentials', async () => {
+    const proxy = parseProxyDefinition('203.0.113.5:1080,user:secret,socks5')
+    if (proxy === null) throw new Error('Expected proxy fixture')
+    const directFetch = vi.fn(async () => new Response('direct unavailable', { status: 503 }))
+    const open = vi.fn()
+      .mockRejectedValueOnce(new Error('temporary proxy failure'))
+      .mockResolvedValueOnce(Object.freeze({
+        url: new URL('https://www.youtube.com/youtubei/v1/player'),
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: new Response('{"videoDetails":{"videoId":"abcdefghijk"}}').body
+      }))
+    const proxyFetch = createYoutubeProxyFetch(
+      async () => Object.freeze({ disabled: false, proxies: Object.freeze([proxy]) }),
+      { open },
+      directFetch as typeof fetch,
+      () => 0
+    )
+    const response = await proxyFetch('https://www.youtube.com/youtubei/v1/player', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer server-token',
+        cookie: 'SAPISID=server-cookie',
+        'content-type': 'application/json',
+        'x-youtube-client-version': 'fixture'
+      },
+      body: '{"videoId":"abcdefghijk"}'
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ videoDetails: { videoId: 'abcdefghijk' } })
+    expect(directFetch).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(open.mock.calls.map((call) => call[0].proxy)).toEqual([proxy, proxy])
+    expect(Buffer.from(open.mock.calls[0]?.[0].body).toString()).toContain('abcdefghijk')
+    const targetHeaders = new Headers(await open.mock.calls[0]?.[0].headersForTarget(new URL('https://www.youtube.com/next')))
+    expect(targetHeaders.get('cookie')).toBe('SAPISID=server-cookie')
+    const redirectedHeaders = new Headers(await open.mock.calls[0]?.[0].headersForTarget(new URL('https://youtubei.googleapis.com/youtubei/v1/player')))
+    expect(redirectedHeaders.get('authorization')).toBeNull()
+    expect(redirectedHeaders.get('cookie')).toBeNull()
+    expect(redirectedHeaders.get('x-youtube-client-version')).toBe('fixture')
+  })
+
+  it('does not proxy YouTube 404 responses or requests outside fixed provider origins', async () => {
+    const directFetch = vi.fn(async () => new Response('missing', { status: 404 }))
+    const open = vi.fn()
+    const proxyFetch = createYoutubeProxyFetch(
+      async () => Object.freeze({ disabled: false, proxies: Object.freeze([]) }),
+      { open },
+      directFetch as typeof fetch
+    )
+
+    await expect(proxyFetch('https://www.youtube.com/watch?v=abcdefghijk')).resolves.toEqual(expect.objectContaining({ status: 404 }))
+    expect(open).not.toHaveBeenCalled()
+    await expect(proxyFetch('https://attacker.example/video')).rejects.toThrow(/rejected host/)
+    expect(directFetch).toHaveBeenCalledTimes(1)
   })
 })

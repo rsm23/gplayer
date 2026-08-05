@@ -3,6 +3,8 @@ import { lookup } from 'node:dns/promises'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { Readable } from 'node:stream'
+import type { ProxyDefinition } from '../settings/misc-settings.js'
+import { openProxyTargetSocket } from './proxy-tunnel.js'
 
 const requestHeaderAllowlist = new Set([
   'accept',
@@ -62,6 +64,9 @@ export type RemoteStreamRequest = Readonly<{
   includeResponseHeaders?: readonly 'set-cookie'[]
   /** Server-controlled headers resolved independently for every validated redirect target. */
   headersForTarget?: (target: URL) => RequestInit['headers'] | Promise<RequestInit['headers']>
+  /** Server-controlled upstream proxy. This value is never derived from a public request. */
+  proxy?: ProxyDefinition
+  proxyTimeoutMilliseconds?: number
 }>
 
 export type RemoteStreamResponse = Readonly<{
@@ -97,22 +102,28 @@ type ResolvedTarget = Readonly<{
   family: 4 | 6
 }>
 
-async function resolveAllowedTarget(url: URL, allowPrivateNetworks: boolean): Promise<ResolvedTarget> {
+async function resolveAllowedTarget(url: URL, allowPrivateNetworks: boolean, requireIpv4 = false): Promise<ResolvedTarget> {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`Unsupported stream protocol: ${url.protocol}`)
   if (url.username || url.password) throw new Error('Stream URLs must not contain credentials')
 
-  const ipVersion = isIP(url.hostname)
+  const hostname = normalizedUrlHostname(url)
+  const ipVersion = isIP(hostname)
   const addresses = ipVersion > 0
-    ? [{ address: url.hostname, family: ipVersion }]
-    : await lookup(url.hostname, { all: true, verbatim: true })
+    ? [{ address: hostname, family: ipVersion }]
+    : await lookup(hostname, { all: true, verbatim: true })
   if (addresses.length === 0 || (!allowPrivateNetworks && addresses.some(({ address }) => isPrivateAddress(address)))) {
     throw new Error(`Private or unresolved stream target is not allowed: ${url.hostname}`)
   }
-  const selected = addresses[0]
+  const selected = requireIpv4 ? addresses.find(({ family }) => family === 4) : addresses[0]
   if (selected === undefined || (selected.family !== 4 && selected.family !== 6)) {
     throw new Error(`Stream target did not resolve to IPv4 or IPv6: ${url.hostname}`)
   }
   return { address: selected.address, family: selected.family }
+}
+
+function normalizedUrlHostname(url: URL): string {
+  const hostname = url.hostname
+  return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
 }
 
 function filteredRequestHeaders(input: RequestInit['headers']): Headers {
@@ -150,7 +161,11 @@ export class RemoteStream {
     if (request.preserveRedirectCookies === true) addCookieHeader(redirectCookies, baseHeaders.get('cookie') ?? '')
 
     for (let redirectCount = 0; redirectCount <= maximumRedirects; redirectCount += 1) {
-      const resolved = await resolveAllowedTarget(target, request.allowPrivateNetworks ?? false)
+      const resolved = await resolveAllowedTarget(
+        target,
+        request.allowPrivateNetworks ?? false,
+        request.proxy?.type === 'socks4' || request.proxy?.type === 'socks4a'
+      )
       const headers = new Headers(baseHeaders)
       if (request.headersForTarget !== undefined) mergeTrustedRequestHeaders(headers, await request.headersForTarget(new URL(target)))
       if (request.preserveRedirectCookies === true) {
@@ -160,8 +175,9 @@ export class RemoteStream {
       if (method !== 'GET' && method !== 'HEAD' && body !== undefined) {
         headers.set('content-length', String(typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength))
       }
+      if (this.fetchImplementation !== undefined && request.proxy !== undefined) throw new Error('Injected fetch transports cannot use a server proxy')
       const response = this.fetchImplementation === undefined
-        ? await openPinnedConnection(target, method, headers, resolved, body, request.signal)
+        ? await openPinnedConnection(target, method, headers, resolved, body, request.signal, request.proxy, request.proxyTimeoutMilliseconds)
         : await this.fetchImplementation(target, {
             method,
             headers,
@@ -253,13 +269,18 @@ async function openPinnedConnection(
   headers: Headers,
   resolved: ResolvedTarget,
   body?: string | Uint8Array,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  proxy?: ProxyDefinition,
+  proxyTimeoutMilliseconds = 15_000
 ): Promise<Readonly<{
   status: number
   statusText: string
   headers: Headers
   body: ReadableStream<Uint8Array> | null
 }>> {
+  if (proxy !== undefined) {
+    return await openProxiedConnection(target, method, headers, resolved, proxy, proxyTimeoutMilliseconds, body, signal)
+  }
   return await new Promise((resolve, reject) => {
     const requestImplementation = target.protocol === 'https:' ? httpsRequest : httpRequest
     const pinnedLookup: LookupFunction = (_hostname, lookupOptions, callback) => {
@@ -275,14 +296,74 @@ async function openPinnedConnection(
     const abort = (): void => {
       upstream.destroy(signal?.reason instanceof Error ? signal.reason : new Error('Stream request aborted'))
     }
+    const cleanup = (): void => signal?.removeEventListener('abort', abort)
     if (signal?.aborted === true) {
       abort()
       return
     }
     signal?.addEventListener('abort', abort, { once: true })
 
-    upstream.once('error', reject)
+    upstream.once('error', (error) => { cleanup(); reject(error) })
     upstream.once('response', (response) => {
+      response.once('end', cleanup)
+      response.once('error', cleanup)
+      response.once('close', cleanup)
+      resolve({
+        status: response.statusCode ?? 502,
+        statusText: response.statusMessage ?? '',
+        headers: nodeResponseHeaders(response),
+        body: method === 'HEAD' ? null : Readable.toWeb(response) as ReadableStream<Uint8Array>
+      })
+    })
+    upstream.end(method !== 'GET' && method !== 'HEAD' ? body : undefined)
+  })
+}
+
+async function openProxiedConnection(
+  target: URL,
+  method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE',
+  headers: Headers,
+  resolved: ResolvedTarget,
+  proxy: ProxyDefinition,
+  timeoutMilliseconds: number,
+  body?: string | Uint8Array,
+  signal?: AbortSignal
+): Promise<Readonly<{
+  status: number
+  statusText: string
+  headers: Headers
+  body: ReadableStream<Uint8Array> | null
+}>> {
+  const socket = await openProxyTargetSocket(proxy, target, resolved, timeoutMilliseconds, signal)
+  return await new Promise((resolve, reject) => {
+    const requestImplementation = target.protocol === 'https:' ? httpsRequest : httpRequest
+    const upstream = requestImplementation(target, {
+      method,
+      headers: Object.fromEntries(headers),
+      agent: false,
+      createConnection: () => socket
+    })
+    const abort = (): void => {
+      upstream.destroy(signal?.reason instanceof Error ? signal.reason : new Error('Stream request aborted'))
+      socket.destroy()
+    }
+    const cleanup = (): void => {
+      signal?.removeEventListener('abort', abort)
+      socket.destroy()
+    }
+    if (signal?.aborted === true) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    upstream.once('error', (error) => {
+      cleanup()
+      reject(error)
+    })
+    upstream.once('response', (response) => {
+      response.once('end', cleanup)
+      response.once('error', cleanup)
+      response.once('close', cleanup)
       resolve({
         status: response.statusCode ?? 502,
         statusText: response.statusMessage ?? '',

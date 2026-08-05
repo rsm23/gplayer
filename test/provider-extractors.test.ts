@@ -508,6 +508,25 @@ describe('recoverable provider adapters', () => {
     ])).getSources()).resolves.toEqual([])
   })
 
+  it('retries a non-404 VK transport failure through the configured proxy path', async () => {
+    const payload = JSON.stringify({ payload: [0, [{ player: { params: [{ url720: 'https://vkvd.test/720.mp4' }] } }]] })
+    const direct = new FixtureHttpClient([{ ...response('unavailable', new Headers(), 'https://vk.com/al_video.php'), status: 503 }])
+    const proxy = new FixtureHttpClient([response(payload, new Headers(), 'https://vk.com/al_video.php')])
+    const extractor = new VkExtractor('-1_2', direct, proxy)
+
+    await expect(extractor.getSources()).resolves.toEqual([
+      { file: 'https://vkvd.test/720.mp4', type: 'video/mp4', label: '720p' }
+    ])
+    expect(direct.methods).toEqual(['POST'])
+    expect(proxy.methods).toEqual(['POST'])
+
+    const notFoundProxy = new FixtureHttpClient([])
+    await expect(new VkExtractor('-1_2', new FixtureHttpClient([
+      { ...response('missing', new Headers(), 'https://vk.com/al_video.php'), status: 404 }
+    ]), notFoundProxy).getSources()).resolves.toEqual([])
+    expect(notFoundProxy.requests).toEqual([])
+  })
+
   it('ports MStream SharePoint downloads, names, transformed posters, and cookie-aware loading', async () => {
     const html = `<script>window.item = {"name":"SharePoint fixture.mp4",
       "downloadUrl":"https:\\/\\/tenant.sharepoint.com\\/personal\\/media.mp4?download=1\\u0026token=fixture",
@@ -751,6 +770,18 @@ describe('recoverable provider adapters', () => {
       response('<script>player.src([{src: "javascript:alert(1)"}]);</script>')
     ]))
     await expect(extractor.getSources()).resolves.toEqual([])
+  })
+
+  it('retries an empty Sibnet result through the configured proxy path', async () => {
+    const direct = new FixtureHttpClient([response('<html>provider challenge</html>')])
+    const proxy = new FixtureHttpClient([response('<script>player.src([{src: "/videos/proxied.mp4"}]);</script>')])
+    const extractor = new SibnetExtractor('12345', direct, proxy)
+
+    await expect(extractor.getSources()).resolves.toEqual([
+      { file: 'https://video.sibnet.ru/videos/proxied.mp4', type: 'video/mp4', label: 'Original' }
+    ])
+    expect(direct.requests).toHaveLength(1)
+    expect(proxy.requests).toHaveLength(1)
   })
 
   it('ports the Gofile account, website-token, bootstrap, and content protocol', async () => {
@@ -1669,6 +1700,15 @@ describe('recoverable provider adapters', () => {
       'https://hxfile.co/embed-fixtureid123.html',
       'https://hxfile.co/fixtureid123'
     ])
+
+    const direct = new FixtureHttpClient([])
+    const proxy = new FixtureHttpClient([
+      response(embed, new Headers(), 'https://hxfile.co/embed-fixtureid123.html'),
+      response(titlePage, new Headers(), 'https://hxfile.co/fixtureid123')
+    ])
+    await expect(new HxFileExtractor('fixtureid123', direct, proxy).getSources()).resolves.toHaveLength(1)
+    expect(direct.requests).toEqual([])
+    expect(proxy.requests).toHaveLength(2)
   })
 
   it('rejects malformed payloads, unsafe HxFile media, redirects, and identifiers', async () => {

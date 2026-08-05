@@ -4,7 +4,7 @@ import { emptyMediaResult, SourceResolver } from '../core/source-resolver.js'
 import { Database } from '../database/database.js'
 import { MySqlSourceCacheRepository } from '../database/source-cache-repository.js'
 import { ExtractorFactory } from '../hosting/extractor-factory.js'
-import { RemoteProviderHttpClient } from '../hosting/provider-http.js'
+import { RemoteProviderHttpClient, RuntimeProxyProviderHttpClient } from '../hosting/provider-http.js'
 import { ProviderCookieHttpClient, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 import type { SourceApiRouteOptions } from './source-api-routes.js'
 import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
@@ -12,6 +12,8 @@ import { MySqlMediaDownloadStore } from '../background/mysql-media-download-stor
 import { playerMediaCandidates } from '../core/player-query.js'
 import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../settings/general-runtime.js'
 import type { GeneralSettings } from '../settings/settings-admin-service.js'
+import type { RuntimeProxySettings } from '../settings/misc-settings.js'
+import { createYoutubeProxyFetch } from '../hosting/youtube.js'
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
 const DEFAULT_LANGUAGE = 'en;q=0.9'
@@ -22,6 +24,7 @@ export function createSourceApiRuntime(
   options: Readonly<{
     loadHostingSettings?: HostingSettingsLoader
     loadGeneralSettings?: GeneralSettingsLoader
+    loadProxySettingsForHost?: (host: string) => Promise<RuntimeProxySettings>
     gdrive?: Readonly<{
       privateSources?: DrivePrivateSourceResolver
       loadSettings?: DriveRuntimeSettingsLoader
@@ -31,6 +34,19 @@ export function createSourceApiRuntime(
   const providerHttpClient = new RemoteProviderHttpClient()
   const extractors = new ExtractorFactory({
     providerHttpClient,
+    ...(options.loadProxySettingsForHost === undefined ? {} : {
+      youtubeFetch: createYoutubeProxyFetch(async () => await (options.loadProxySettingsForHost as (host: string) => Promise<RuntimeProxySettings>)('youtube'))
+    }),
+    ...(options.loadProxySettingsForHost === undefined ? {} : {
+      providerProxyHttpClientForHost: (host: string) => {
+        const proxyClient = new RuntimeProxyProviderHttpClient(
+          async () => await (options.loadProxySettingsForHost as (host: string) => Promise<RuntimeProxySettings>)(host)
+        )
+        return options.loadHostingSettings === undefined
+          ? proxyClient
+          : new ProviderCookieHttpClient(host, proxyClient, options.loadHostingSettings)
+      }
+    }),
     ...(options.loadHostingSettings === undefined ? {} : {
       providerHttpClientForHost: (host: string) => new ProviderCookieHttpClient(host, providerHttpClient, options.loadHostingSettings as HostingSettingsLoader),
       youtubeCookie: async () => (await (options.loadHostingSettings as HostingSettingsLoader)()).cookies.youtube ?? ''

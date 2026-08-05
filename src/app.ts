@@ -170,7 +170,11 @@ export async function buildApp(
     subtitleAssets,
     config.baseUrl
   )
-  const subtitleUrlImporter = dependencies.subtitleUrlImporter ?? new SubsceneSubtitleImporter(subtitleAssets)
+  const subtitleUrlImporter = dependencies.subtitleUrlImporter ?? new SubsceneSubtitleImporter(
+    subtitleAssets,
+    new RemoteStream(),
+    { loadSettings: async () => await settingsRuntime.runtimeProxySettings() }
+  )
   const videosRuntime = dependencies.videos ?? new VideoAdminService(
     authRuntime.videoStore,
     new FileSystemVideoPosterAssetManager(path.join(publicRoot, 'uploads/images'), config.baseUrl),
@@ -243,6 +247,12 @@ export async function buildApp(
   const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config, {
     loadHostingSettings,
     loadGeneralSettings,
+    loadProxySettingsForHost: async (host) => {
+      const proxy = await settingsRuntime.runtimeProxySettings()
+      if (host !== 'vk' && host !== 'youtube') return proxy
+      const misc = await settingsRuntime.miscSettings(supportedHosts)
+      return misc.bypass_host.includes(host) ? Object.freeze({ ...proxy, disabled: true }) : proxy
+    },
     gdrive: { privateSources: driveMediaRuntime, loadSettings: loadDriveSettings }
   })
   const providerStreamContexts = sourceApiRuntime.providerContexts ?? new ProviderStreamContextRegistry()

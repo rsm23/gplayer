@@ -1,5 +1,5 @@
 import { BaseExtractor } from './base-extractor.js'
-import type { ProviderHttpClient } from './provider-http.js'
+import type { ProviderHttpClient, ProviderHttpPostRequest, ProviderHttpResponse } from './provider-http.js'
 
 const VK_ORIGIN = 'https://vk.com/'
 const VK_PLAYER_ENDPOINT = 'https://vk.com/al_video.php?act=show'
@@ -16,7 +16,11 @@ export type VkPage = Readonly<{
 export class VkExtractor extends BaseExtractor {
   #loaded = false
 
-  public constructor(id: string, private readonly http: ProviderHttpClient) {
+  public constructor(
+    id: string,
+    private readonly http: ProviderHttpClient,
+    private readonly proxyHttp?: ProviderHttpClient
+  ) {
     super(normalizeVkId(id))
     this.referer = VK_ORIGIN
   }
@@ -33,8 +37,7 @@ export class VkExtractor extends BaseExtractor {
       al: '1', autoplay: '1', claim: '', force_no_repeat: 'true', is_video_page: 'true',
       list: '', module: 'direct', show_next: '1', video: this.id
     }).toString()
-    try {
-      const response = await this.http.post({
+    const request: ProviderHttpPostRequest = {
         url: VK_PLAYER_ENDPOINT,
         headers: {
           'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
@@ -42,16 +45,30 @@ export class VkExtractor extends BaseExtractor {
           'x-requested-with': 'XMLHttpRequest'
         },
         body
-      })
-      if (response.status < 200 || response.status >= 300 || response.url.hostname !== 'vk.com') return
-      const page = parseVkResponse(response.body)
-      if (page === null) return
-      this.sources.push(...(this.downloadable ? page.downloadSources : page.playbackSources))
-      this.image = page.image
-      this.title = page.title
-    } catch {
-      // Invalid or unavailable provider responses produce an empty result.
     }
+    const direct = await this.http.post(request).catch(() => null)
+    if (direct !== null && direct.status >= 200 && direct.status < 300) {
+      this.useResponse(direct)
+      return
+    }
+    if (direct?.status === 404 || this.proxyHttp === undefined) return
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const proxied = await this.proxyHttp.post(request).catch(() => null)
+      if (proxied?.status === 404) return
+      if (proxied !== null && proxied.status >= 200 && proxied.status < 300) {
+        this.useResponse(proxied)
+        return
+      }
+    }
+  }
+
+  private useResponse(response: ProviderHttpResponse): void {
+    if (response.url.hostname !== 'vk.com') return
+    const page = parseVkResponse(response.body)
+    if (page === null) return
+    this.sources.push(...(this.downloadable ? page.downloadSources : page.playbackSources))
+    this.image = page.image
+    this.title = page.title
   }
 }
 

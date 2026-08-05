@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
+import { connect as netConnect, createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { parseProxyDefinition } from '../src/settings/misc-settings.js'
 import { isPrivateAddress, RemoteStream } from '../src/stream/remote-stream.js'
 
 const media = Buffer.from('0123456789abcdefghijklmnopqrstuvwxyz')
@@ -261,8 +263,131 @@ describe('RemoteStream', () => {
     expect(await body(response)).toEqual(media)
   })
 
+  it('tunnels through a credentialed HTTP proxy without bypassing target validation', async () => {
+    const authorities: string[] = []
+    const authorizations: Array<string | undefined> = []
+    const proxy = createServer()
+    proxy.on('connect', (request, client, head) => {
+      authorities.push(request.url ?? '')
+      authorizations.push(request.headers['proxy-authorization'])
+      const [hostname = '', port = ''] = (request.url ?? '').split(':')
+      const target = netConnect(Number(port), hostname, () => {
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+        if (head.length > 0) target.write(head)
+        target.pipe(client)
+        client.pipe(target)
+      })
+      target.once('error', () => client.destroy())
+    })
+    proxy.listen(0, '127.0.0.1')
+    await once(proxy, 'listening')
+    try {
+      const address = proxy.address()
+      if (!address || typeof address === 'string') throw new Error('Expected proxy TCP address')
+      const definition = parseProxyDefinition(`127.0.0.1:${address.port},proxy-user:proxy-pass,http`)
+      if (definition === null) throw new Error('Expected a proxy definition')
+
+      const response = await new RemoteStream().open({
+        url: new URL('/media', upstreamUrl),
+        allowPrivateNetworks: true,
+        proxy: definition
+      })
+      expect(response.status).toBe(200)
+      expect(await body(response)).toEqual(media)
+      expect(authorities).toEqual([`127.0.0.1:${upstreamUrl.port}`])
+      expect(authorizations).toEqual([`Basic ${Buffer.from('proxy-user:proxy-pass').toString('base64')}`])
+
+      await expect(new RemoteStream().open({
+        url: new URL('/media', upstreamUrl),
+        proxy: definition
+      })).rejects.toThrow(/Private/)
+      expect(authorities).toHaveLength(1)
+    } finally {
+      proxy.close()
+      await once(proxy, 'close')
+    }
+  })
+
+  it('tunnels through a SOCKS4 proxy using the pinned IPv4 target', async () => {
+    const observed: Array<Readonly<{ address: string, port: number, username: string }>> = []
+    const proxy = createSocks4Proxy(observed)
+    proxy.listen(0, '127.0.0.1')
+    await once(proxy, 'listening')
+    try {
+      const address = proxy.address()
+      if (!address || typeof address === 'string') throw new Error('Expected SOCKS4 TCP address')
+      const definition = parseProxyDefinition(`127.0.0.1:${address.port},fixture-user:ignored,socks4`)
+      if (definition === null) throw new Error('Expected a SOCKS4 proxy definition')
+      const response = await new RemoteStream().open({
+        url: new URL('/media', upstreamUrl),
+        allowPrivateNetworks: true,
+        proxy: definition
+      })
+
+      expect(await body(response)).toEqual(media)
+      expect(observed).toEqual([{ address: '127.0.0.1', port: Number(upstreamUrl.port), username: 'fixture-user' }])
+    } finally {
+      proxy.close()
+      await once(proxy, 'close')
+    }
+  })
+
+  it('authenticates and tunnels through SOCKS5 using the pinned target address', async () => {
+    const observed: Array<Readonly<{ address: string, port: number, username: string, password: string }>> = []
+    const proxy = createSocks5Proxy(observed)
+    proxy.listen(0, '127.0.0.1')
+    await once(proxy, 'listening')
+    try {
+      const address = proxy.address()
+      if (!address || typeof address === 'string') throw new Error('Expected SOCKS5 TCP address')
+      const definition = parseProxyDefinition(`127.0.0.1:${address.port},fixture-user:fixture-pass,socks5`)
+      if (definition === null) throw new Error('Expected a SOCKS5 proxy definition')
+      const response = await new RemoteStream().open({
+        url: new URL('/media', upstreamUrl),
+        allowPrivateNetworks: true,
+        proxy: definition
+      })
+
+      expect(await body(response)).toEqual(media)
+      expect(observed).toEqual([{
+        address: '127.0.0.1',
+        port: Number(upstreamUrl.port),
+        username: 'fixture-user',
+        password: 'fixture-pass'
+      }])
+    } finally {
+      proxy.close()
+      await once(proxy, 'close')
+    }
+  })
+
+  it('aborts a stalled proxy handshake before the hard proxy timeout', async () => {
+    const proxy = createTcpServer((client) => client.on('data', () => undefined))
+    proxy.listen(0, '127.0.0.1')
+    await once(proxy, 'listening')
+    try {
+      const address = proxy.address()
+      if (!address || typeof address === 'string') throw new Error('Expected proxy TCP address')
+      const definition = parseProxyDefinition(`127.0.0.1:${address.port},http`)
+      if (definition === null) throw new Error('Expected an HTTP proxy definition')
+      const started = Date.now()
+      await expect(new RemoteStream().open({
+        url: new URL('/media', upstreamUrl),
+        allowPrivateNetworks: true,
+        proxy: definition,
+        proxyTimeoutMilliseconds: 2_000,
+        signal: AbortSignal.timeout(30)
+      })).rejects.toThrow()
+      expect(Date.now() - started).toBeLessThan(1_000)
+    } finally {
+      proxy.close()
+      await once(proxy, 'close')
+    }
+  })
+
   it('blocks local targets unless an internal caller explicitly allows them', async () => {
     await expect(new RemoteStream().open({ url: new URL('/media', upstreamUrl) })).rejects.toThrow(/Private/)
+    await expect(new RemoteStream().open({ url: 'http://[::1]/media' })).rejects.toThrow(/Private/)
   })
 
   it.each(['file:///tmp/video.mp4', 'ftp://example.com/video.mp4'])('rejects unsupported protocol %s', async (url) => {
@@ -270,8 +395,93 @@ describe('RemoteStream', () => {
   })
 })
 
+function createSocks4Proxy(observed: Array<Readonly<{ address: string, port: number, username: string }>>): TcpServer {
+  return createTcpServer((client) => {
+    let buffered = Buffer.alloc(0)
+    const onData = (chunk: Buffer): void => {
+      buffered = Buffer.concat([buffered, chunk])
+      const userEnd = buffered.indexOf(0, 8)
+      if (buffered.length < 9 || userEnd < 0) return
+      client.off('data', onData)
+      if (buffered[0] !== 4 || buffered[1] !== 1) {
+        client.destroy()
+        return
+      }
+      const port = buffered.readUInt16BE(2)
+      const address = [...buffered.subarray(4, 8)].join('.')
+      const username = buffered.subarray(8, userEnd).toString('utf8')
+      observed.push(Object.freeze({ address, port, username }))
+      connectProxyTarget(client, address, port, buffered.subarray(userEnd + 1), Buffer.from([0, 90, 0, 0, 0, 0, 0, 0]))
+    }
+    client.on('data', onData)
+  })
+}
+
+function createSocks5Proxy(observed: Array<Readonly<{ address: string, port: number, username: string, password: string }>>): TcpServer {
+  return createTcpServer((client) => {
+    let buffered = Buffer.alloc(0)
+    let state: 'greeting' | 'authentication' | 'request' = 'greeting'
+    let username = ''
+    let password = ''
+    const consume = (): void => {
+      if (state === 'greeting') {
+        if (buffered.length < 2) return
+        const length = 2 + (buffered[1] ?? 0)
+        if (buffered.length < length) return
+        const methods = buffered.subarray(2, length)
+        buffered = buffered.subarray(length)
+        if (!methods.includes(2)) {
+          client.end(Buffer.from([5, 255]))
+          return
+        }
+        state = 'authentication'
+        client.write(Buffer.from([5, 2]))
+      }
+      if (state === 'authentication') {
+        if (buffered.length < 2) return
+        const usernameLength = buffered[1] ?? 0
+        if (buffered.length < 3 + usernameLength) return
+        const passwordLength = buffered[2 + usernameLength] ?? 0
+        const length = 3 + usernameLength + passwordLength
+        if (buffered.length < length) return
+        username = buffered.subarray(2, 2 + usernameLength).toString('utf8')
+        password = buffered.subarray(3 + usernameLength, length).toString('utf8')
+        buffered = buffered.subarray(length)
+        state = 'request'
+        client.write(Buffer.from([1, 0]))
+      }
+      if (state !== 'request' || buffered.length < 10) return
+      if (buffered[0] !== 5 || buffered[1] !== 1 || buffered[3] !== 1) {
+        client.destroy()
+        return
+      }
+      client.off('data', onData)
+      const address = [...buffered.subarray(4, 8)].join('.')
+      const port = buffered.readUInt16BE(8)
+      observed.push(Object.freeze({ address, port, username, password }))
+      connectProxyTarget(client, address, port, buffered.subarray(10), Buffer.from([5, 0, 0, 1, 127, 0, 0, 1, 0, 0]))
+    }
+    const onData = (chunk: Buffer): void => {
+      buffered = Buffer.concat([buffered, chunk])
+      consume()
+    }
+    client.on('data', onData)
+  })
+}
+
+function connectProxyTarget(client: Socket, address: string, port: number, remainder: Buffer, success: Buffer): void {
+  const target = netConnect(port, address, () => {
+    client.write(success)
+    if (remainder.length > 0) target.write(remainder)
+    target.pipe(client)
+    client.pipe(target)
+  })
+  target.once('error', () => client.destroy())
+  client.once('error', () => target.destroy())
+}
+
 describe('isPrivateAddress', () => {
-  it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.1.1', '169.254.1.1', '::1', 'fc00::1', 'fe80::1'])('marks %s private', (address) => {
+  it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.1.1', '169.254.1.1', '::1', '::ffff:127.0.0.1', 'fc00::1', 'fe80::1'])('marks %s private', (address) => {
     expect(isPrivateAddress(address)).toBe(true)
   })
 

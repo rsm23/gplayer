@@ -1,6 +1,8 @@
 import { runInNewContext } from 'node:vm'
 import { Innertube, Platform } from 'youtubei.js'
 import { BaseExtractor } from './base-extractor.js'
+import type { RuntimeProxySettings } from '../settings/misc-settings.js'
+import { RemoteStream } from '../stream/remote-stream.js'
 
 const YOUTUBE_REFERER = 'https://www.youtube.com/'
 const GOOGLE_API_REFERER = 'https://youtube.googleapis.com/'
@@ -44,7 +46,10 @@ export class YoutubeInnertubeClient implements YoutubeClient {
   #session: Promise<Innertube> | undefined
   #sessionCookie = ''
 
-  public constructor(private readonly loadCookie?: () => Promise<string>) {}
+  public constructor(
+    private readonly loadCookie?: () => Promise<string>,
+    private readonly fetchImplementation?: typeof fetch
+  ) {}
 
   public async getVideo(id: string): Promise<YoutubeVideo> {
     const session = await this.session()
@@ -95,7 +100,11 @@ export class YoutubeInnertubeClient implements YoutubeClient {
     const cookie = await this.configuredCookie()
     if (this.#session === undefined || cookie !== this.#sessionCookie) {
       this.#sessionCookie = cookie
-      this.#session = Innertube.create({ retrieve_player: true, ...(cookie === '' ? {} : { cookie }) })
+      this.#session = Innertube.create({
+        retrieve_player: true,
+        ...(cookie === '' ? {} : { cookie }),
+        ...(this.fetchImplementation === undefined ? {} : { fetch: this.fetchImplementation })
+      })
     }
     try {
       return await this.#session
@@ -115,6 +124,111 @@ export class YoutubeInnertubeClient implements YoutubeClient {
       return ''
     }
   }
+}
+
+/** Direct YouTube transport with the supplied non-404 proxy fallback semantics. */
+export function createYoutubeProxyFetch(
+  loadSettings: () => Promise<RuntimeProxySettings>,
+  remoteStream: Pick<RemoteStream, 'open'> = new RemoteStream(),
+  directFetch: typeof fetch = fetch,
+  random: () => number = Math.random
+): typeof fetch {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const request = new Request(input, init)
+    const target = new URL(request.url)
+    if (!isYoutubeRequestUrl(target)) throw new Error(`YouTube transport rejected host: ${target.hostname}`)
+
+    let directResponse: Response | undefined
+    let directError: unknown
+    try {
+      directResponse = await directFetch(request.clone())
+      if (directResponse.ok || directResponse.status === 404) return directResponse
+    } catch (error) {
+      directError = error
+    }
+
+    let settings: RuntimeProxySettings
+    try {
+      settings = await loadSettings()
+    } catch {
+      if (directResponse !== undefined) return directResponse
+      throw directError instanceof Error ? directError : new Error('YouTube direct request failed')
+    }
+    if (settings.disabled || settings.proxies.length === 0) {
+      if (directResponse !== undefined) return directResponse
+      throw directError instanceof Error ? directError : new Error('YouTube direct request failed')
+    }
+
+    const method = normalizedYoutubeMethod(request.method)
+    const body = method === 'GET' || method === 'HEAD'
+      ? undefined
+      : new Uint8Array(await request.arrayBuffer())
+    const trustedHeaders = new Headers(request.headers)
+    trustedHeaders.set('accept-encoding', 'identity')
+    const crossOriginHeaders = withoutCrossOriginCredentials(trustedHeaders)
+    let lastError: unknown = directError
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const proxy = settings.proxies[randomPosition(settings.proxies.length, random())]
+      if (proxy === undefined) break
+      try {
+        const response = await remoteStream.open({
+          url: target,
+          method,
+          ...(body === undefined ? {} : { body }),
+          signal: request.signal,
+          maximumRedirects: 5,
+          allowRedirect: (_from, to) => isYoutubeRequestUrl(to),
+          headersForTarget: (redirectTarget) => redirectTarget.origin === target.origin ? trustedHeaders : crossOriginHeaders,
+          proxy
+        })
+        const result = remoteFetchResponse(response)
+        if (result.ok || result.status === 404 || attempt === 2) {
+          await directResponse?.body?.cancel().catch(() => undefined)
+          return result
+        }
+        await result.body?.cancel().catch(() => undefined)
+      } catch (error) {
+        lastError = error
+      }
+    }
+    if (directResponse !== undefined) return directResponse
+    throw lastError instanceof Error ? lastError : new Error('YouTube proxy request failed')
+  }
+}
+
+function normalizedYoutubeMethod(value: string): 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' {
+  const method = value.toUpperCase()
+  if (method === 'GET' || method === 'HEAD' || method === 'POST' || method === 'PUT' || method === 'DELETE') return method
+  throw new Error(`YouTube request method is unsupported: ${method}`)
+}
+
+function isYoutubeRequestUrl(value: URL): boolean {
+  return value.protocol === 'https:' && !value.username && !value.password && [
+    'youtube.com',
+    'googleapis.com'
+  ].some((domain) => value.hostname === domain || value.hostname.endsWith(`.${domain}`))
+}
+
+function withoutCrossOriginCredentials(input: Headers): Headers {
+  const headers = new Headers(input)
+  for (const name of ['authorization', 'cookie', 'x-goog-authuser', 'x-goog-pageid']) headers.delete(name)
+  return headers
+}
+
+function randomPosition(length: number, sample: number): number {
+  const normalized = Number.isFinite(sample) ? Math.max(0, Math.min(0.9999999999999999, sample)) : 0
+  return Math.floor(normalized * length)
+}
+
+function remoteFetchResponse(response: Awaited<ReturnType<RemoteStream['open']>>): Response {
+  const empty = response.status === 204 || response.status === 205 || response.status === 304
+  const result = new Response(empty ? null : response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers
+  })
+  Object.defineProperty(result, 'url', { configurable: true, value: response.url.toString() })
+  return result
 }
 
 export class YoutubeExtractor extends BaseExtractor {

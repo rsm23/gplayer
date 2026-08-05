@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createCountryCodeLookup } from '../src/security/geoip-country.js'
 import { accessPolicyFromMisc, filterSourcesByResolution } from '../src/settings/misc-runtime.js'
-import { miscHostOptions, miscSettings, parseMiscSettingsSubmission } from '../src/settings/misc-settings.js'
+import { miscHostOptions, miscSettings, parseMiscSettingsSubmission, runtimeProxySettings } from '../src/settings/misc-settings.js'
 
 const supportedHosts = new Set(['direct', 'youtube', 'gdrive'])
 
@@ -42,6 +42,43 @@ describe('misc settings contract', () => {
       block_vpn_list: '203.0.113.0/24'
     })
     expect(JSON.stringify(values)).not.toContain('secret')
+  })
+
+  it('loads normalized proxy credentials only through the server runtime contract', () => {
+    const raw = {
+      disable_proxy: 'false',
+      proxy_list: [
+        '203.0.113.5:1080,user:secret,socks5',
+        '203.0.113.5:1080,user:secret,socks5',
+        '198.51.100.8:443,https',
+        'invalid'
+      ].join('\n')
+    }
+    const runtime = runtimeProxySettings(raw)
+
+    expect(runtime).toEqual({
+      disabled: false,
+      proxies: [
+        {
+          format: '203.0.113.5:1080,user:secret,socks5',
+          hostname: '203.0.113.5',
+          port: 1080,
+          type: 'socks5',
+          username: 'user',
+          password: 'secret'
+        },
+        {
+          format: '198.51.100.8:443,https',
+          hostname: '198.51.100.8',
+          port: 443,
+          type: 'https',
+          username: '',
+          password: ''
+        }
+      ]
+    })
+    expect(JSON.stringify(miscSettings(raw, supportedHosts))).not.toContain('secret')
+    expect(runtimeProxySettings({ ...raw, disable_proxy: 'true' }).disabled).toBe(true)
   })
 
   it('validates and serializes all thirteen supplied setting keys', () => {

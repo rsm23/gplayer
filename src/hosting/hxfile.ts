@@ -1,5 +1,5 @@
 import { BaseExtractor } from './base-extractor.js'
-import type { ProviderHttpClient } from './provider-http.js'
+import { ProxyUnavailableError, type ProviderHttpClient, type ProviderHttpRequest, type ProviderHttpResponse } from './provider-http.js'
 import { parseXFileSharingContent, unpackPackerScripts } from './xfile-sharing.js'
 
 const HXFILE_ORIGIN = 'https://hxfile.co/'
@@ -14,7 +14,11 @@ export type HxFileEmbed = Readonly<{
 export class HxFileExtractor extends BaseExtractor {
   #loaded = false
 
-  public constructor(id: string, private readonly http: ProviderHttpClient) {
+  public constructor(
+    id: string,
+    private readonly http: ProviderHttpClient,
+    private readonly proxyHttp?: ProviderHttpClient
+  ) {
     super(id.trim())
   }
 
@@ -29,19 +33,29 @@ export class HxFileExtractor extends BaseExtractor {
     this.referer = `${HXFILE_ORIGIN}${this.id}`
     try {
       const embedUrl = new URL(`embed-${this.id}.html`, HXFILE_ORIGIN)
-      const response = await this.http.get({ url: embedUrl, headers: { referer: this.referer } })
+      const response = await this.get({ url: embedUrl, headers: { referer: this.referer } })
       if (!successfulHxFileResponse(response.status, response.url)) return
       const embed = parseHxFileEmbed(response.body)
       if (embed === null || embed.sources.length === 0) return
       this.sources.push(...embed.sources)
 
-      const page = await this.http.get({ url: this.referer })
+      const page = await this.get({ url: this.referer })
       if (!successfulHxFileResponse(page.status, page.url)) return
       const metadata = parseHxFileMetadata(page.body)
       this.title = metadata.title
       this.image = metadata.image || embed.image
     } catch {
       // Invalid or unavailable provider responses produce an empty result.
+    }
+  }
+
+  private async get(request: ProviderHttpRequest): Promise<ProviderHttpResponse> {
+    if (this.proxyHttp === undefined) return await this.http.get(request)
+    try {
+      return await this.proxyHttp.get(request)
+    } catch (error) {
+      if (!(error instanceof ProxyUnavailableError)) throw error
+      return await this.http.get(request)
     }
   }
 }

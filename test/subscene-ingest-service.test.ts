@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FileSystemSubtitleAssetManager, SUBTITLE_MAX_BYTES } from '../src/subtitles/subtitle-assets-service.js'
 import { SubsceneSubtitleImporter } from '../src/subtitles/subscene-ingest-service.js'
+import { parseProxyDefinition } from '../src/settings/misc-settings.js'
 import type { RemoteStreamResponse } from '../src/stream/remote-stream.js'
 
 const roots: string[] = []
@@ -42,6 +43,31 @@ describe('SubsceneSubtitleImporter', () => {
       expect(headers.get('user-agent')).toContain('Chrome/')
       expect(call[0].maximumRedirects).toBe(3)
     }
+  })
+
+  it('uses the server proxy pool for page and archive retrieval with bounded network retries', async () => {
+    const root = await temporaryRoot()
+    const pageUrl = new URL('https://sub-scene.com/subtitles/proxy-fixture/english')
+    const downloadUrl = new URL('https://sub-scene.com/subtitles/proxy-fixture/download.zip')
+    const proxy = parseProxyDefinition('203.0.113.5:1080,user:secret,socks5')
+    if (proxy === null) throw new Error('Expected proxy fixture')
+    const open = vi.fn()
+      .mockRejectedValueOnce(new Error('temporary proxy failure'))
+      .mockResolvedValueOnce(remoteResponse(pageUrl, '<div class="download"><a class="button" href="/subtitles/proxy-fixture/download.zip">Download</a></div>'))
+      .mockResolvedValueOnce(remoteResponse(downloadUrl, zipFixture({ 'captions/proxy.srt': 'Proxy fixture' }, true)))
+    const importer = new SubsceneSubtitleImporter(
+      new FileSystemSubtitleAssetManager(root, new URL('https://player.example/'), { randomSuffix: () => 'proxy' }),
+      { open },
+      {
+        loadSettings: async () => Object.freeze({ disabled: false, proxies: Object.freeze([proxy]) }),
+        random: () => 0
+      }
+    )
+
+    await expect(importer.importUrl(pageUrl.href)).resolves.toBe('https://player.example/uploads/subtitles/proxy-fixture-download-zip-proxy.srt')
+    expect(open).toHaveBeenCalledTimes(3)
+    expect(open.mock.calls.map((call) => call[0].proxy)).toEqual([proxy, proxy, proxy])
+    expect(JSON.stringify(open.mock.calls.map((call) => call[0].headers))).not.toContain('secret')
   })
 
   it('skips unsafe archive paths while retaining the first safe supported subtitle', async () => {

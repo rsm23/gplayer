@@ -1,7 +1,7 @@
 import { customHeadersForUrl, decodeCustomHeaderRules, defaultCustomHeaderRules, parseCustomHeaderSubmission, type CustomHeaderRule } from './custom-headers.js'
 import { isSafeVastAssetName } from './vast-assets-service.js'
 import { parsePlayerSettingsSubmission, playerSettings, type PlayerSettings, type PlayerSettingsDefaults } from './player-settings.js'
-import { miscSettings, parseMiscSettingsSubmission, type MiscSettings } from './misc-settings.js'
+import { miscSettings, parseMiscSettingsSubmission, runtimeProxySettings, type MiscSettings, type RuntimeProxySettings } from './misc-settings.js'
 import { hostingSettings, parseHostingSettingsSubmission, runtimeHostingSettings, type HostingSettings, type RuntimeHostingSettings } from './hosting-settings.js'
 
 const BOOLEAN_KEYS = [
@@ -606,6 +606,10 @@ export class SettingsAdminService {
 
   public async miscSettings(supportedHosts: ReadonlySet<string>): Promise<MiscSettings> {
     return miscSettings(await this.store.getAll(), supportedHosts)
+  }
+
+  public async runtimeProxySettings(): Promise<RuntimeProxySettings> {
+    return runtimeProxySettings(await this.store.getAll())
   }
 
   public async saveMisc(

@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
+import type { RuntimeProxySettings } from '../settings/misc-settings.js'
 import {
   SUBTITLE_EXTENSIONS,
   SUBTITLE_MAX_BYTES,
@@ -37,7 +38,11 @@ export interface SubtitleUrlImporter {
 export class SubsceneSubtitleImporter implements SubtitleUrlImporter {
   public constructor(
     private readonly assets: SubtitleAssetManager,
-    private readonly remoteStream: Pick<RemoteStream, 'open'> = new RemoteStream()
+    private readonly remoteStream: Pick<RemoteStream, 'open'> = new RemoteStream(),
+    private readonly proxyOptions: Readonly<{
+      loadSettings?: () => Promise<RuntimeProxySettings>
+      random?: () => number
+    }> = {}
   ) {}
 
   public supports(value: string): boolean {
@@ -50,14 +55,7 @@ export class SubsceneSubtitleImporter implements SubtitleUrlImporter {
     if (pageTarget === null || !isSubsceneHost(pageTarget.hostname)) return null
 
     try {
-      const page = await this.remoteStream.open({
-        url: pageTarget,
-        method: 'GET',
-        headers: subsceneHeaders(),
-        signal: AbortSignal.timeout(30_000),
-        maximumRedirects: 3,
-        allowRedirect: (_from, to) => isSubsceneHost(to.hostname)
-      })
+      const page = await this.open(pageTarget)
       if (!successfulSubsceneResponse(page)) {
         await page.body?.cancel()
         return null
@@ -68,14 +66,7 @@ export class SubsceneSubtitleImporter implements SubtitleUrlImporter {
       const downloadTarget = safeSubsceneDownloadUrl(href)
       if (downloadTarget === null) return null
 
-      const download = await this.remoteStream.open({
-        url: downloadTarget,
-        method: 'GET',
-        headers: subsceneHeaders(),
-        signal: AbortSignal.timeout(30_000),
-        maximumRedirects: 3,
-        allowRedirect: (_from, to) => isSubsceneHost(to.hostname)
-      })
+      const download = await this.open(downloadTarget)
       if (!successfulSubsceneResponse(download)) {
         await download.body?.cancel()
         return null
@@ -88,6 +79,32 @@ export class SubsceneSubtitleImporter implements SubtitleUrlImporter {
     } catch {
       return null
     }
+  }
+
+  private async open(target: URL): Promise<RemoteStreamResponse> {
+    const settings = await this.proxyOptions.loadSettings?.()
+    const proxies = settings?.disabled === false ? settings.proxies : []
+    const attempts = proxies.length === 0 ? 1 : 3
+    let lastError: unknown
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const sample = this.proxyOptions.random?.() ?? Math.random()
+      const position = Number.isFinite(sample) ? Math.floor(Math.max(0, Math.min(0.9999999999999999, sample)) * proxies.length) : 0
+      const proxy = proxies[position]
+      try {
+        return await this.remoteStream.open({
+          url: target,
+          method: 'GET',
+          headers: subsceneHeaders(),
+          signal: AbortSignal.timeout(30_000),
+          maximumRedirects: 3,
+          allowRedirect: (_from, to) => isSubsceneHost(to.hostname),
+          ...(proxy === undefined ? {} : { proxy })
+        })
+      } catch (error) {
+        lastError = error
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('Subscene request failed')
   }
 }
 

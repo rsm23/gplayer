@@ -1,4 +1,5 @@
 import { RemoteStream } from '../stream/remote-stream.js'
+import type { ProxyDefinition, RuntimeProxySettings } from '../settings/misc-settings.js'
 
 const MAX_PROVIDER_RESPONSE_BYTES = 5 * 1_024 * 1_024
 
@@ -26,10 +27,20 @@ export interface ProviderHttpClient {
   post(request: ProviderHttpPostRequest): Promise<ProviderHttpResponse>
 }
 
+export type RuntimeProxySettingsLoader = () => Promise<RuntimeProxySettings>
+
+export class ProxyUnavailableError extends Error {
+  public constructor() {
+    super('No configured outbound proxy is available')
+    this.name = 'ProxyUnavailableError'
+  }
+}
+
 export class RemoteProviderHttpClient implements ProviderHttpClient {
   public constructor(
     private readonly remoteStream = new RemoteStream(),
-    private readonly allowPrivateNetworks = false
+    private readonly allowPrivateNetworks = false,
+    private readonly proxy?: ProxyDefinition
   ) {}
 
   public async get(request: ProviderHttpRequest): Promise<ProviderHttpResponse> {
@@ -61,7 +72,8 @@ export class RemoteProviderHttpClient implements ProviderHttpClient {
       ...(request.preserveRedirectCookies === undefined ? {} : { preserveRedirectCookies: request.preserveRedirectCookies }),
       ...(request.signal === undefined ? {} : { signal: request.signal }),
       allowPrivateNetworks: this.allowPrivateNetworks,
-      includeResponseHeaders: ['set-cookie']
+      includeResponseHeaders: ['set-cookie'],
+      ...(this.proxy === undefined ? {} : { proxy: this.proxy })
     })
     const body = await readLimitedText(
       response.body,
@@ -74,6 +86,37 @@ export class RemoteProviderHttpClient implements ProviderHttpClient {
       headers: response.headers,
       body
     }
+  }
+}
+
+/** Selects one current server-side proxy per request without exposing its credentials to extractors. */
+export class RuntimeProxyProviderHttpClient implements ProviderHttpClient {
+  public constructor(
+    private readonly loadSettings: RuntimeProxySettingsLoader,
+    private readonly remoteStream = new RemoteStream(),
+    private readonly random: () => number = Math.random
+  ) {}
+
+  public async get(request: ProviderHttpRequest): Promise<ProviderHttpResponse> {
+    return await (await this.client()).get(request)
+  }
+
+  public async head(request: ProviderHttpRequest): Promise<ProviderHttpResponse> {
+    return await (await this.client()).head(request)
+  }
+
+  public async post(request: ProviderHttpPostRequest): Promise<ProviderHttpResponse> {
+    return await (await this.client()).post(request)
+  }
+
+  private async client(): Promise<RemoteProviderHttpClient> {
+    const settings = await this.loadSettings()
+    if (settings.disabled || settings.proxies.length === 0) throw new ProxyUnavailableError()
+    const sample = this.random()
+    const position = Number.isFinite(sample) ? Math.floor(Math.max(0, Math.min(0.9999999999999999, sample)) * settings.proxies.length) : 0
+    const proxy = settings.proxies[position]
+    if (proxy === undefined) throw new ProxyUnavailableError()
+    return new RemoteProviderHttpClient(this.remoteStream, false, proxy)
   }
 }
 
