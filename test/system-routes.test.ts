@@ -69,14 +69,18 @@ describe('legacy-compatible system routes', () => {
     expect(page.body).toContain('id="product-demo"')
     expect(page.body).toContain('./assets/img/product/gplayer-generator.png')
     expect(page.body).toContain('rel="manifest" href="./manifest.json"')
+    expect(page.body).toContain('src="./assets/js/gplayer-theme.js"')
+    expect(page.body).toContain('data-theme-choice="light"')
+    expect(page.body).toContain('data-theme-choice="dark"')
     expect(page.body).not.toContain('runtime-disqus')
     expect(page.body).not.toContain('gplayer-disqus.js')
     expect(page.body).not.toMatch(/gdplayer\.(?:to|io)/i)
     expect(page.body).not.toMatch(/[–—]/)
 
-    const [style, script] = await Promise.all([
+    const [style, script, themeScript] = await Promise.all([
       app.inject({ method: 'GET', url: '/assets/css/gplayer-landing.css' }),
-      app.inject({ method: 'GET', url: '/assets/js/gplayer-landing.js' })
+      app.inject({ method: 'GET', url: '/assets/js/gplayer-landing.js' }),
+      app.inject({ method: 'GET', url: '/assets/js/gplayer-theme.js' })
     ])
     expect(style.statusCode).toBe(200)
     expect(style.headers['content-type']).toContain('text/css')
@@ -91,6 +95,15 @@ describe('legacy-compatible system routes', () => {
     expect(script.body).toContain("github\\.io")
     expect(script.body).toContain("document.querySelector('#product-demo')")
     expect(script.body).not.toMatch(/gdplayer\.(?:to|io)/i)
+    expect(themeScript.statusCode).toBe(200)
+    expect(themeScript.body).toContain("theme=(dark|light)")
+    expect(themeScript.body).toContain("document.documentElement.dataset.theme = theme")
+    expect(themeScript.body).toContain("data-theme-choice")
+    expect(themeScript.body).toContain('SameSite=Lax')
+    expect(themeScript.body).not.toContain('innerHTML')
+    expect(themeScript.body).not.toContain('eval(')
+    expect(style.body).toContain(':root[data-theme="light"]')
+    expect(style.body).toContain(':root:not([data-theme="dark"])')
   })
 
   it('limits disabled public pages to authenticated sessions', async () => {
@@ -195,6 +208,7 @@ describe('legacy-compatible system routes', () => {
     expect(theme.headers['cache-control']).toBe('public, max-age=60')
     expect(theme.body).toContain('--brand: #123abc;')
     expect(theme.body).toContain('--brand-soft: #fedcba;')
+    expect(theme.body).toContain(':root[data-theme]')
     expect(theme.body).not.toContain('<')
   })
 
@@ -639,9 +653,10 @@ describe('legacy-compatible system routes', () => {
       start_url: './'
     }))
     expect(worker.statusCode).toBe(200)
-    expect(worker.body).toContain("gplayer-node-public-v26")
+    expect(worker.body).toContain("gplayer-node-public-v27")
     expect(worker.body).toContain("const OFFLINE_URL = scopedUrl('offline.html')")
     expect(worker.body).toContain('.map(scopedUrl)')
+    expect(worker.body).toContain("'assets/js/gplayer-theme.js'")
     expect(worker.body).not.toContain('main-v3.9.8')
     expect(offline.statusCode).toBe(200)
     expect(publicStyle.statusCode).toBe(200)

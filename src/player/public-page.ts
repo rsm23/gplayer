@@ -54,6 +54,7 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
   <title>${title} | ${escapeHtml(site.site_name)}</title>
   <link rel="icon" href="/assets/img/logo/rr.ico">
   <link rel="manifest" href="/manifest.json">
+  <script src="/assets/js/gplayer-theme.js"></script>
   <link rel="stylesheet" href="/assets/css/gplayer-landing.css">
   <link rel="stylesheet" href="/runtime-site.css">
   <link rel="stylesheet" href="/assets/css/gplayer-public.css">
@@ -162,7 +163,7 @@ export function renderPublicThemeCss(input: SiteSettings = DEFAULT_SITE_SETTINGS
   const site = publicSiteSettings(input)
   const primary = safeHex(site.custom_color, DEFAULT_SITE_SETTINGS.custom_color)
   const secondary = safeHex(site.custom_color2, DEFAULT_SITE_SETTINGS.custom_color2)
-  return `:root {\n  --brand: #${primary};\n  --brand-soft: #${secondary};\n  --success: #${primary};\n  --focus: #${secondary};\n}\n`
+  return `:root,\n:root[data-theme] {\n  --brand: #${primary};\n  --brand-soft: #${secondary};\n  --success: #${primary};\n  --focus: #${secondary};\n}\n`
 }
 
 export function renderPublicNavigationItems(navigation: PublicNavigationOptions): string {
@@ -183,6 +184,13 @@ export function renderPublicNavigationItems(navigation: PublicNavigationOptions)
     : sharer
 }
 
+export function renderPublicThemeNavigation(): string {
+  return `<details class="site-theme-nav"><summary><span data-theme-label>Theme</span></summary><div class="site-theme-menu">
+    <button type="button" data-theme-choice="light">Light</button>
+    <button type="button" data-theme-choice="dark">Dark</button>
+  </div></details>`
+}
+
 function renderHeader(site: SiteSettings, navigation: PublicNavigationOptions): string {
   const siteName = escapeHtml(site.site_name)
   return `<header class="site-header">
@@ -197,6 +205,7 @@ function renderHeader(site: SiteSettings, navigation: PublicNavigationOptions): 
     <a href="/terms/">Terms</a>
     <a href="/privacy/">Privacy</a>
     ${renderPublicNavigationItems(navigation)}
+    ${renderPublicThemeNavigation()}
     <a class="nav-cta" href="/#generator">Build a player</a>
   </nav>
 </header>`
