@@ -49,6 +49,11 @@ export function createSourceApiRuntime(
 
   return {
     supportedHosts,
+    invalidateSource: async (identity) => {
+      database ??= new Database(config.database)
+      cache ??= new MySqlSourceCacheRepository(database)
+      return await cache.deleteIdentity(identity)
+    },
     resolve: async (query, context) => {
       const candidates = playerMediaCandidates(query).filter((candidate) => supportedHosts.has(candidate.host))
       if (candidates.length === 0) return emptyMediaResult()

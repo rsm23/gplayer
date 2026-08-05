@@ -81,4 +81,20 @@ describe('MySQL source cache repository', () => {
       'direct', 'https://cdn.example/video.mp4', 1_700_000_000, 1, 'UA', 'en', 12, '198.51.100.4'
     ])
   })
+
+  it('invalidates one public playback identity without broad cache deletion', async () => {
+    const database = {
+      read: vi.fn(async (_sql: string, _values?: readonly unknown[]) => []),
+      write: vi.fn(async (_sql: string, _values?: readonly unknown[]) => ({ affectedRows: 1 }))
+    }
+    const repository = new MySqlSourceCacheRepository(database as never)
+
+    await expect(repository.deleteIdentity(
+      { host: 'Direct', id: 'https://cdn.example/video.mp4' }
+    )).resolves.toBe(true)
+    expect(database.write).toHaveBeenCalledOnce()
+    expect(database.write).toHaveBeenCalledWith(
+      'DELETE FROM `tb_videos_sources` WHERE `host` = ? AND `host_id` = ?',
+      ['direct', 'https://cdn.example/video.mp4'])
+  })
 })

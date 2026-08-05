@@ -48,6 +48,7 @@ export type SourceApiResolver = (
 
 export type SourceApiRouteOptions = Readonly<{
   resolve: SourceApiResolver
+  invalidateSource?: (identity: Readonly<{ host: string; id: string }>) => Promise<boolean>
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
   supportedHosts?: ReadonlySet<string>
   loadAdsSettings?: AdsSettingsLoader

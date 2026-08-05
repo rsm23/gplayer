@@ -47,6 +47,17 @@ export class MySqlSourceCacheRepository implements SourceCacheRepository {
     )
   }
 
+  public async deleteIdentity(identity: Readonly<{ host: string; id: string }>): Promise<boolean> {
+    const host = identity.host.trim().toLowerCase().slice(0, 100)
+    const id = identity.id.trim().slice(0, 32_768)
+    if (host === '' || id === '') return false
+    await this.database.write(
+      'DELETE FROM `tb_videos_sources` WHERE `host` = ? AND `host_id` = ?',
+      [host, id]
+    )
+    return true
+  }
+
   public async insert(record: SourceCacheInsert): Promise<void> {
     await this.database.write(
       `INSERT INTO \`tb_videos_sources\`

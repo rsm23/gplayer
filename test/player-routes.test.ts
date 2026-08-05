@@ -146,6 +146,47 @@ describe('player HTTP routes', () => {
     expect(capture).toHaveBeenCalledTimes(3)
   })
 
+  it('invalidates signed playback source caches through the recovered public AJAX contract', async () => {
+    const invalidateSource = vi.fn(async () => true)
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      sourceApi: {
+        resolve: async () => ({ sources: [], tracks: [], referer: '', title: '', email: '', image: '', cookies: [], filmstrip: '', clientip: '' }),
+        invalidateSource,
+        supportedHosts: new Set(['direct', 'streamhg'])
+      }
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&ahost=streamhg&aid=backup-id')
+
+    const legacy = await app.inject({
+      method: 'GET',
+      url: `/ajax/public/?action=clearVideoCache&data=${encodeURIComponent(token)}`
+    })
+    expect(legacy.statusCode).toBe(200)
+    expect(legacy.headers['cache-control']).toBe('private, no-store')
+    expect(legacy.json()).toEqual({
+      status: 'ok',
+      message: 'The video cache cleared successfully',
+      result: { clear_video_sources: true }
+    })
+    expect(invalidateSource).toHaveBeenCalledWith({
+      host: 'direct',
+      id: 'https://cdn.example/movie.mp4'
+    })
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=clearVideoCache&data=malformed'
+    })
+    expect(invalid.json()).toEqual({
+      status: 'fail',
+      message: 'Failed to clear the cache of the video or the video does not exist',
+      result: []
+    })
+    expect(invalidateSource).toHaveBeenCalledOnce()
+  })
+
   it('consumes custom provider domains, source-page templates, and display names', async () => {
     const values = {
       'custom-hostnames': JSON.stringify({ youtube: ['video.private.example'] }),
@@ -799,9 +840,17 @@ describe('player HTTP routes', () => {
     })
 
     const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-embed.js' })
-    expect(runtime.body).toContain("instance.on('error', switchToFallback)")
-    expect(runtime.body).toContain("video.addEventListener('error', switchToFallback)")
+    expect(response.body).toContain('data-player-cache-token=')
+    const cacheToken = response.body.match(/data-player-cache-token="([^"]+)"/)?.[1] ?? ''
+    expect(parsePlayerQuery(cacheToken, security, { secureSalt }).media).toEqual({ host: 'streamhg', id: 'primary-id' })
+    expect(runtime.body).toContain("instance.on('error', recoverFromPlaybackFailure)")
+    expect(runtime.body).toContain("video.addEventListener('error', recoverFromPlaybackFailure)")
     expect(runtime.body).toContain('window.location.replace(fallbackUrl)')
+    expect(runtime.body).toContain("new URLSearchParams({ action: 'clearVideoCache', data: cacheToken })")
+    expect(runtime.body).toContain("window.fetch('/ajax/public/'")
+    expect(runtime.body).toContain('window.location.reload()')
+    expect(runtime.body).toContain("window.location.hash = cacheRetryHash")
+    expect(runtime.body).toContain("video.addEventListener('canplay', clearCacheRefreshAttempt, { once: true })")
     expect(runtime.body).toContain("kind: 'thumbnails'")
     expect(runtime.body).toContain('previewThumbnails: { enabled: true')
   })

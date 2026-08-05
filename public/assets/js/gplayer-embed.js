@@ -4,6 +4,40 @@
   const body = document.body
   const video = document.querySelector('#media-player')
   let fallbackStarted = false
+  let cacheRefreshAttempted = false
+  const cacheToken = body.dataset.playerCacheToken || ''
+  const cacheRetryKey = `gplayer:cache-refresh:${window.location.pathname}:${window.location.search.slice(0, 512)}`
+  const cacheRetryHash = '#gplayer-cache-refresh'
+
+  const cacheRefreshWasAttempted = () => {
+    try {
+      return window.sessionStorage.getItem(cacheRetryKey) === '1'
+    } catch {
+      return cacheRefreshAttempted || window.location.hash === cacheRetryHash
+    }
+  }
+
+  const markCacheRefreshAttempted = () => {
+    cacheRefreshAttempted = true
+    try {
+      window.sessionStorage.setItem(cacheRetryKey, '1')
+    } catch {
+      // Sandboxed embeds and privacy modes may deny access to session storage.
+      window.location.hash = cacheRetryHash
+    }
+  }
+
+  const clearCacheRefreshAttempt = () => {
+    cacheRefreshAttempted = false
+    try {
+      window.sessionStorage.removeItem(cacheRetryKey)
+    } catch {
+      // The fragment fallback below remains available when storage is blocked.
+    }
+    if (window.location.hash === cacheRetryHash) {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`)
+    }
+  }
 
   const fallbackUrl = (() => {
     const value = body.dataset.playerFallbackUrl || ''
@@ -25,7 +59,25 @@
     return true
   }
 
-  if (video instanceof HTMLVideoElement) video.addEventListener('error', switchToFallback)
+  const recoverFromPlaybackFailure = () => {
+    if (fallbackStarted) return true
+    if (!cacheToken || cacheRefreshWasAttempted()) return switchToFallback()
+    fallbackStarted = true
+    markCacheRefreshAttempted()
+    const payload = new URLSearchParams({ action: 'clearVideoCache', data: cacheToken })
+    void window.fetch('/ajax/public/', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: payload.toString()
+    }).finally(() => window.location.reload())
+    return true
+  }
+
+  if (video instanceof HTMLVideoElement) {
+    video.addEventListener('error', recoverFromPlaybackFailure)
+    video.addEventListener('canplay', clearCacheRefreshAttempt, { once: true })
+  }
 
   const enforceEmbedOnly = () => {
     if (body.dataset.embedOnly !== 'true' || window.self !== window.top) return true
@@ -348,7 +400,7 @@
         if (p2pActive) body.dataset.p2pTransport = 'hls'
         window.addEventListener('pagehide', () => hls.destroy(), { once: true })
         await manifest.catch((error) => {
-          switchToFallback()
+          recoverFromPlaybackFailure()
           throw error
         })
         const levels = supportedHlsLevels(hls)
@@ -418,7 +470,7 @@
         }
       }
       await shakaPlayer.load(source).catch((error) => {
-        switchToFallback()
+        recoverFromPlaybackFailure()
         throw error
       })
       const shakaCaptions = shakaPlayer.getTextTracks().map((track, index) => {
@@ -856,8 +908,8 @@
       instance.destroy = () => instance.remove()
       instance.resumePlayback = () => instance.play()
       window.jwp = instance
-      instance.on('error', switchToFallback)
-      instance.on('setupError', switchToFallback)
+      instance.on('error', recoverFromPlaybackFailure)
+      instance.on('setupError', recoverFromPlaybackFailure)
       body.dataset.activePlayer = 'jwplayer'
       return jwController(instance)
     } catch {
@@ -1070,7 +1122,7 @@
       player.attach(media)
         .then(() => player.load(source))
         .catch(() => {
-          if (!switchToFallback()) showFallback(media, 'The MPEG-DASH stream could not be loaded.')
+          if (!recoverFromPlaybackFailure()) showFallback(media, 'The MPEG-DASH stream could not be loaded.')
         })
       return
     }
@@ -1083,7 +1135,7 @@
     if (typeof window.Hls === 'function' && window.Hls.isSupported()) {
       const hls = new window.Hls({ enableWorker: true })
       hls.on(window.Hls.Events.ERROR, (_event, data) => {
-        if (data?.fatal) switchToFallback()
+        if (data?.fatal) recoverFromPlaybackFailure()
       })
       hls.loadSource(source)
       hls.attachMedia(media)

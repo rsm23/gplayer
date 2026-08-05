@@ -61,6 +61,11 @@ const statCounterInputSchema = z.object({
   data: z.string().min(1).max(65_536)
 }).passthrough()
 
+const clearVideoCacheInputSchema = z.object({
+  action: z.literal('clearVideoCache'),
+  data: z.string().min(1).max(65_536)
+}).passthrough()
+
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
 const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const MAX_SHORTLINK_TARGETS = 20
@@ -83,6 +88,7 @@ export type PlayerRouteOptions = Readonly<{
   loadRecaptchaSiteKey?: () => Promise<string>
   capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
   captureView?: (input: ViewCounterCapture) => Promise<string | null>
+  invalidateSource?: (identity: Readonly<{ host: string; id: string }>) => Promise<boolean>
   resolvePlayback?: SourceApiResolver
   providerContexts?: ProviderStreamContextRegistry
   selectDeliveryBaseUrl?: DeliveryBaseUrlSelector
@@ -213,17 +219,41 @@ export async function registerPlayerRoutes(
     }
   }
 
+  const clearVideoCache = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    reply.headers({
+      'cache-control': 'private, no-store',
+      pragma: 'no-cache',
+      'x-content-type-options': 'nosniff',
+      'x-robots-tag': 'noindex, nofollow'
+    })
+    const input = clearVideoCacheInputSchema.safeParse(requestData(request))
+    if (!input.success) return clearVideoCacheFailure()
+    const parsed = parsePlayerQuery(input.data.data, security, { secureSalt: config.secureSalt })
+    const media = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
+    const identity = media === null ? undefined : playerMediaCandidates(media)[0]
+    if (identity === undefined || options.invalidateSource === undefined) return clearVideoCacheFailure()
+    try {
+      const deleted = await options.invalidateSource(identity)
+      return {
+        status: 'ok',
+        message: 'The video cache cleared successfully',
+        result: { clear_video_sources: deleted }
+      }
+    } catch {
+      return clearVideoCacheFailure()
+    }
+  }
+
   const dispatchPublicAjax = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const action = typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
-      ? (request.body as Record<string, unknown>).action
-      : undefined
+    const action = requestData(request).action
     if (action === 'gdriveBypassLimit') return await bypassDrive(request, reply)
     if (action === 'statCounter') return await statCounter(request, reply)
+    if (action === 'clearVideoCache') return await clearVideoCache(request, reply)
     return await createPlayer(request, reply)
   }
 
-  app.post('/ajax/public', dispatchPublicAjax)
-  app.post('/ajax/public/', dispatchPublicAjax)
+  app.route({ method: ['GET', 'POST'], url: '/ajax/public', handler: dispatchPublicAjax })
+  app.route({ method: ['GET', 'POST'], url: '/ajax/public/', handler: dispatchPublicAjax })
   app.get('/ajax', statCounter)
   app.get('/ajax/', statCounter)
 
@@ -389,6 +419,7 @@ export async function registerPlayerRoutes(
       ...(p2pMode === null ? {} : { p2pSwarmId: playerP2pSwarmId(config, resolvedMedia) }),
       embedOnly: publicSettings.embed_only,
       viewCounter: Object.freeze({ token: parsed.token, runtime: visitCounterRuntime(general) }),
+      cacheToken: cacheInvalidationToken(playableMedia, extracted?.result ?? null, parsed.token, security),
       hostingData: hosting.data,
       customNames: hosting.customNames,
       ...(sourceResponse === null ? {} : {
@@ -551,6 +582,20 @@ export async function registerPlayerRoutes(
 
 function statCounterFailure(): Readonly<{ status: 'fail'; message: string; result: 0 }> {
   return Object.freeze({ status: 'fail', message: 'Total daily visits have been exceeded', result: 0 })
+}
+
+function clearVideoCacheFailure(): Readonly<{ status: 'fail'; message: string; result: readonly never[] }> {
+  return Object.freeze({ status: 'fail', message: 'Failed to clear the cache of the video or the video does not exist', result: Object.freeze([]) })
+}
+
+function requestData(request: FastifyRequest): Record<string, unknown> {
+  const query = typeof request.query === 'object' && request.query !== null && !Array.isArray(request.query)
+    ? request.query as Record<string, unknown>
+    : {}
+  const body = typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
+    ? request.body as Record<string, unknown>
+    : {}
+  return { ...query, ...body }
 }
 
 async function authenticatedRequest(
@@ -902,6 +947,18 @@ function fallbackPlayerUrl(
 ): Readonly<{ fallbackUrl?: string }> {
   const fallbackUrl = nextCandidateRoute(media, result, embedSlug, security)
   return fallbackUrl === undefined ? Object.freeze({}) : Object.freeze({ fallbackUrl })
+}
+
+function cacheInvalidationToken(
+  media: PlayerMediaQuery,
+  result: MediaResult | null,
+  fallbackToken: string,
+  security: Security
+): string {
+  const host = result?.upstream?.host ?? media.host
+  const id = result?.upstream?.id ?? media.id
+  if (host === undefined || host === '' || id === undefined || id === '') return fallbackToken
+  return security.encryptURL(buildPlayerQuery({ host, id }))
 }
 
 function nextCandidateRoute(

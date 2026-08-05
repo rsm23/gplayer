@@ -473,6 +473,7 @@ export async function buildApp(
     },
     capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId),
     captureView: async (input) => await viewCounterRuntime.capture(input),
+    ...(sourceApiRuntime.invalidateSource === undefined ? {} : { invalidateSource: sourceApiRuntime.invalidateSource }),
     resolvePlayback: sourceApiRuntime.resolve,
     providerContexts: providerStreamContexts,
     ...(selectDeliveryBaseUrl === undefined ? {} : { selectDeliveryBaseUrl })
