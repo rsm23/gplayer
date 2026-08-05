@@ -55,6 +55,11 @@ beforeEach(async () => {
       response.writeHead(200, { 'content-type': 'text/plain' }).end(subtitle)
       return
     }
+    if (request.url === '/caption.txt') {
+      const subtitle = '[offset:+500]\n[00:01.10] First\n[00:02.20] Second'
+      response.writeHead(200, { 'content-type': 'text/plain' }).end(subtitle)
+      return
+    }
     if (request.url === '/previews/strip.vtt') {
       const filmstrip = 'WEBVTT\r\n\r\n00:00:00.000 --> 00:00:05.000\r\nsprites/sheet.jpg#xywh=0,0,160,90\r\n'
       response.writeHead(200, { 'content-type': 'text/vtt' }).end(filmstrip)
@@ -171,6 +176,21 @@ describe('poster, subtitle, and filmstrip routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.body).toContain('00:00:02.100 --> 00:00:04.250')
     expect(response.body).toContain('First\nsecond')
+  })
+
+  it('auto-detects and caches legacy TXT subtitle grammars through an authenticated route', async () => {
+    app = await buildMediaApp(true)
+    const target = new URL('/caption.txt', upstreamUrl)
+    const proxy = createMediaProxyPath('subtitle', target.toString(), new Security(secureSalt)) ?? ''
+
+    const first = await app.inject({ method: 'GET', url: proxy })
+    const second = await app.inject({ method: 'GET', url: proxy })
+
+    expect(first.statusCode).toBe(200)
+    expect(first.body).toBe('WEBVTT\n\n00:00:00.600 --> 00:00:01.700\nFirst\n\n00:00:01.700 --> 00:00:02.700\nSecond')
+    expect(second.statusCode).toBe(302)
+    expect(second.headers.location).toContain(`/uploads/subtitles/tmp/${legacyXxh32(target.toString())}.cache`)
+    expect(upstreamHits.get('/caption.txt')).toBe(1)
   })
 
   it('converts and caches binary EBU STL through the authenticated subtitle route', async () => {

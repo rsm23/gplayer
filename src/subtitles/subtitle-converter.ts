@@ -1,3 +1,5 @@
+import { contentDetectedSubtitleCues } from './content-detected-converters.js'
+
 const MICRODVD_FPS = 23.976
 const EBU_STL_HEADER_BYTES = 1_024
 const EBU_STL_BLOCK_BYTES = 128
@@ -41,7 +43,7 @@ export function convertSubtitleToWebVtt(input: Uint8Array | string, sourceUrl: U
   } else if (subViewerContent(content) || sbvContent(content)) {
     cues = commaTimestampCues(content)
   } else {
-    cues = genericTextCues(content)
+    cues = contentDetectedSubtitleCues(content) ?? genericTextCues(content)
   }
   return renderWebVtt(cues)
 }

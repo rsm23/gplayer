@@ -43,7 +43,7 @@ pnpm assets:migrate -- /absolute/path/to/legacy-install
 
 This command recovers files from `subtitles`, `uploads/subtitles`, and `uploads/images`, flattens their nested layouts exactly as the legacy migration did, and publishes them under `public/uploads/subtitles` and `public/uploads/images`. Unlike the legacy copier, it never overwrites a different destination: byte-identical files are deduplicated, conflicts and unsafe executable/server-control files are reported, and a source file is removed only after the destination has passed a SHA-256 integrity check. Use `--copy-only` to retain every source file, or `--public-root=/absolute/path/to/public` to target a deployed public directory. Back up the legacy installation first.
 
-At playback time, the authenticated subtitle proxy converts every supplied SRT, VTT, ASS, SUB, STL, DFXP, TTML, SBV, and TXT family into WebVTT. Conversion is byte-safe for UTF-8, UTF-16, Windows-1252, and binary EBU STL/ISO-6937 input and preserves the supplied cache-on-first-read behavior without loading PHP.
+At playback time, the authenticated subtitle proxy converts every supplied SRT, VTT, ASS, SUB, STL, DFXP, TTML, SBV, and TXT family into WebVTT. Conversion is byte-safe for UTF-8, UTF-16, Windows-1252, and binary EBU STL/ISO-6937 input. As in the supplied content-detecting dependency, TXT URLs can also carry SAMI, Scenarist SCC/CEA-608, LRC, or timestamped CSV payloads. The route preserves cache-on-first-read behavior without loading PHP.
 
 Refresh the supplied-source inventory and non-PHP assets:
 

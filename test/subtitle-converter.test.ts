@@ -90,6 +90,43 @@ second
     const output = convertSubtitleToWebVtt('First line\ncontinued\n\nSecond cue', new URL('https://media.example/caption.txt'))
     expect(output).toBe('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nFirst line\ncontinued\n\n00:00:01.000 --> 00:00:02.000\nSecond cue')
   })
+
+  it('auto-detects SAMI blocks, HTML entities, line breaks, and blank terminators behind TXT URLs', () => {
+    const output = convertSubtitleToWebVtt(`
+<SAMI><BODY>
+<SYNC Start=137400><P>Senator, we&#039;re making<br>our final approach.</P></SYNC>
+<SYNC Start=140400><P>&nbsp;</P></SYNC>
+</BODY></SAMI>
+`, new URL('https://media.example/caption.txt'))
+    expect(output).toBe("WEBVTT\n\n00:02:17.400 --> 00:02:20.400\nSenator, we're making\nour final approach.")
+  })
+
+  it('auto-detects LRC offsets and grouped timestamps behind TXT URLs', () => {
+    const output = convertSubtitleToWebVtt(`
+[offset:+500]
+[00:01.10] First
+[00:02.20][00:05.00] Grouped
+[00:03.25] Third
+`, new URL('https://media.example/caption.txt'))
+    expect(output).toBe('WEBVTT\n\n00:00:00.600 --> 00:00:01.700\nFirst\n\n00:00:01.700 --> 00:00:02.750\nGrouped\n\n00:00:02.750 --> 00:00:04.500\nThird\n\n00:00:04.500 --> 00:00:05.500\nGrouped')
+  })
+
+  it('auto-detects Scenarist SCC display timing, positioning, parity bits, and CEA-608 text', () => {
+    const output = convertSubtitleToWebVtt(`Scenarist_SCC V1.0
+
+00:02:18;20 94ae 94ae 9420 9420 1370 1370 d3e5 6e61 f4ef f22c 20f7 e5a7 f2e5 206d 616b e96e 6780 94d0 94d0 ef75 f220 e6e9 6e61 ec20 6170 70f2 ef61 e368 20e9 6ef4 ef80 9470 9470 43ef f275 73e3 616e f4ae 942f 942f
+
+00:02:24;28 942c 942c
+`, new URL('https://media.example/caption.txt'))
+    expect(output).toBe("WEBVTT\n\n00:02:20.002 --> 00:02:25.001\nSenator, we're making\nour final approach into\nCoruscant.")
+  })
+
+  it('auto-detects timestamped CSV delimiters, quoted newlines, and frame clocks behind TXT URLs', () => {
+    const output = convertSubtitleToWebVtt(`Start;End;Text;Layer
+00:00:01:00;00:00:02:00;"First\nline";1
+00:00:02:00;00:00:03:00;Second;1`, new URL('https://media.example/caption.txt'))
+    expect(output).toBe('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nFirst\nline\n\n00:00:02.000 --> 00:00:03.000\nSecond')
+  })
 })
 
 function ebuStlFixture(): Buffer {
