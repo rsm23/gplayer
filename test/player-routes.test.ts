@@ -402,6 +402,84 @@ describe('player HTTP routes', () => {
     expect(response.body).not.toContain('src="https://cdn.example/en.vtt"')
   })
 
+  it('renders configured analytics on player and download surfaces without executing the compatibility widget', async () => {
+    const widgetPayload = '<script>globalThis.compatibilityWidgetExecuted = true</script>'
+    const values = {
+      google_analytics_id: 'G-ABC1234',
+      google_tag_manager: 'GTM-TEST123',
+      histats_id: '3590204',
+      chat_widget: widgetPayload
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+
+    const embed = await app.inject({ method: 'GET', url: `/e/?${token}` })
+    expect(embed.statusCode).toBe(200)
+    expect(embed.body).toContain('data-google-analytics-id="G-ABC1234"')
+    expect(embed.body).toContain('data-google-tag-manager-id="GTM-TEST123"')
+    expect(embed.body).toContain('data-histats-id="3590204"')
+    expect(embed.body).toContain('src="/assets/js/gplayer-analytics.js"')
+    expect(embed.body).toContain('ns.html?id=GTM-TEST123')
+    expect(embed.body).toContain('0.gif?3590204&amp;101')
+    expect(embed.body).not.toContain(widgetPayload)
+    expect(embed.body).not.toContain('compatibilityWidgetExecuted')
+    expect(embed.headers['content-security-policy']).toContain('https://www.googletagmanager.com')
+    expect(embed.headers['content-security-policy']).toContain('https://s10.histats.com')
+
+    const download = await app.inject({ method: 'GET', url: `/d/?${token}` })
+    expect(download.statusCode).toBe(200)
+    expect(download.body).toContain('data-google-analytics-id="G-ABC1234"')
+    expect(download.body).toContain('ns.html?id=GTM-TEST123')
+    expect(download.body).not.toContain(widgetPayload)
+    expect(download.headers['content-security-policy']).toContain('https://www.googletagmanager.com')
+    expect(download.headers['content-security-policy']).toContain('https://*.histats.com')
+
+    const downloadError = await app.inject({ method: 'GET', url: '/d/?not-a-valid-token' })
+    expect(downloadError.statusCode).toBe(400)
+    expect(downloadError.body).toContain('data-google-analytics-id=""')
+    expect(downloadError.body).toContain('data-google-tag-manager-id=""')
+    expect(downloadError.body).toContain('data-histats-id="3590204"')
+    expect(downloadError.body).not.toContain('ns.html?id=')
+    expect(downloadError.headers['content-security-policy']).not.toContain('googletagmanager.com')
+    expect(downloadError.headers['content-security-policy']).toContain('s10.histats.com')
+
+    const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-analytics.js' })
+    expect(runtime.statusCode).toBe(200)
+    expect(runtime.body).toContain('https://www.googletagmanager.com/gtag/js')
+    expect(runtime.body).toContain('https://s10.histats.com/js15_as.js')
+    expect(runtime.body).not.toContain('eval(')
+  })
+
+  it('keeps malformed analytics settings inert and the default CSP narrow', async () => {
+    const payload = 'G-ABC123</meta><script>globalThis.analyticsInjected=true</script>'
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => ({
+          google_analytics_id: payload,
+          google_tag_manager: 'https://attacker.example/tag.js',
+          histats_id: '1&script=bad',
+          chat_widget: '<img src=x onerror=alert(1)>'
+        }),
+        upsertMany: async () => {}
+      })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+
+    const embed = await app.inject({ method: 'GET', url: `/e/?${token}` })
+    expect(embed.body).not.toContain('gplayer-analytics.js')
+    expect(embed.body).not.toContain('analyticsInjected')
+    expect(embed.body).not.toContain('onerror=')
+    expect(embed.headers['content-security-policy']).not.toContain('s10.histats.com')
+
+    const download = await app.inject({ method: 'GET', url: `/d/?${token}` })
+    expect(download.body).not.toContain('gplayer-analytics.js')
+    expect(download.body).not.toContain('attacker.example')
+    expect(download.headers['content-security-policy']).not.toContain('googletagmanager.com')
+    expect(download.headers['content-security-policy']).toContain("connect-src 'none'")
+  })
+
   it('consumes direct, popup, banner, and anti-adblock settings in isolated public runtimes', async () => {
     const values = {
       block_adblocker: 'true',

@@ -2,9 +2,11 @@ import { Hosting } from '../core/hosting.js'
 import type { HostingData } from '../core/hosting-data.js'
 import type { PlayerMediaQuery } from '../core/player-query.js'
 import type { MediaSource, MediaTrack } from '../core/source-resolver.js'
+import { histatsOnly, renderAnalyticsHead, renderAnalyticsNoScript, type AnalyticsConfig } from './analytics.js'
 
 export type DownloadPageOptions = Readonly<{
   embedUrl: string
+  analytics?: AnalyticsConfig
   alternativeUrl?: string
   bannerTopFrameUrl?: string
   bannerBottomFrameUrl?: string
@@ -66,9 +68,11 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
   <meta name="robots" content="noindex,nofollow">
   <meta name="referrer" content="no-referrer">
   <title>Download ${escapeHtml(title)}</title>
+  ${renderAnalyticsHead(options.analytics)}
   <link rel="stylesheet" href="/assets/css/gplayer-download.css">
 </head>
 <body>
+  ${renderAnalyticsNoScript(options.analytics)}
   <main class="download-shell">
     <section class="download-card" aria-labelledby="download-title">
       <p class="eyebrow">GDPlayer download</p>
@@ -137,8 +141,9 @@ export function downloadPageLinkTargets(media: PlayerMediaQuery, hostingData?: H
   return Object.freeze([...new Set([primary, ...subtitles].filter((value) => value !== ''))])
 }
 
-export function renderDownloadError(message: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Download unavailable</title><link rel="stylesheet" href="/assets/css/gplayer-download.css"></head><body><main class="download-shell"><section class="download-card error-card"><p class="eyebrow">GDPlayer download</p><h1>Download unavailable</h1><p>${escapeHtml(message)}</p></section></main></body></html>`
+export function renderDownloadError(message: string, analytics?: AnalyticsConfig): string {
+  const errorAnalytics = histatsOnly(analytics)
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Download unavailable</title>${renderAnalyticsHead(errorAnalytics)}<link rel="stylesheet" href="/assets/css/gplayer-download.css"></head><body>${renderAnalyticsNoScript(errorAnalytics)}<main class="download-shell"><section class="download-card error-card"><p class="eyebrow">GDPlayer download</p><h1>Download unavailable</h1><p>${escapeHtml(message)}</p></section></main></body></html>`
 }
 
 function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: DownloadPageOptions): DownloadItem | null {

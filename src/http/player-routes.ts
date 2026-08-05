@@ -35,6 +35,7 @@ import {
 import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
 import type { DeliveryBaseUrlSelector } from '../load-balancers/load-balancer-selector.js'
 import type { MediaResult } from '../core/source-resolver.js'
+import { analyticsConfig, analyticsCspSources, histatsOnly, type AnalyticsConfig } from '../player/analytics.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -314,6 +315,7 @@ export async function registerPlayerRoutes(
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
+    const pageAnalytics = analyticsConfig(general)
     if (embedOnlyRejectsRequest(publicSettings.embed_only, request.headers['sec-fetch-dest'])) {
       applyEmbedHeaders(reply, ads)
       reply.code(403)
@@ -330,6 +332,7 @@ export async function registerPlayerRoutes(
     })
     const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
     if (resolvedMedia === null) {
+      applyEmbedHeaders(reply, ads)
       reply.code(400).type('text/html; charset=utf-8')
       return renderEmbedError(parsed.errors[0] ?? 'The player link is invalid.')
     }
@@ -378,10 +381,11 @@ export async function registerPlayerRoutes(
       ? proxyPlayerMedia(withDefaultPoster(playableMedia, player), security, request.ip)
       : playableMedia
     const p2pMode = playerP2pMode(player, media, sourceResponse)
-    applyEmbedHeaders(reply, ads, p2pMode, player)
+    applyEmbedHeaders(reply, ads, p2pMode, player, pageAnalytics)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
       downloadUrl: publicSettings.enable_download_page ? routePath(player.slug_download, parsed.token) : '',
+      analytics: pageAnalytics,
       ...(p2pMode === null ? {} : { p2pSwarmId: playerP2pSwarmId(config, resolvedMedia) }),
       embedOnly: publicSettings.embed_only,
       viewCounter: Object.freeze({ token: parsed.token, runtime: visitCounterRuntime(general) }),
@@ -416,24 +420,28 @@ export async function registerPlayerRoutes(
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
+    const pageAnalytics = analyticsConfig(general)
+    const errorAnalytics = histatsOnly(pageAnalytics)
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
       secureSalt: config.secureSalt
     })
-    applyDownloadHeaders(reply)
     if (!publicSettings.enable_download_page) {
+      applyDownloadHeaders(reply, errorAnalytics)
       reply.code(403).type('text/html; charset=utf-8')
-      return renderDownloadError('The download page is disabled.')
+      return renderDownloadError('The download page is disabled.', pageAnalytics)
     }
     const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
     if (resolvedMedia === null) {
+      applyDownloadHeaders(reply, errorAnalytics)
       reply.code(400).type('text/html; charset=utf-8')
-      return renderDownloadError(parsed.errors[0] ?? 'The download link is invalid.')
+      return renderDownloadError(parsed.errors[0] ?? 'The download link is invalid.', pageAnalytics)
     }
     if (networkAccessRejected(request, misc, countryCode, false) ||
       mediaHostDisabled(resolvedMedia, misc.disable_host) ||
       accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(resolvedMedia))) {
+      applyDownloadHeaders(reply, errorAnalytics)
       reply.code(403).type('text/html; charset=utf-8')
-      return renderDownloadError('You are not allowed to access this download.')
+      return renderDownloadError('You are not allowed to access this download.', pageAnalytics)
     }
     const configuredMedia = withoutDisabledAlternatives(resolvedMedia, misc.disable_host)
     const playableMedia = general.load_balancer_rand ? randomizedPlaybackMedia(configuredMedia) : configuredMedia
@@ -445,8 +453,9 @@ export async function registerPlayerRoutes(
     })
     const extracted = await resolveDownloadPlayback(playableMedia, requestContext, options.resolvePlayback)
     if (extracted !== null && accessPolicyFromMisc(misc).isTitleBlacklisted(extracted.result.title || playerMediaTitle(playableMedia))) {
+      applyDownloadHeaders(reply, errorAnalytics)
       reply.code(403).type('text/html; charset=utf-8')
-      return renderDownloadError('You are not allowed to access this download.')
+      return renderDownloadError('You are not allowed to access this download.', pageAnalytics)
     }
     const deliveryBaseUrl = extracted === null
       ? new URL(config.baseUrl)
@@ -477,9 +486,11 @@ export async function registerPlayerRoutes(
       options.shortenUrl,
       sourceResponse === null ? undefined : sourceDownloadTargets(sourceResponse, publicSettings.show_sub_download)
     )
+    applyDownloadHeaders(reply, pageAnalytics)
     reply.type('text/html; charset=utf-8')
     return renderDownloadPage(playableMedia, {
       embedUrl,
+      analytics: pageAnalytics,
       ...(alternativeUrl === undefined ? {} : { alternativeUrl }),
       downloadLabel: player.text_download,
       hideHostname: player.hide_hostname,
@@ -669,11 +680,12 @@ function applyEmbedHeaders(
   reply: Parameters<FastifyRequest['routeOptions']['handler']>[1],
   ads: AdsSettings,
   p2pMode: 'hls' | 'dash' | null = null,
-  player?: PlayerSettings
+  player?: PlayerSettings,
+  analytics?: AnalyticsConfig
 ): void {
   reply
     .header('cache-control', 'private, no-store')
-    .header('content-security-policy', embedContentSecurityPolicy(ads, p2pMode, player))
+    .header('content-security-policy', embedContentSecurityPolicy(ads, p2pMode, player, analytics))
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'strict-origin-when-cross-origin')
     .type('text/html; charset=utf-8')
@@ -746,9 +758,10 @@ function applyAdFrameHeaders(reply: Parameters<FastifyRequest['routeOptions']['h
     .header('x-robots-tag', 'noindex, nofollow')
 }
 
-function embedContentSecurityPolicy(ads: AdsSettings, p2pMode: 'hls' | 'dash' | null, player?: PlayerSettings): string {
+function embedContentSecurityPolicy(ads: AdsSettings, p2pMode: 'hls' | 'dash' | null, player?: PlayerSettings, analytics?: AnalyticsConfig): string {
   const scripts = ["'self'"]
   const connections = ['http:', 'https:']
+  const images = ["'self'", 'http:', 'https:', 'data:']
   const frames = [
     "'self'",
     'https://www.youtube-nocookie.com',
@@ -771,6 +784,11 @@ function embedContentSecurityPolicy(ads: AdsSettings, p2pMode: 'hls' | 'dash' | 
       }
     }
   }
+  const analyticsSources = analyticsCspSources(analytics)
+  appendUnique(scripts, analyticsSources.scripts)
+  appendUnique(connections, analyticsSources.connections)
+  appendUnique(images, analyticsSources.images)
+  appendUnique(frames, analyticsSources.frames)
   if (!ads.disable_direct_ads && ads.show_iframeads && ads.direct_ads_link.length > 0) {
     try {
       const origin = new URL(ads.direct_ads_link).origin
@@ -779,7 +797,7 @@ function embedContentSecurityPolicy(ads: AdsSettings, p2pMode: 'hls' | 'dash' | 
       // Settings validation normally guarantees a URL; omit invalid values defensively.
     }
   }
-  return `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src ${connections.join(' ')}; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
+  return `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src ${connections.join(' ')}; img-src ${images.join(' ')}; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
 }
 
 function playerP2pMode(
@@ -976,13 +994,22 @@ function routePath(slug: string, query: string): string {
   return `/${slug.replace(/^\/+|\/+$/g, '')}/?${query}`
 }
 
-function applyDownloadHeaders(reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]): void {
+function applyDownloadHeaders(reply: Parameters<FastifyRequest['routeOptions']['handler']>[1], analytics?: AnalyticsConfig): void {
+  const analyticsSources = analyticsCspSources(analytics)
+  const scripts = ["'self'", ...analyticsSources.scripts]
+  const connections = analyticsSources.connections.length === 0 ? ["'none'"] : [...analyticsSources.connections]
+  const images = ["'self'", 'data:', ...analyticsSources.images]
+  const frames = ["'self'", ...analyticsSources.frames]
   reply
     .header('cache-control', 'private, no-store')
-    .header('content-security-policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; object-src 'none'")
+    .header('content-security-policy', `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self'; connect-src ${connections.join(' ')}; img-src ${images.join(' ')}; frame-src ${frames.join(' ')}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; object-src 'none'`)
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'no-referrer')
     .header('x-robots-tag', 'noindex, nofollow')
+}
+
+function appendUnique(target: string[], values: readonly string[]): void {
+  for (const value of values) if (!target.includes(value)) target.push(value)
 }
 
 function proxyPlayerMedia(media: PlayerMediaQuery, security: Security, clientIp: string): PlayerMediaQuery {

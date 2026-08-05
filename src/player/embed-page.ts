@@ -4,6 +4,7 @@ import type { PlayerMediaQuery, PlayerPublicOptions } from '../core/player-query
 import type { MediaSource, MediaTrack } from '../core/source-resolver.js'
 import type { RuntimeVastConfiguration } from '../settings/ads-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
+import { renderAnalyticsHead, renderAnalyticsNoScript, type AnalyticsConfig } from './analytics.js'
 
 type RenderedSource = Readonly<{
   kind: 'video' | 'hls' | 'dash' | 'provider' | 'unavailable'
@@ -24,6 +25,7 @@ export type EmbedAdsOptions = Readonly<{
 export type EmbedPlayerOptions = Readonly<{
   settings: PlayerSettings
   downloadUrl: string
+  analytics?: AnalyticsConfig
   p2pSwarmId?: string
   embedOnly?: boolean
   viewCounter?: Readonly<{ token: string; runtime: number }>
@@ -148,10 +150,12 @@ export function renderEmbedPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>${escapeHtml(documentTitle)}</title>
+  ${renderAnalyticsHead(playerOptions?.analytics)}
   ${playerStyles}
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
 <body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-player-fallback-url="${escapeHtmlAttribute(playerOptions?.fallbackUrl ?? '')}" data-view-counter-token="${escapeHtmlAttribute(playerOptions?.viewCounter?.token ?? '')}" data-view-counter-runtime="${String(playerOptions?.viewCounter?.runtime ?? 10)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-library="${escapeHtmlAttribute(settings?.player ?? 'jwplayer')}" data-player-skin="${escapeHtmlAttribute(settings?.player_skin ?? '')}" data-playback-rate="${String(settings?.playback_rate === true)}" data-default-resolution="${escapeHtmlAttribute(settings?.default_resolution ?? 'Auto')}" data-default-audio="${escapeHtmlAttribute(defaultAudio.value)}" data-default-audio-key="${escapeHtmlAttribute(defaultAudio.key)}" data-default-subtitle="${escapeHtmlAttribute(defaultSubtitle.value)}" data-default-subtitle-key="${escapeHtmlAttribute(defaultSubtitle.key)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-caption-color="#${escapeHtmlAttribute(settings?.subtitle_color ?? 'ffffff')}" data-caption-font="${escapeHtmlAttribute(settings?.font_family ?? 'Arial')}" data-caption-edge="${escapeHtmlAttribute(settings?.edge_style ?? 'dropShadow')}" data-caption-background-color="#${escapeHtmlAttribute(settings?.background_color ?? '000000')}" data-caption-background-opacity="${escapeHtmlAttribute(settings?.background_opacity ?? '75')}" data-caption-window-color="#${escapeHtmlAttribute(settings?.window_color ?? '000000')}" data-caption-window-opacity="${escapeHtmlAttribute(settings?.window_opacity ?? '0')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
+  ${renderAnalyticsNoScript(playerOptions?.analytics)}
   <main class="player-stage" aria-label="Video player">${player}${loader}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}${servers}</main>
   ${directFallback}
   ${adblockNotice}
