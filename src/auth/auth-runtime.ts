@@ -9,12 +9,15 @@ import { SessionAdminService, type SessionAdminStore } from './session-admin-ser
 import { UserAdminService, type UserAdminStore } from './user-admin-service.js'
 import { MySqlSettingsAdminStore } from '../settings/mysql-settings-admin-store.js'
 import { SettingsAdminService, type SettingsAdminStore } from '../settings/settings-admin-service.js'
+import { MySqlSubtitleAdminStore } from '../subtitles/mysql-subtitle-admin-store.js'
+import type { SubtitleAdminStore } from '../subtitles/subtitle-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
   sessions: SessionAdminService
   users: UserAdminService
   settings: SettingsAdminService
+  subtitleStore: SubtitleAdminStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -23,6 +26,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let sessionStore: MySqlSessionAdminStore | undefined
   let userStore: MySqlUserAdminStore | undefined
   let settingsStore: MySqlSettingsAdminStore | undefined
+  let subtitleStore: MySqlSubtitleAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -43,6 +47,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentSettingsStore = (): MySqlSettingsAdminStore => {
     settingsStore ??= new MySqlSettingsAdminStore(currentDatabase())
     return settingsStore
+  }
+  const currentSubtitleStore = (): MySqlSubtitleAdminStore => {
+    subtitleStore ??= new MySqlSubtitleAdminStore(currentDatabase())
+    return subtitleStore
   }
 
   const lazyStore: AuthStore = {
@@ -71,6 +79,15 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     upsertMany: async (entries) => await currentSettingsStore().upsertMany(entries),
     deleteAll: async () => await currentSettingsStore().deleteAll()
   }
+  const lazySubtitleStore: SubtitleAdminStore = {
+    listSubtitles: async (query, access) => await currentSubtitleStore().listSubtitles(query, access),
+    getSubtitle: async (id, access) => await currentSubtitleStore().getSubtitle(id, access),
+    insertSubtitle: async (value) => await currentSubtitleStore().insertSubtitle(value),
+    deleteSubtitle: async (id, access, links) => await currentSubtitleStore().deleteSubtitle(id, access, links),
+    renameSubtitle: async (id, access, fileName, oldSuffix, link, updated) => await currentSubtitleStore().renameSubtitle(id, access, fileName, oldSuffix, link, updated),
+    listSubtitleHosts: async () => await currentSubtitleStore().listSubtitleHosts(),
+    migrateSubtitleHost: async (oldHost, newHost, updated) => await currentSubtitleStore().migrateSubtitleHost(oldHost, newHost, updated)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -80,6 +97,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     auth: new AuthService(lazyStore),
     sessions: new SessionAdminService(lazySessionStore),
     users: new UserAdminService(lazyUserStore),
-    settings: new SettingsAdminService(lazySettingsStore)
+    settings: new SettingsAdminService(lazySettingsStore),
+    subtitleStore: lazySubtitleStore
   })
 }

@@ -7,6 +7,7 @@ import type { HostingSettings } from '../settings/hosting-settings.js'
 import { PLAYER_CHOICES, PLAYER_EDGE_STYLES, PLAYER_FONTS, PLAYER_LANGUAGE_OPTIONS, PLAYER_LOADERS, PLAYER_LOGO_POSITIONS, PLAYER_PRELOAD, PLAYER_RESOLUTIONS, PLAYER_SKINS, PLAYER_STRETCHING, type PlayerSettings } from '../settings/player-settings.js'
 import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 import type { VastAsset } from '../settings/vast-assets-service.js'
+import type { SubtitleAdminRecord } from '../subtitles/subtitle-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -40,7 +41,7 @@ export function renderAdminLoginPage(adminBase: string, message?: AdminMessage):
 
 export function renderAdminDashboard(adminBase: string, user: AuthUser): string {
   const role = ['Admin', 'User', 'Premium'][user.role] ?? 'User'
-  return adminDocument('Dashboard', `${adminHeader(adminBase, 'dashboard')}
+  return adminDocument('Dashboard', `${adminHeader(adminBase, 'dashboard', user.role === 0)}
 <main class="admin-dashboard">
   <p class="eyebrow"><span></span>Control plane</p>
   <div class="admin-dashboard-heading"><div><h1>Good to see you, ${escapeHtml(user.name)}.</h1><p>The authenticated Node.js administration boundary is active.</p></div><span class="admin-role">${escapeHtml(role)}</span></div>
@@ -50,6 +51,81 @@ export function renderAdminDashboard(adminBase: string, user: AuthUser): string 
     <article><span>Account</span><strong>${escapeHtml(user.username)}</strong><p>${escapeHtml(user.email)}</p></article>
   </section>
   <section class="admin-next"><p class="section-index">Management</p><h2>Session control is online.</h2><p>Inspect active and historical browser sessions, then revoke individual records without exposing authentication tokens.</p><a class="hero-link-primary" href="${escapeHtml(adminBase)}/users/sessions/">Manage sessions <span aria-hidden="true">↗</span></a></section>
+</main>`)
+}
+
+export function renderAdminSubtitles(input: Readonly<{
+  adminBase: string
+  subtitles: readonly SubtitleAdminRecord[]
+  recordsTotal: number
+  search: string
+  isAdmin: boolean
+  hosts: readonly string[]
+  uploadCsrfToken: string
+  renameCsrfToken: string
+  deleteCsrfToken: string
+  migrateCsrfToken: string
+  message?: AdminMessage
+}>): string {
+  const languageOptions = ['Unknown CC', ...PLAYER_LANGUAGE_OPTIONS.map((item) => item.value)]
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+    .join('')
+  const rows = input.subtitles.map((subtitle) => `<tr>
+    <td><span class="session-id">#${escapeHtml(subtitle.id)}</span></td>
+    <td><a class="subtitle-file-link" href="${escapeHtml(subtitle.link)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(subtitle.fileName)}</strong><span>Open subtitle ↗</span></a></td>
+    <td><span class="subtitle-language">${escapeHtml(subtitle.language)}</span></td>
+    <td>${escapeHtml(subtitle.userName)}</td>
+    <td><code class="subtitle-host" title="${escapeHtml(subtitle.host)}">${escapeHtml(subtitle.host)}</code></td>
+    <td>${renderTimestamp(subtitle.created, 'Not recorded')}</td>
+    <td>${renderTimestamp(subtitle.updated, 'Not updated')}</td>
+    <td><div class="subtitle-actions">
+      <form action="${escapeHtml(input.adminBase)}/videos/subtitles/rename/" method="post">
+        <input type="hidden" name="csrf" value="${escapeHtml(input.renameCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(subtitle.id)}">
+        <label class="sr-only" for="subtitle-name-${escapeHtml(subtitle.id)}">Rename subtitle ${escapeHtml(subtitle.id)}</label><input id="subtitle-name-${escapeHtml(subtitle.id)}" name="name" type="text" value="${escapeHtml(subtitle.fileName)}" maxlength="255" required>
+        <button type="submit">Rename</button>
+      </form>
+      <form action="${escapeHtml(input.adminBase)}/videos/subtitles/delete/" method="post">
+        <input type="hidden" name="csrf" value="${escapeHtml(input.deleteCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(subtitle.id)}">
+        <button class="session-revoke" type="submit" aria-label="Delete ${escapeHtml(subtitle.fileName)}">Delete</button>
+      </form>
+    </div></td>
+  </tr>`).join('')
+  const hostOptions = input.hosts.map((host) => `<option value="${escapeHtml(host)}">${escapeHtml(host)}</option>`).join('')
+  const migration = !input.isAdmin ? '' : `<section class="settings-section subtitle-migration" aria-labelledby="subtitle-migration-title">
+    <div class="settings-section-heading"><p class="panel-kicker">Admin tool</p><h2 id="subtitle-migration-title">Migrate location</h2><p>Rewrite persisted subtitle URLs and manager hosts when this installation moves to a new public base URL.</p></div>
+    <form class="settings-grid" action="${escapeHtml(input.adminBase)}/videos/subtitles/migrate/" method="post">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.migrateCsrfToken)}">
+      <div class="field"><label for="oldLocation">Old location</label><select id="oldLocation" name="oldLocation" required><option value="">Select location</option>${hostOptions}</select></div>
+      <div class="field"><label for="newLocation">New location</label><input id="newLocation" name="newLocation" type="url" maxlength="2048" placeholder="https://player.example/" required></div>
+      <button class="generate-button settings-wide" type="submit"><span>Migrate subtitle URLs</span><span aria-hidden="true">↗</span></button>
+    </form>
+  </section>`
+
+  return adminDocument('Subtitle Manager', `${adminHeader(input.adminBase, 'subtitles', input.isAdmin)}
+<main class="admin-dashboard admin-subtitles-page">
+  <p class="eyebrow"><span></span>Media library</p>
+  <div class="admin-dashboard-heading"><div><h1>Subtitle Manager.</h1><p>Upload, review, rename, and remove caption assets through the legacy-compatible per-user library.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
+  ${renderMessage(input.message)}
+  <section class="subtitle-upload-shell" aria-labelledby="subtitle-upload-title">
+    <div><p class="panel-kicker">Upload</p><h2 id="subtitle-upload-title">Add a subtitle file</h2><p>Up to 2 MiB. SRT, VTT, ASS, SUB, STL, DFXP, TTML, SBV, and TXT are accepted.</p></div>
+    <form action="${escapeHtml(input.adminBase)}/videos/subtitles/upload/" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.uploadCsrfToken)}">
+      <div class="field"><label for="uploadSubLang">Language</label><select id="uploadSubLang" name="uploadSubLang">${languageOptions}</select></div>
+      <div class="field"><label for="uploadSubFile">Subtitle file</label><input id="uploadSubFile" name="uploadSubFile" type="file" accept=".srt,.vtt,.ass,.sub,.stl,.dfxp,.ttml,.sbv,.txt" required></div>
+      <button class="generate-button" type="submit"><span>Upload subtitle</span><span aria-hidden="true">↗</span></button>
+    </form>
+  </section>
+  <section class="user-toolbar subtitle-toolbar" aria-label="Subtitle controls">
+    <form action="${escapeHtml(input.adminBase)}/videos/subtitles/" method="get" role="search"><label class="sr-only" for="subtitle-search">Search subtitles</label><input id="subtitle-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search filename, language, user, or host"><button type="submit">Search</button></form>
+    <a class="admin-back-link" href="${escapeHtml(input.adminBase)}/videos/subtitles/">Reload</a>
+  </section>
+  <section class="session-table-shell subtitle-table-shell" aria-labelledby="subtitles-table-title">
+    <div class="session-table-heading"><div><p class="panel-kicker">Caption assets</p><h2 id="subtitles-table-title">Stored files</h2></div><span>${input.isAdmin ? 'All users' : 'Your files'} · scroll →</span></div>
+    <div class="session-table-scroll"><table class="session-table subtitle-table"><thead><tr><th>ID</th><th>File name</th><th>Language</th><th>User</th><th>Host</th><th>Created</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="8">No subtitle files found.</td></tr>'}</tbody></table></div>
+    ${input.recordsTotal > input.subtitles.length ? `<p class="session-table-note">Showing ${input.subtitles.length} of ${input.recordsTotal} records. The legacy DataTables endpoint provides complete pagination.</p>` : ''}
+  </section>
+  ${migration}
 </main>`)
 }
 
@@ -864,13 +940,13 @@ function renderTimestamp(value: number, fallback: string): string {
   return `<time datetime="${iso}">${iso.slice(0, 16).replace('T', ' ')} UTC</time>`
 }
 
-function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings'): string {
+function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'subtitles', isAdmin = true): string {
   return `<header class="admin-bar">
   <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
     <span>G<span>PLAYER</span><small>NODE</small></span>
   </a>
-  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a></nav>
+  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
   <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
 </header>`
 }

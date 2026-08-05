@@ -14,6 +14,7 @@ import { loadConfig, type AppConfig } from './config.js'
 import { ExtractorFactory } from './hosting/extractor-factory.js'
 import { registerAdminRoutes } from './http/admin-routes.js'
 import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
+import { registerSubtitleAdminRoutes } from './http/subtitle-admin-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
@@ -28,6 +29,8 @@ import { createCountryCodeLookup, type CountryCodeLookup } from './security/geoi
 import type { MiscSettingsLoader } from './settings/misc-runtime.js'
 import type { HostingSettingsLoader } from './settings/hosting-runtime.js'
 import { legacyHostingHosts } from './settings/hosting-settings.js'
+import { SubtitleAdminService } from './subtitles/subtitle-admin-service.js'
+import { FileSystemSubtitleAssetManager } from './subtitles/subtitle-assets-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -39,6 +42,7 @@ export type AppDependencies = Readonly<{
   settings?: SettingsAdminService
   siteAssets?: SiteAssetManager
   vastAssets?: VastAssetManager
+  subtitles?: SubtitleAdminService
   countryCodeLookup?: CountryCodeLookup
 }>
 
@@ -67,6 +71,11 @@ export async function buildApp(
   const authRuntime = createAuthRuntime(app, config)
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
   const publicRoot = path.resolve(currentDirectory, '../public')
+  const subtitlesRuntime = dependencies.subtitles ?? new SubtitleAdminService(
+    authRuntime.subtitleStore,
+    new FileSystemSubtitleAssetManager(path.join(publicRoot, 'uploads/subtitles'), config.baseUrl),
+    config.baseUrl
+  )
   let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
   const hostingHosts = legacyHostingHosts()
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
@@ -95,6 +104,12 @@ export async function buildApp(
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl),
     supportedHosts,
     hostingHosts
+  )
+  await registerSubtitleAdminRoutes(
+    app,
+    config,
+    dependencies.auth ?? authRuntime.auth,
+    subtitlesRuntime
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
