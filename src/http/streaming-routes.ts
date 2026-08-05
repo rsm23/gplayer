@@ -24,6 +24,24 @@ const CACHED_PROVIDER_CONTEXT_PLACEHOLDER = '__GPLAYER_PROVIDER_CONTEXT__'
 const CACHED_ACCESS_TOKEN_PLACEHOLDER = '__GPLAYER_STREAM_ACCESS__'
 const MAX_ACCESS_TOKEN_LENGTH = 2_048
 const HLS_DIRECT_TRANSPORT_DOMAINS = ['tiktokcdn.com', 'cloudfront-net.online'] as const
+/** Exact resources/data/json/custom-extensions.json pairing from 4.8.3. */
+const STREAM_EXTENSION_FACADES = [
+  ['.m3u8', '.txt'],
+  ['.mpd', '.txt'],
+  ['.ts', '.jpg'],
+  ['.mp4', '.png'],
+  ['.m4s', '.jpeg'],
+  ['.m4a', '.gif'],
+  ['.m4v', '.ico'],
+  ['.m4i', '.woff'],
+  ['.m4f', '.woff2'],
+  ['.m4t', '.jpg'],
+  ['.tar', '.png'],
+  ['.mp3', '.jpeg'],
+  ['.php', '.gif'],
+  ['.zip', '.ico'],
+  ['.rar', '.woff']
+] as const
 const binaryResponseHeaders = [
   'accept-ranges',
   'cache-control',
@@ -92,15 +110,21 @@ export function createStreamingProxyPath(
   target: URL,
   security: Security,
   identity: StreamingIdentity = { host: 'direct', id: target.toString() },
-  preserveTail = false
+  preserveTail = false,
+  extensionFacade = false
 ): string {
   const identityToken = security.encryptURL(`${identity.host}~${identity.id}`)
-  if (!preserveTail) return withInternalQuery(`/${route}/${identityToken}/${security.encryptURL(target.toString())}`, identity, security)
+  if (!preserveTail) {
+    const targetToken = security.encryptURL(target.toString())
+    const publicToken = extensionFacade ? disguiseStreamingToken(targetToken, target.pathname) : targetToken
+    return withInternalQuery(`/${route}/${identityToken}/${publicToken}`, identity, security)
+  }
 
   const base = new URL('.', target)
   base.search = ''
   base.hash = ''
-  const tail = target.pathname.slice(base.pathname.length) + target.search
+  const pathTail = target.pathname.slice(base.pathname.length)
+  const tail = (extensionFacade ? disguiseStreamingPath(pathTail) : pathTail) + target.search
   return withInternalQuery(`/${route}/${identityToken}/${security.encryptURL(base.toString())}/${tail}`, identity, security)
 }
 
@@ -133,6 +157,8 @@ export async function registerStreamingRoutes(
   }
 
   const manifestHandler = (kind: 'hls' | 'mpd') => async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    const redirect = appleStreamingExtensionRedirect(request.url, request.headers['user-agent'] ?? '')
+    if (redirect !== null) return sendAppleStreamingExtensionRedirect(reply, redirect)
     const parsed = parseStreamingTarget(request.url, kind, security)
     if (parsed === null) return streamError(reply, 400, 'Invalid stream link')
     if (!await streamAccessAllowed(request, kind, parsed.identity, security, options)) {
@@ -207,6 +233,8 @@ export async function registerStreamingRoutes(
   }
 
   const binaryHandler = (kind: 'stream-ts' | 'stream-seg' | 'stream-vid') => async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    const redirect = appleStreamingExtensionRedirect(request.url, request.headers['user-agent'] ?? '')
+    if (redirect !== null) return sendAppleStreamingExtensionRedirect(reply, redirect)
     const parsed = parseStreamingTarget(request.url, kind, security)
     if (parsed === null) return streamError(reply, 400, 'Invalid stream link')
     if (!await streamAccessAllowed(request, kind, parsed.identity, security, options)) {
@@ -536,7 +564,7 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
   if (!request.pathname.startsWith(prefix)) return null
   const parts = request.pathname.slice(prefix.length).split('/')
   const identityToken = parts.shift() ?? ''
-  const baseToken = parts.shift() ?? ''
+  const baseToken = restoreStreamingToken(parts.shift() ?? '')
   const identityValue = security.decryptURLStrict(identityToken)
   const baseValue = security.decryptURLStrict(baseToken)
   if (identityValue === null || baseValue === null) return null
@@ -547,7 +575,7 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
     const base = new URL(baseValue)
     const target = parts.length === 0 || parts.every((part) => part.length === 0)
       ? base
-      : new URL(parts.join('/'), base)
+      : new URL(restoreStreamingPath(parts.join('/')), base)
     for (const [key, value] of request.searchParams) {
       if (!INTERNAL_QUERY_KEYS.has(key)) target.searchParams.append(key, value)
     }
@@ -575,6 +603,72 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
   } catch {
     return null
   }
+}
+
+function disguiseStreamingToken(token: string, targetPathname: string): string {
+  const facade = streamingExtensionFacade(targetPathname)
+  return facade === null ? token : `${facade.original.slice(1)}_gx_${token}${facade.custom}`
+}
+
+function disguiseStreamingPath(value: string): string {
+  const facade = streamingExtensionFacade(value)
+  if (facade === null) return value
+  const separator = value.lastIndexOf('/')
+  const basename = value.slice(separator + 1)
+  const filename = basename.slice(0, -facade.original.length)
+  return `${value.slice(0, separator + 1)}${facade.original.slice(1)}_gx_${filename}${facade.custom}`
+}
+
+function streamingExtensionFacade(value: string): Readonly<{ original: string; custom: string }> | null {
+  const basename = value.slice(value.lastIndexOf('/') + 1)
+  for (const [original, custom] of STREAM_EXTENSION_FACADES) {
+    if (basename.length > original.length && basename.endsWith(original)) return { original, custom }
+  }
+  return null
+}
+
+function facadeNameParts(value: string): Readonly<{ payload: string; original: string }> | null {
+  for (const [original, custom] of STREAM_EXTENSION_FACADES) {
+    const prefix = `${original.slice(1)}_gx_`
+    if (!value.startsWith(prefix) || !value.endsWith(custom)) continue
+    const payload = value.slice(prefix.length, -custom.length)
+    if (payload !== '') return { payload, original }
+  }
+  return null
+}
+
+function restoreStreamingToken(value: string): string {
+  const facade = facadeNameParts(value)
+  if (facade !== null) return facade.payload
+  for (const [original] of STREAM_EXTENSION_FACADES) {
+    if (value.length > original.length && value.endsWith(original)) return value.slice(0, -original.length)
+  }
+  return value
+}
+
+function restoreStreamingPath(value: string): string {
+  const separator = value.lastIndexOf('/')
+  const facade = facadeNameParts(value.slice(separator + 1))
+  return facade === null ? value : `${value.slice(0, separator + 1)}${facade.payload}${facade.original}`
+}
+
+function appleStreamingExtensionRedirect(requestUrl: string, userAgent: string): string | null {
+  if (!/(?:mac|ios|iphone|ipad|ipod)/i.test(userAgent)) return null
+  const request = new URL(requestUrl, 'http://gplayer.invalid')
+  const separator = request.pathname.lastIndexOf('/')
+  const facade = facadeNameParts(request.pathname.slice(separator + 1))
+  if (facade === null) return null
+  request.pathname = `${request.pathname.slice(0, separator + 1)}${facade.payload}${facade.original}`
+  return `${request.pathname}${request.search}`
+}
+
+function sendAppleStreamingExtensionRedirect(reply: FastifyReply, location: string): unknown {
+  return reply
+    .header('cache-control', 'no-store')
+    .header('vary', 'User-Agent')
+    .header('location', location)
+    .code(302)
+    .send()
 }
 
 function normalizeIp(value: string): string | null {
@@ -607,14 +701,14 @@ export function rewriteHlsPlaylist(
         const target = resolveHttpResource(value, manifestUrl)
         if (target === null || bypassHlsTransport(target)) return line
         observeResource?.(target)
-        return `#EXT-X-PREFETCH:${createStreamingProxyPath('stream-ts', target, security, nestedIdentity)}`
+        return `#EXT-X-PREFETCH:${createStreamingProxyPath('stream-ts', target, security, nestedIdentity, false, true)}`
       }
       const rewritten = line.replace(/URI=(["'])(.*?)\1/g, (match, quote: string, value: string) => {
         const target = resolveHttpResource(decodeXml(value), manifestUrl)
         if (target === null || bypassHlsTransport(target)) return match
         observeResource?.(target)
         const playlist = line.startsWith('#EXT-X-MEDIA') || target.pathname.toLowerCase().endsWith('.m3u8')
-        const path = createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, nestedIdentity)
+        const path = createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, nestedIdentity, false, true)
         return `URI=${quote}${path}${quote}`
       })
       nextUriIsPlaylist = line.startsWith('#EXT-X-STREAM-INF')
@@ -626,7 +720,7 @@ export function rewriteHlsPlaylist(
     observeResource?.(target)
     const playlist = nextUriIsPlaylist || target.pathname.toLowerCase().endsWith('.m3u8')
     nextUriIsPlaylist = false
-    return createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, nestedIdentity)
+    return createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, nestedIdentity, false, true)
   })
   return `${output.join('\n').trimEnd()}\n`
 }
@@ -662,7 +756,7 @@ export function rewriteMpdManifest(
     const route: StreamingRoute = attribute.toLowerCase() === 'xlink:href'
       ? 'mpd'
       : 'stream-seg'
-    const path = createStreamingProxyPath(route, target, security, nestedIdentity, true)
+    const path = createStreamingProxyPath(route, target, security, nestedIdentity, true, true)
     return `${attribute}=${quote}${escapeXml(path)}${quote}`
   })
 
@@ -676,7 +770,7 @@ export function rewriteMpdManifest(
     const target = resolveHttpResource(decodeXml(value), effectiveBase)
     if (target === null) return match
     observeResource?.(target)
-    const rewritten = createStreamingProxyPath('stream-seg', target, security, nestedIdentity, true)
+    const rewritten = createStreamingProxyPath('stream-seg', target, security, nestedIdentity, true, true)
     return `${prefix}${quote}${escapeXml(rewritten)}${quote}`
   })
   return output
@@ -684,7 +778,7 @@ export function rewriteMpdManifest(
 
 function createStreamingBasePath(target: URL, security: Security, identity: StreamingIdentity): string {
   if (!target.pathname.endsWith('/')) {
-    return createStreamingProxyPath('stream-seg', target, security, identity)
+    return createStreamingProxyPath('stream-seg', target, security, identity, false, true)
   }
   const normalized = new URL(target)
   normalized.search = ''

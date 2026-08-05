@@ -433,6 +433,43 @@ describe('authenticated streaming routes', () => {
     expect(lastUpstreamUrl).toBe('/segment0.ts?sig=abc')
   })
 
+  it('redirects Apple clients from disguised HLS children to extension-correct authenticated URLs', async () => {
+    app = await buildStreamingApp()
+    const security = new Security(secureSalt)
+    const master = await app.inject({
+      method: 'GET',
+      url: createStreamingProxyPath('hls', new URL('/master.m3u8', upstreamUrl), security)
+    })
+    const variantPath = master.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''
+    const variant = await app.inject({ method: 'GET', url: variantPath })
+    const segmentPath = variant.body.split('\n').find((line) => line.startsWith('/stream-ts/')) ?? ''
+    const liveSegmentPath = `${segmentPath}?gl=1`
+
+    expect(liveSegmentPath).toMatch(/\/ts_gx_[A-Za-z0-9_,\-]+\.jpg\?gl=1$/)
+    expect(segmentPath).not.toContain('segment0')
+    expect((await app.inject({ method: 'GET', url: liveSegmentPath })).statusCode).toBe(200)
+
+    const apple = await app.inject({
+      method: 'GET',
+      url: liveSegmentPath,
+      headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15' }
+    })
+    expect(apple.statusCode).toBe(302)
+    expect(apple.headers['cache-control']).toBe('no-store')
+    expect(apple.headers.vary).toBe('User-Agent')
+    expect(apple.headers.location).toMatch(/\/[A-Za-z0-9_,\-]+\.ts\?gl=1$/)
+    expect(apple.headers.location).not.toContain('_gx_')
+
+    const followed = await app.inject({
+      method: 'GET',
+      url: String(apple.headers.location),
+      headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15' }
+    })
+    expect(followed.statusCode).toBe(200)
+    expect(followed.rawPayload).toEqual(media)
+    expect(lastUpstreamUrl).toBe('/segment0.ts?sig=abc')
+  })
+
   it('propagates live HLS state to child resources and never persists the live manifest', async () => {
     app = await buildStreamingApp(true, undefined, {
       cacheRoot,
@@ -768,9 +805,22 @@ describe('authenticated streaming routes', () => {
 
     const encodedTemplate = response.body.match(/media="([^"]+)"/)?.[1] ?? ''
     const segmentPath = encodedTemplate.replaceAll('&amp;', '&').replace('$Number$', '1')
+    expect(segmentPath).toContain('/m4s_gx_chunk-1.jpeg')
     const segment = await app.inject({ method: 'GET', url: segmentPath })
     expect(segment.statusCode).toBe(200)
     expect(segment.rawPayload).toEqual(media)
+    expect(lastUpstreamUrl).toBe('/dash/chunk-1.m4s?token=a&b=c')
+
+    const apple = await app.inject({
+      method: 'GET',
+      url: segmentPath,
+      headers: { 'user-agent': 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15' }
+    })
+    expect(apple.statusCode).toBe(302)
+    expect(apple.headers.location).toContain('/chunk-1.m4s?token=a&b=c')
+    const followed = await app.inject({ method: 'GET', url: String(apple.headers.location) })
+    expect(followed.statusCode).toBe(200)
+    expect(followed.rawPayload).toEqual(media)
     expect(lastUpstreamUrl).toBe('/dash/chunk-1.m4s?token=a&b=c')
   })
 
@@ -864,8 +914,35 @@ describe('manifest rewriting', () => {
       { host: 'direct', id: 'fixture' }
     )
     const value = output.match(/<BaseURL>([^<]+)<\/BaseURL>/)?.[1] ?? ''
-    expect(value).toMatch(/^\/stream-seg\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+$/)
+    expect(value).toMatch(/^\/stream-seg\/[A-Za-z0-9_,\-]+\/mp4_gx_[A-Za-z0-9_,\-]+\.png$/)
     expect(value).not.toMatch(/\/$/)
+  })
+
+  it('uses the exact supplied extension-disguise mapping for authenticated child resources', () => {
+    const supplied = JSON.parse(readFileSync(
+      new URL('../resources/data/json/custom-extensions.json', import.meta.url),
+      'utf8'
+    )) as { original: string[]; custom: string[] }
+    expect(supplied.original).toHaveLength(15)
+    expect(supplied.custom).toHaveLength(supplied.original.length)
+    const security = new Security(secureSalt)
+
+    for (const [index, original] of supplied.original.entries()) {
+      const custom = supplied.custom[index] ?? ''
+      const target = new URL(`https://cdn.example/media/file${original}`)
+      const publicPath = createStreamingProxyPath(
+        'stream-seg',
+        target,
+        security,
+        { host: 'direct', id: `fixture-${original}` },
+        false,
+        true
+      )
+      const basename = new URL(publicPath, 'https://player.example').pathname.split('/').at(-1) ?? ''
+      expect(basename).toMatch(new RegExp(`^${original.slice(1)}_gx_[A-Za-z0-9_,\\-]+\\${custom}$`))
+      expect(publicPath).not.toContain(target.hostname)
+      expect(publicPath).not.toContain('/media/file')
+    }
   })
 
   it('rewrites the complete recovered DASH URL-attribute set', () => {
