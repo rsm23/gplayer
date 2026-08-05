@@ -7,6 +7,7 @@ export type PlayerLinkGeneratorOptions = Readonly<{
   embedSlug: string
   downloadSlug: string
   requestSlug: string
+  iframeCode?: string
 }>
 
 export type CreatePlayerInput = Readonly<{
@@ -90,12 +91,17 @@ export class PlayerLinkGenerator {
       embedUrl,
       downloadUrl,
       requestUrl,
-      embedCode: createIframe(embedUrl)
+      embedCode: createIframe(embedUrl, '', this.options.iframeCode)
     })
   }
 }
 
-export function createIframe(embedUrl: string, title = ''): string {
+export function createIframe(embedUrl: string, title = '', template?: string): string {
+  if (template !== undefined && template.includes('{embed_url}') && template.includes('{title}')) {
+    return template
+      .replaceAll('{embed_url}', escapeHtmlAttribute(embedUrl))
+      .replaceAll('{title}', escapeHtmlAttribute(title))
+  }
   return `<iframe title="${escapeHtmlAttribute(title)}" src="${escapeHtmlAttribute(embedUrl)}" loading="lazy" frameborder="0" width="640" height="320" scrolling="no" allow="fullscreen; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; geolocation; web-share; screen-wake-lock; idle-detection"></iframe>`
 }
 

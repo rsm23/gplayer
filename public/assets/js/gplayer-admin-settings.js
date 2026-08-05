@@ -101,7 +101,43 @@
     else if (active.offsetLeft < navigation.scrollLeft) navigation.scrollLeft = Math.max(0, active.offsetLeft - 4)
   }
 
+  const setupPlayerSettings = () => {
+    const editor = document.querySelector('[data-player-settings]')
+    if (!(editor instanceof HTMLFormElement)) return
+    const colors = [...editor.querySelectorAll('.settings-color-field input[type="color"]')]
+    const refreshColorLabel = (input) => {
+      const label = input.closest('.settings-color-field')?.querySelector('code')
+      if (label instanceof HTMLElement) label.textContent = input.value.toLowerCase()
+    }
+    colors.forEach((input) => {
+      if (!(input instanceof HTMLInputElement)) return
+      input.addEventListener('input', () => refreshColorLabel(input))
+      refreshColorLabel(input)
+    })
+
+    const skin = editor.querySelector('#player_skin')
+    const primary = editor.querySelector('#player_color')
+    const secondary = editor.querySelector('#player_color2')
+    if (!(skin instanceof HTMLSelectElement) || !(primary instanceof HTMLInputElement) || !(secondary instanceof HTMLInputElement)) return
+    const palettes = {
+      dropload: ['#3db6d4', '#00d0a2'],
+      netflix: ['#e50914', '#e50914'],
+      hotstar: ['#095ae5', '#062794'],
+      iqiyi: ['#00c234', '#23d41e'],
+      lulustream: ['#4a62e1', '#51e0c0']
+    }
+    skin.addEventListener('change', () => {
+      const palette = palettes[skin.value]
+      if (palette === undefined) return
+      primary.value = palette[0]
+      secondary.value = palette[1]
+      refreshColorLabel(primary)
+      refreshColorLabel(secondary)
+    })
+  }
+
   setupCustomHeaders()
   setupVastSchedule()
+  setupPlayerSettings()
   revealActiveSettingsTab()
 })()

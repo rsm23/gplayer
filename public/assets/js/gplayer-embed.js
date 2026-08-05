@@ -4,6 +4,94 @@
   const body = document.body
   const video = document.querySelector('#media-player')
 
+  const initializePlayerAppearance = () => {
+    if (/^#[a-f0-9]{6}$/i.test(body.dataset.playerColor || '')) {
+      document.documentElement.style.setProperty('--brand', body.dataset.playerColor)
+    }
+    if (/^#[a-f0-9]{6}$/i.test(body.dataset.playerColor2 || '')) {
+      document.documentElement.style.setProperty('--brand-secondary', body.dataset.playerColor2)
+    }
+    document.querySelectorAll('[data-player-logo]').forEach((logo) => {
+      const margin = Number.parseInt(logo.dataset.logoMargin || body.dataset.logoMargin || '0', 10)
+      const container = logo.closest('.player-logo, .player-small-logo')
+      if (container instanceof HTMLElement && Number.isInteger(margin) && margin >= 0 && margin <= 1_000) {
+        container.style.setProperty('--logo-margin', `${margin}px`)
+      }
+    })
+  }
+
+  const fakePlay = document.querySelector('[data-player-fake-play]')
+  fakePlay?.addEventListener('click', () => {
+    if (!(video instanceof HTMLVideoElement)) return
+    video.play().catch(() => {})
+    fakePlay.remove()
+  })
+  if (video instanceof HTMLVideoElement) video.addEventListener('play', () => fakePlay?.remove(), { once: true })
+
+  document.querySelector('[data-player-share]')?.addEventListener('click', async () => {
+    try {
+      if (typeof navigator.share === 'function') await navigator.share({ title: document.title, url: window.location.href })
+      else if (navigator.clipboard) await navigator.clipboard.writeText(window.location.href)
+    } catch {
+      // Cancellation and unavailable clipboard permissions leave the player unchanged.
+    }
+  })
+
+  const initializeVisibilityPause = () => {
+    if (body.dataset.pauseOnLeft !== 'true' || !(video instanceof HTMLVideoElement)) return
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && !video.paused) video.pause()
+    })
+  }
+
+  const initializeContinueWatching = () => {
+    if (body.dataset.continueWatching !== 'true' || !(video instanceof HTMLVideoElement)) return
+    const prompt = document.querySelector('[data-player-resume]')
+    const promptText = document.querySelector('[data-player-resume-text]')
+    const yes = document.querySelector('[data-player-resume-yes]')
+    const no = document.querySelector('[data-player-resume-no]')
+    if (!(prompt instanceof HTMLElement) || !(promptText instanceof HTMLElement)) return
+    const storageKey = `gplayer:position:${window.location.pathname}:${window.location.search.slice(0, 512)}`
+    let lastStoredSecond = -1
+    const hidePrompt = () => { prompt.hidden = true }
+    const forget = () => {
+      try { window.localStorage.removeItem(storageKey) } catch {}
+    }
+    video.addEventListener('loadedmetadata', () => {
+      let saved = 0
+      try { saved = Number.parseFloat(window.localStorage.getItem(storageKey) || '0') } catch {}
+      if (!Number.isFinite(saved) || saved < 5 || !Number.isFinite(video.duration) || saved >= video.duration - 5) return
+      video.pause()
+      promptText.textContent = promptText.textContent.replace('hh:mm:ss', formatTime(saved))
+      prompt.hidden = false
+      yes?.addEventListener('click', () => {
+        video.currentTime = saved
+        hidePrompt()
+        video.play().catch(() => {})
+      }, { once: true })
+      no?.addEventListener('click', () => {
+        forget()
+        video.currentTime = 0
+        hidePrompt()
+      }, { once: true })
+    }, { once: true })
+    video.addEventListener('timeupdate', () => {
+      const second = Math.floor(video.currentTime)
+      if (second === lastStoredSecond || second < 1) return
+      lastStoredSecond = second
+      try { window.localStorage.setItem(storageKey, String(second)) } catch {}
+    })
+    video.addEventListener('ended', forget)
+  }
+
+  const formatTime = (seconds) => {
+    const value = Math.max(0, Math.floor(seconds))
+    const hours = Math.floor(value / 3_600)
+    const minutes = Math.floor((value % 3_600) / 60)
+    const remainder = value % 60
+    return [hours, minutes, remainder].map((part) => String(part).padStart(2, '0')).join(':')
+  }
+
   const showFallback = (message) => {
     if (!(video instanceof HTMLVideoElement)) return
     const fallback = document.createElement('p')
@@ -148,7 +236,10 @@
     window.setTimeout(showBlocked, 3_000)
   }
 
+  initializePlayerAppearance()
   initializeStreamingPlayback()
+  initializeVisibilityPause()
+  initializeContinueWatching()
   initializeAdblockDetection()
   if (body.dataset.popupFrameUrl && Number.parseInt(body.dataset.popupDelaySeconds || '0', 10) === 0) {
     mountPopupFrame()

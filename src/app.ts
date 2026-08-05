@@ -80,11 +80,13 @@ export async function buildApp(
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl)
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
-  await registerPlayerRoutes(app, config, { loadAdsSettings })
+  const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
+  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings })
   const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config)
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
-    loadAdsSettings
+    loadAdsSettings,
+    loadPlayerSettings
   })
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {

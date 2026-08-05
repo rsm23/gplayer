@@ -7,6 +7,8 @@ export type DownloadPageOptions = Readonly<{
   bannerTopFrameUrl?: string
   bannerBottomFrameUrl?: string
   popupFrameUrl?: string
+  downloadLabel?: string
+  hideHostname?: boolean
 }>
 
 type DownloadItem = Readonly<{
@@ -18,7 +20,7 @@ type DownloadItem = Readonly<{
 
 export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPageOptions): string {
   const title = mediaTitle(media)
-  const primary = mediaDownloadItem(media)
+  const primary = mediaDownloadItem(media, title, options)
   const subtitles = subtitleDownloadItems(media)
   const availableItems = primary === null ? subtitles : [primary, ...subtitles]
   const adapterPending = media.host !== 'direct'
@@ -63,7 +65,7 @@ export function renderDownloadError(message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Download unavailable</title><link rel="stylesheet" href="/assets/css/gplayer-download.css"></head><body><main class="download-shell"><section class="download-card error-card"><p class="eyebrow">GDPlayer download</p><h1>Download unavailable</h1><p>${escapeHtml(message)}</p></section></main></body></html>`
 }
 
-function mediaDownloadItem(media: PlayerMediaQuery): DownloadItem | null {
+function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: DownloadPageOptions): DownloadItem | null {
   if (media.host === undefined || media.id === undefined) return null
 
   const href = media.host === 'direct'
@@ -74,7 +76,7 @@ function mediaDownloadItem(media: PlayerMediaQuery): DownloadItem | null {
   if (media.host === 'direct') {
     return {
       href,
-      label: 'Download video',
+      label: configuredDownloadLabel(options.downloadLabel, title),
       detail: fileDetail(href, 'Direct media file'),
       kind: 'media'
     }
@@ -83,9 +85,14 @@ function mediaDownloadItem(media: PlayerMediaQuery): DownloadItem | null {
   return {
     href,
     label: 'Open source page',
-    detail: providerName(media.host),
+    detail: options.hideHostname === true ? 'Video source' : providerName(media.host),
     kind: 'source'
   }
+}
+
+function configuredDownloadLabel(template: string | undefined, title: string): string {
+  const normalized = template?.replaceAll('{title}', title).trim() ?? ''
+  return normalized.length > 0 ? normalized : 'Download video'
 }
 
 function subtitleDownloadItems(media: PlayerMediaQuery): DownloadItem[] {

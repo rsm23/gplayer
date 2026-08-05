@@ -2,6 +2,7 @@ import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
 import type { CustomHeaderRule } from '../settings/custom-headers.js'
+import { PLAYER_CHOICES, PLAYER_EDGE_STYLES, PLAYER_FONTS, PLAYER_LANGUAGE_OPTIONS, PLAYER_LOADERS, PLAYER_LOGO_POSITIONS, PLAYER_PRELOAD, PLAYER_RESOLUTIONS, PLAYER_SKINS, PLAYER_STRETCHING, type PlayerSettings } from '../settings/player-settings.js'
 import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 import type { VastAsset } from '../settings/vast-assets-service.js'
 
@@ -468,6 +469,121 @@ export function renderAdminCustomHeaderSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminPlayerSettings(input: Readonly<{
+  adminBase: string
+  values: PlayerSettings
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const checked = (value: boolean): string => value ? ' checked' : ''
+  const playerOptions = PLAYER_CHOICES.map(({ value, label }) => stringOption(value, label, input.values.player)).join('')
+  const skinOptions = PLAYER_SKINS.map((value) => stringOption(value, value === '' ? 'Default' : playerSettingLabel(value), input.values.player_skin)).join('')
+  const stretchingOptions = PLAYER_STRETCHING.map((value) => stringOption(value, playerSettingLabel(value), input.values.stretching)).join('')
+  const preloadOptions = PLAYER_PRELOAD.map((value) => stringOption(value, playerSettingLabel(value), input.values.preload)).join('')
+  const resolutionOptions = PLAYER_RESOLUTIONS.map((value) => stringOption(value, /^\d+$/.test(value) ? `${value}p` : value, input.values.default_resolution)).join('')
+  const languageOptions = (selected: string): string => PLAYER_LANGUAGE_OPTIONS.map(({ value }) => stringOption(value, value, selected)).join('')
+  const fontOptions = PLAYER_FONTS.map((value) => stringOption(value, value, input.values.font_family)).join('')
+  const edgeOptions = PLAYER_EDGE_STYLES.map((value) => stringOption(value, playerSettingLabel(value), input.values.edge_style)).join('')
+  const positionOptions = PLAYER_LOGO_POSITIONS.map((value) => stringOption(value, playerSettingLabel(value), input.values.logo_position)).join('')
+  const loaderOptions = PLAYER_LOADERS.map((value) => stringOption(value, playerSettingLabel(value), input.values.loader)).join('')
+
+  return adminDocument('Player settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Playback experience</p>
+  <div class="admin-dashboard-heading"><div><h1>Player settings.</h1><p>Control playback defaults, captions, branding, peer delivery, generated links, and legacy client compatibility.</p></div><span class="admin-role">53 keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'player')}
+  <form class="admin-settings-form player-settings-editor" action="${escapeHtml(input.adminBase)}/settings/player/" method="post" data-player-settings>
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="player-playback-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Playback</p><h2 id="player-playback-title">Player and media defaults</h2><p>Select the legacy-compatible client presentation and the default behavior used when public query overrides are absent.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        <div class="field"><label for="player">Player</label><select id="player" name="player" required>${playerOptions}</select></div>
+        <div class="field"><label for="player_skin">Skin</label><select id="player_skin" name="player_skin" required>${skinOptions}</select></div>
+        ${settingsColorInput('player_color', 'Primary player color', input.values.player_color)}
+        ${settingsColorInput('player_color2', 'Secondary player color', input.values.player_color2)}
+        <div class="field"><label for="stretching">Stretching</label><select id="stretching" name="stretching" required>${stretchingOptions}</select></div>
+        <div class="field"><label for="preload">Preload</label><select id="preload" name="preload" required>${preloadOptions}</select></div>
+        <div class="field"><label for="default_resolution">Default resolution</label><select id="default_resolution" name="default_resolution" required>${resolutionOptions}</select></div>
+        <div class="field"><label for="default_audio">Default audio language</label><select id="default_audio" name="default_audio" required>${languageOptions(input.values.default_audio)}</select></div>
+        ${settingsToggle('autoplay', 'Autoplay', 'Begin playback automatically when the browser permits it.', checked(input.values.autoplay))}
+        ${settingsToggle('mute', 'Start muted', 'Mute the player when it first loads.', checked(input.values.mute))}
+        ${settingsToggle('repeat', 'Repeat playback', 'Loop the selected media after it ends.', checked(input.values.repeat))}
+        ${settingsToggle('display_title', 'Display title', 'Show the resolved video title in the player.', checked(input.values.display_title))}
+        ${settingsToggle('playback_rate', 'Playback speed', 'Expose playback-rate controls.', checked(input.values.playback_rate))}
+        ${settingsToggle('enable_share_button', 'Share button', 'Expose the configured share action.', checked(input.values.enable_share_button))}
+        ${settingsToggle('enable_download_button', 'Download button', 'Expose the configured download action.', checked(input.values.enable_download_button))}
+        ${settingsToggle('disable_filmstrip', 'Disable filmstrip', 'Do not return or render filmstrip previews.', checked(input.values.disable_filmstrip))}
+        ${settingsToggle('fake_play_button', 'Large play overlay', 'Show the legacy large play affordance over the poster.', checked(input.values.fake_play_button))}
+        ${settingsToggle('continue_watching', 'Continue watching', 'Offer to resume locally remembered playback.', checked(input.values.continue_watching))}
+        ${settingsToggle('pause_on_left', 'Pause when hidden', 'Pause when the page loses visibility.', checked(input.values.pause_on_left))}
+        ${settingsToggle('allow_public_qry', 'Allow public query overrides', 'Accept autoplay, mute, and repeat values from public player URLs.', checked(input.values.allow_public_qry))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="player-captions-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Captions</p><h2 id="player-captions-title">Subtitle defaults</h2><p>Configure the default language and the caption palette returned to compatible player clients.</p></div>
+      <div class="settings-grid">
+        <div class="field"><label for="default_subtitle">Default subtitle language</label><select id="default_subtitle" name="default_subtitle" required>${languageOptions(input.values.default_subtitle)}</select></div>
+        ${settingsColorInput('subtitle_color', 'Subtitle text color', input.values.subtitle_color)}
+        <div class="field"><label for="font_family">Font family</label><select id="font_family" name="font_family" required>${fontOptions}</select></div>
+        <div class="field"><label for="edge_style">Edge style</label><select id="edge_style" name="edge_style" required>${edgeOptions}</select></div>
+        ${settingsInput('background_opacity', 'Background opacity', escapeHtml(input.values.background_opacity), 'number', '75', true, 'Percentage from 0 to 100.', '0', '100')}
+        ${settingsColorInput('background_color', 'Background color', input.values.background_color)}
+        ${settingsInput('window_opacity', 'Window opacity', escapeHtml(input.values.window_opacity), 'number', '0', true, 'Percentage from 0 to 100.', '0', '100')}
+        ${settingsColorInput('window_color', 'Window color', input.values.window_color)}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="player-branding-title">
+      <div class="settings-section-heading"><p class="panel-kicker">03 / Branding</p><h2 id="player-branding-title">Poster and logos</h2><p>Use credential-free HTTP(S) assets. Empty URLs disable the corresponding image.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsInput('poster', 'Default poster URL', escapeHtml(input.values.poster), 'url', 'https://images.example/poster.jpg')}
+        ${settingsToggle('force_default_poster', 'Force default poster', 'Prefer this poster over a source-provided poster.', checked(input.values.force_default_poster))}
+        ${settingsInput('logo_file', 'Player logo URL', escapeHtml(input.values.logo_file), 'url', 'https://images.example/logo.png')}
+        ${settingsInput('logo_open_link', 'Player logo link', escapeHtml(input.values.logo_open_link), 'url', 'https://brand.example/')}
+        <div class="field"><label for="logo_position">Logo position</label><select id="logo_position" name="logo_position" required>${positionOptions}</select></div>
+        ${settingsInput('logo_margin', 'Logo margin', escapeHtml(input.values.logo_margin), 'number', '0', true, 'Pixels from the selected corner.', '0', '1000')}
+        ${settingsToggle('logo_hide', 'Hide player logo', 'Suppress the primary player logo.', checked(input.values.logo_hide))}
+        <div></div>
+        ${settingsInput('small_logo_file', 'Small logo URL', escapeHtml(input.values.small_logo_file), 'url', 'https://images.example/small-logo.png')}
+        ${settingsInput('small_logo_link', 'Small logo link', escapeHtml(input.values.small_logo_link), 'url', 'https://brand.example/')}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="player-peer-title">
+      <div class="settings-section-heading"><p class="panel-kicker">04 / P2P</p><h2 id="player-peer-title">Peer-assisted delivery</h2><p>Enable the legacy P2P flag and publish up to 100 deduplicated secure WebTorrent tracker endpoints.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('p2p', 'Enable P2P', 'Allow compatible clients to use peer-assisted media delivery.', checked(input.values.p2p))}
+        <div class="field settings-wide"><label for="torrent_tracker">WebTorrent trackers</label><textarea id="torrent_tracker" name="torrent_tracker" rows="7" maxlength="100000" spellcheck="false" required>${escapeHtml(input.values.torrent_tracker)}</textarea><p class="field-hint">One ws:// or wss:// endpoint per line.</p></div>
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="player-copy-title">
+      <div class="settings-section-heading"><p class="panel-kicker">05 / Interface copy</p><h2 id="player-copy-title">Labels and loader</h2><p>Retain the legacy placeholders used by embedded and download clients.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('text_title', 'Page title template', escapeHtml(input.values.text_title), 'text', 'Watch {title} - {siteName}', true)}
+        <div class="field"><label for="loader">Loader</label><select id="loader" name="loader" required>${loaderOptions}</select></div>
+        ${settingsInput('text_loading', 'Loading text', escapeHtml(input.values.text_loading), 'text', 'Preparing stream…')}
+        ${settingsInput('text_download', 'Download text', escapeHtml(input.values.text_download), 'text', 'Download {title}')}
+        ${settingsInput('text_resume', 'Resume prompt', escapeHtml(input.values.text_resume), 'text', 'Resume at hh:mm:ss')}
+        ${settingsInput('text_resume_yes', 'Resume confirmation', escapeHtml(input.values.text_resume_yes), 'text', 'Yes')}
+        ${settingsInput('text_resume_no', 'Resume rejection', escapeHtml(input.values.text_resume_no), 'text', 'No')}
+        ${settingsInput('text_rewind', 'Rewind label', escapeHtml(input.values.text_rewind), 'text', 'Rewind 10 Seconds')}
+        ${settingsInput('text_forward', 'Forward label', escapeHtml(input.values.text_forward), 'text', 'Forward 10 Seconds')}
+        ${settingsToggle('hide_hostname', 'Hide source hostname', 'Suppress upstream hostnames in compatible player clients.', checked(input.values.hide_hostname))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="player-routes-title">
+      <div class="settings-section-heading"><p class="panel-kicker">06 / Routes</p><h2 id="player-routes-title">Public links and embed code</h2><p>Slugs are normalized without surrounding slashes and cannot collide with application routes. The template is returned as generator text only.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('slug_embed', 'Embed slug', escapeHtml(input.values.slug_embed), 'text', 'e', true, 'Letters, numbers, underscores, and dashes.', undefined, undefined, 'off')}
+        ${settingsInput('slug_download', 'Download slug', escapeHtml(input.values.slug_download), 'text', 'd', true, 'Letters, numbers, underscores, and dashes.', undefined, undefined, 'off')}
+        ${settingsInput('slug_request', 'Request slug', escapeHtml(input.values.slug_request), 'text', 'r', true, 'Letters, numbers, underscores, and dashes.', undefined, undefined, 'off')}
+        <div class="field settings-wide"><label for="iframe_code">Embed code template</label><textarea id="iframe_code" name="iframe_code" rows="7" maxlength="100000" spellcheck="false" required>${escapeHtml(input.values.iframe_code)}</textarea><p class="field-hint">Must contain both {embed_url} and {title}. Markup is never executed on this page.</p></div>
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update player settings</span><span aria-hidden="true">↗</span></button><p>The Node runtime consumes these values through the legacy-compatible player API and native playback surfaces.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminAdsSettings(input: Readonly<{
   adminBase: string
   values: AdsSettings
@@ -637,8 +753,12 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'ads'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'ads'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
+}
+
+function playerSettingLabel(value: string): string {
+  return value.replaceAll('-', ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (character) => character.toUpperCase())
 }
 
 function customHeaderRow(rule: Pick<CustomHeaderRule, 'keywords' | 'headers'>, index: number | string): string {

@@ -12,6 +12,18 @@
   box-sizing: border-box;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 html,
 body,
 .player-stage {
@@ -41,6 +53,172 @@ video,
   border: 0;
   background: var(--bg);
   object-fit: contain;
+}
+
+video.player-stretch-exactfit {
+  object-fit: fill;
+}
+
+video.player-stretch-fill {
+  object-fit: cover;
+}
+
+video.player-stretch-none {
+  object-fit: none;
+}
+
+.player-title,
+.player-logo,
+.player-small-logo,
+.player-toolbar,
+.player-fake-play {
+  position: absolute;
+  z-index: 6;
+}
+
+.player-title {
+  top: 1rem;
+  left: 1rem;
+  max-width: min(70%, 42rem);
+  margin: 0;
+  color: white;
+  font-size: clamp(0.78rem, 2vw, 1rem);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.player-logo,
+.player-small-logo {
+  --logo-margin: 0px;
+  pointer-events: none;
+}
+
+.player-logo a,
+.player-small-logo a {
+  display: block;
+  pointer-events: auto;
+}
+
+.player-logo img {
+  display: block;
+  width: auto;
+  max-width: min(22vw, 10rem);
+  height: auto;
+  max-height: min(14vh, 4rem);
+}
+
+.player-small-logo img {
+  display: block;
+  width: auto;
+  max-width: min(14vw, 5rem);
+  height: auto;
+  max-height: min(9vh, 2.5rem);
+}
+
+.logo-top-right {
+  top: calc(1rem + var(--logo-margin));
+  right: calc(1rem + var(--logo-margin));
+}
+
+.logo-top-left {
+  top: calc(1rem + var(--logo-margin));
+  left: calc(1rem + var(--logo-margin));
+}
+
+.logo-bottom-right {
+  right: calc(1rem + var(--logo-margin));
+  bottom: calc(3.75rem + var(--logo-margin));
+}
+
+.logo-bottom-left {
+  bottom: calc(3.75rem + var(--logo-margin));
+  left: calc(1rem + var(--logo-margin));
+}
+
+.player-fake-play {
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: clamp(4rem, 12vw, 6rem);
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 0 0 0 0.3em;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brand) 82%, #050507);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.45);
+  color: white;
+  cursor: pointer;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+}
+
+.player-fake-play:focus-visible,
+.player-toolbar :is(a, button):focus-visible,
+.player-resume button:focus-visible {
+  outline: 3px solid white;
+  outline-offset: 3px;
+}
+
+.player-toolbar {
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.player-logo.logo-top-right ~ .player-toolbar {
+  top: auto;
+  right: 1rem;
+  bottom: 3.75rem;
+}
+
+.player-toolbar :is(a, button),
+.player-resume button {
+  min-height: 2.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(5, 5, 7, 0.78);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.player-resume {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: rgba(5, 5, 7, 0.86);
+  color: white;
+  text-align: center;
+}
+
+.player-resume[hidden] {
+  display: none;
+}
+
+.player-resume p {
+  max-width: 30rem;
+  margin: 0;
+  font-size: clamp(1rem, 4vw, 1.5rem);
+  font-weight: 700;
+}
+
+.player-resume div {
+  display: flex;
+  justify-content: center;
+  gap: 0.65rem;
 }
 
 .player-notice {

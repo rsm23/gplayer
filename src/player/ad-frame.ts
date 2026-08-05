@@ -15,10 +15,10 @@ export function renderAdFrameDocument(content: AdFrameContent): string {
   <meta name="robots" content="noindex,nofollow">
   <meta name="referrer" content="no-referrer">
   <title>Advertisement</title>
-  <style>html,body{min-height:100%;margin:0}body{display:grid;place-items:center;overflow:auto;background:transparent}.ad-slot{max-width:100%;overflow-wrap:anywhere}</style>
+  <style>html,body{min-height:100%;margin:0}body{display:grid;place-items:center;overflow:auto;background:transparent}.ad-slot{max-width:100%;overflow-wrap:anywhere}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>
 </head>
 <body tabindex="0">
-  <div class="ad-slot">${content.html}</div>
+  <main class="ad-slot" aria-label="Advertisement"><h1 class="sr-only">Advertisement</h1>${content.html}</main>
   ${externalScript}
 </body>
 </html>`

@@ -355,6 +355,117 @@ describe('settings administration service', () => {
     await expect(settings.customHeadersForUrl('https://unmatched.example/video.mp4')).resolves.toEqual({})
   })
 
+  it('loads and serializes the complete fifty-three-key Player Settings contract', async () => {
+    const store = new MemorySettingsStore({ player: 'plyr', default_audio: 'fr', player_color: '#ABCDEF', autoplay: 'true', slug_embed: 'watch' })
+    const settings = new SettingsAdminService(store)
+    const slugs = { embed: 'e', download: 'd', request: 'r' }
+    await expect(settings.playerSettings(slugs)).resolves.toEqual(expect.objectContaining({
+      player: 'plyr',
+      default_audio: 'French',
+      default_subtitle: 'Indonesian',
+      player_color: 'abcdef',
+      autoplay: true,
+      playback_rate: true,
+      slug_embed: 'watch',
+      slug_download: 'd'
+    }))
+
+    const result = await settings.savePlayer({
+      player: 'jwplayer',
+      player_skin: 'hotstar',
+      player_color: '#095AE5',
+      player_color2: '#062794',
+      stretching: 'exactfit',
+      preload: 'auto',
+      default_resolution: '700',
+      default_audio: 'English',
+      autoplay: ['false', 'true'],
+      mute: 'true',
+      repeat: 'false',
+      display_title: 'true',
+      playback_rate: 'false',
+      enable_share_button: 'true',
+      enable_download_button: 'true',
+      disable_filmstrip: 'false',
+      fake_play_button: 'true',
+      continue_watching: 'true',
+      pause_on_left: 'true',
+      allow_public_qry: 'false',
+      default_subtitle: 'fr',
+      subtitle_color: '#FFFF00',
+      font_family: 'Verdana',
+      edge_style: 'uniform',
+      background_opacity: '080',
+      background_color: '#000000',
+      window_opacity: '25',
+      window_color: '#112233',
+      poster: 'https://images.example/default.jpg',
+      force_default_poster: 'true',
+      logo_file: 'https://images.example/logo.png',
+      logo_open_link: 'https://brand.example/',
+      logo_position: 'bottom-left',
+      logo_margin: '0012',
+      logo_hide: 'true',
+      small_logo_file: 'https://images.example/small.png',
+      small_logo_link: 'https://brand.example/small',
+      p2p: 'true',
+      torrent_tracker: 'wss://tracker.example/socket\nwss://tracker2.example/',
+      text_title: 'Watch {title} on {siteName}',
+      loader: 'cube-2',
+      text_loading: 'Preparing stream…',
+      text_download: 'Save {title}',
+      text_resume: 'Resume at hh:mm:ss',
+      text_resume_yes: 'Resume',
+      text_resume_no: 'Start over',
+      text_rewind: 'Back 10 seconds',
+      text_forward: 'Ahead 10 seconds',
+      hide_hostname: 'true',
+      slug_embed: '/watch/',
+      slug_download: 'fetch',
+      slug_request: 'request-player',
+      iframe_code: '<iframe title="{title}" src="{embed_url}"></iframe>',
+      unsupported_player_key: 'blocked'
+    }, slugs)
+
+    expect(result).toEqual({ status: 'ok', message: 'The Player Settings have been successfully updated' })
+    expect(store.writes.at(-1)).toHaveLength(53)
+    expect(store.values).toEqual(expect.objectContaining({
+      player_skin: 'hotstar',
+      player_color: '095ae5',
+      default_subtitle: 'French',
+      background_opacity: '80',
+      logo_margin: '12',
+      poster: 'https://images.example/default.jpg',
+      slug_embed: 'watch',
+      slug_download: 'fetch',
+      slug_request: 'request-player'
+    }))
+    expect(store.values).not.toHaveProperty('unsupported_player_key')
+  })
+
+  it('rejects unsafe Player Settings URLs, trackers, embed templates, and route collisions atomically', async () => {
+    const store = new MemorySettingsStore()
+    const settings = new SettingsAdminService(store)
+    const slugs = { embed: 'e', download: 'd', request: 'r' }
+    await expect(settings.savePlayer({ poster: 'javascript:alert(1)' }, slugs)).resolves.toEqual({ status: 'invalid', message: 'The poster URL is invalid' })
+    await expect(settings.savePlayer({ torrent_tracker: 'https://tracker.example/' }, slugs)).resolves.toEqual({ status: 'invalid', message: 'Torrent trackers must contain no more than 100 valid ws:// or wss:// URLs' })
+    await expect(settings.savePlayer({ iframe_code: '<iframe src="{embed_url}"></iframe>' }, slugs)).resolves.toEqual({ status: 'invalid', message: 'The custom embed code must contain both {embed_url} and {title}' })
+    await expect(settings.savePlayer({ slug_embed: 'api' }, slugs)).resolves.toEqual({ status: 'invalid', message: 'The slug embed value is invalid or reserved' })
+    await expect(settings.savePlayer({ slug_embed: 'ping' }, slugs)).resolves.toEqual({ status: 'invalid', message: 'The slug embed value is invalid or reserved' })
+    await expect(settings.savePlayer({ slug_embed: 'control' }, { ...slugs, adminDirectory: 'control' })).resolves.toEqual({ status: 'invalid', message: 'The slug embed value is invalid or reserved' })
+    await expect(settings.savePlayer({ slug_embed: 'same', slug_download: 'same' }, slugs)).resolves.toEqual({ status: 'invalid', message: 'Embed, download, and request slugs must be different' })
+    expect(store.writes).toEqual([])
+  })
+
+  it('falls back from unsafe or duplicate stored player slugs', async () => {
+    const settings = new SettingsAdminService(new MemorySettingsStore({ slug_embed: 'ping', slug_download: 'same', slug_request: 'same' }))
+    await expect(settings.playerSettings({ embed: 'e', download: 'd', request: 'r' })).resolves.toEqual(expect.objectContaining({
+      slug_embed: 'e',
+      slug_download: 'd',
+      slug_request: 'r'
+    }))
+  })
+
   it('validates and serializes ordered custom-header rules into the single legacy JSON key', async () => {
     const store = new MemorySettingsStore()
     const settings = new SettingsAdminService(store)
@@ -796,6 +907,104 @@ describe('general settings administration routes', () => {
     expect(JSON.parse(store.values.custom_headers ?? '')).toEqual([
       { keywords: ['media.example'], headers: { Origin: 'https://app.example', 'X-Playback-Token': 'route-secret' } }
     ])
+  })
+
+  it('renders and updates every Player Settings field through a signed form', async () => {
+    const store = new MemorySettingsStore({ player: 'plyr', player_skin: 'netflix', default_audio: 'French', slug_embed: 'watch' })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/player/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Player settings.')
+    expect(page.body).toContain('53 keys')
+    expect(page.body).toContain('<option value="plyr" selected>Plyr</option>')
+    expect(page.body).toContain('<option value="French" selected>French</option>')
+    expect(page.body).toContain('Markup is never executed on this page.')
+
+    const expectedKeys = [
+      'allow_public_qry', 'autoplay', 'background_color', 'background_opacity', 'continue_watching',
+      'default_audio', 'default_resolution', 'default_subtitle', 'disable_filmstrip', 'display_title',
+      'edge_style', 'enable_download_button', 'enable_share_button', 'fake_play_button', 'font_family',
+      'force_default_poster', 'hide_hostname', 'iframe_code', 'loader', 'logo_file', 'logo_hide', 'logo_margin',
+      'logo_open_link', 'logo_position', 'mute', 'p2p', 'pause_on_left', 'playback_rate', 'player', 'player_color',
+      'player_color2', 'player_skin', 'poster', 'preload', 'repeat', 'slug_download', 'slug_embed', 'slug_request',
+      'small_logo_file', 'small_logo_link', 'stretching', 'subtitle_color', 'text_download', 'text_forward',
+      'text_loading', 'text_resume', 'text_resume_no', 'text_resume_yes', 'text_rewind', 'text_title',
+      'torrent_tracker', 'window_color', 'window_opacity'
+    ]
+    const playerForm = page.body.match(/<form class="admin-settings-form player-settings-editor"[\s\S]*?<\/form>/)?.[0] ?? ''
+    const renderedNames = new Set([...playerForm.matchAll(/name="([^"]+)"/g)].map((match) => match[1]).filter((name) => name !== 'csrf'))
+    expect([...renderedNames].sort()).toEqual([...expectedKeys].sort())
+
+    const payload = new URLSearchParams({
+      csrf,
+      player: 'jwplayer',
+      player_skin: 'hotstar',
+      player_color: '#095AE5',
+      player_color2: '#062794',
+      stretching: 'exactfit',
+      preload: 'auto',
+      default_resolution: '700',
+      default_audio: 'English',
+      default_subtitle: 'French',
+      subtitle_color: '#FFFF00',
+      font_family: 'Verdana',
+      edge_style: 'uniform',
+      background_opacity: '80',
+      background_color: '#000000',
+      window_opacity: '25',
+      window_color: '#112233',
+      poster: 'https://images.example/default.jpg',
+      logo_file: 'https://images.example/logo.png',
+      logo_open_link: 'https://brand.example/',
+      logo_position: 'bottom-left',
+      logo_margin: '12',
+      small_logo_file: 'https://images.example/small.png',
+      small_logo_link: 'https://brand.example/small',
+      torrent_tracker: 'wss://tracker.example/socket\nwss://tracker2.example/',
+      text_title: 'Watch {title} on {siteName}',
+      loader: 'cube-2',
+      text_loading: 'Preparing stream…',
+      text_download: 'Save {title}',
+      text_resume: 'Resume at hh:mm:ss',
+      text_resume_yes: 'Resume',
+      text_resume_no: 'Start over',
+      text_rewind: 'Back 10 seconds',
+      text_forward: 'Ahead 10 seconds',
+      slug_embed: '/watch/',
+      slug_download: 'fetch',
+      slug_request: 'request-player',
+      iframe_code: '<iframe title="{title}" src="{embed_url}"></iframe>'
+    })
+    for (const key of ['autoplay', 'mute', 'repeat', 'display_title', 'playback_rate', 'enable_share_button', 'enable_download_button', 'disable_filmstrip', 'fake_play_button', 'continue_watching', 'pause_on_left', 'allow_public_qry', 'force_default_poster', 'logo_hide', 'p2p', 'hide_hostname']) {
+      payload.append(key, 'false')
+    }
+    for (const key of ['autoplay', 'mute', 'display_title', 'enable_share_button', 'enable_download_button', 'fake_play_button', 'continue_watching', 'pause_on_left', 'force_default_poster', 'logo_hide', 'p2p', 'hide_hostname']) {
+      payload.append(key, 'true')
+    }
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/player/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: payload.toString()
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/player/?updated=1')
+    expect(store.writes.at(-1)).toHaveLength(53)
+    expect(store.values).toEqual(expect.objectContaining({
+      player: 'jwplayer',
+      player_color: '095ae5',
+      default_subtitle: 'French',
+      autoplay: 'true',
+      repeat: 'false',
+      p2p: 'true',
+      slug_embed: 'watch',
+      slug_download: 'fetch',
+      slug_request: 'request-player'
+    }))
+
+    const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
+    expect(updated.body).toContain('The Player Settings have been successfully updated')
   })
 
   it('renders and updates Ads Settings with paired dynamic VAST schedule rows', async () => {

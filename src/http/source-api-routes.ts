@@ -12,6 +12,8 @@ import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath, type StreamingRoute } from './streaming-routes.js'
 import { Security } from '../security/security.js'
 import { legacyVastConfiguration, loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
+import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
+import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 
 const MAX_API_TOKEN_LENGTH = 65_536
@@ -37,6 +39,7 @@ export type SourceApiRouteOptions = Readonly<{
   resolve: SourceApiResolver
   supportedHosts?: ReadonlySet<string>
   loadAdsSettings?: AdsSettingsLoader
+  loadPlayerSettings?: PlayerSettingsLoader
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -51,6 +54,7 @@ export async function registerSourceApiRoutes(
   options: SourceApiRouteOptions
 ): Promise<void> {
   const security = new Security(config.secureSalt)
+  const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
 
   const apiConfig = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     applyApiHeaders(reply)
@@ -61,10 +65,13 @@ export async function registerSourceApiRoutes(
     const parsed = queryToken.length === 0
       ? null
       : parsePlayerQuery(queryToken, security, { secureSalt: config.secureSalt }).media
-    const ads = await loadRuntimeAdsSettings(options.loadAdsSettings)
+    const [ads, player] = await Promise.all([
+      loadRuntimeAdsSettings(options.loadAdsSettings),
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    ])
     const output = isDownloadConfigRequest(request)
       ? createDownloadConfiguration(config, parsed, ads)
-      : createEmbedConfiguration(config, parsed, request.headers['user-agent'] ?? '', ads)
+      : createEmbedConfiguration(config, parsed, request.headers['user-agent'] ?? '', ads, player)
 
     return reply
       .type('text/plain; charset=utf-8')
@@ -89,12 +96,14 @@ export async function registerSourceApiRoutes(
     }
     if (result.sources.length === 0) return plaintextFailure(reply)
 
+    const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
     const output = createSourceResponse(
       config,
       security,
       envelope.queryToken,
       envelope.media,
-      result
+      result,
+      player
     )
     return reply
       .type('text/plain; charset=utf-8')
@@ -155,65 +164,61 @@ function createEmbedConfiguration(
   config: AppConfig,
   media: PlayerMediaQuery | null,
   userAgent: string,
-  ads: AdsSettings
+  ads: AdsSettings,
+  playerSettings: PlayerSettings
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
     apiURL: valid ? config.baseUrl.toString() : '',
-    defaultSubtitle: { key: 'id', value: 'Indonesian' },
-    defaultAudio: { key: 'en', value: 'English' },
+    defaultSubtitle: languageEntry(playerSettings.default_subtitle),
+    defaultAudio: languageEntry(playerSettings.default_audio),
     embedOnly: legacyBoolean(media?.onlylink),
     disableCast: true,
-    backgroundColor: '#000000',
-    backgroundOpacity: 75,
-    edgeStyle: 'dropShadow',
-    fontFamily: 'Arial',
-    windowColor: '#000000',
-    windowOpacity: 0,
+    backgroundColor: `#${playerSettings.background_color}`,
+    backgroundOpacity: Number(playerSettings.background_opacity),
+    edgeStyle: playerSettings.edge_style,
+    fontFamily: playerSettings.font_family,
+    windowColor: `#${playerSettings.window_color}`,
+    windowOpacity: Number(playerSettings.window_opacity),
     isSafariIE: isSafariOrInternetExplorer(userAgent),
-    player: 'jwplayer',
+    player: playerSettings.player,
     message: valid ? '' : 'Bad Request',
-    enableP2P: false,
+    enableP2P: playerSettings.p2p,
     hosts: mediaHosts(media),
-    preload: 'metadata',
-    stretching: 'uniform',
-    displayTitle: false,
-    displayRateControls: true,
-    captionsColor: '#ffff00',
-    playerSkin: 'netflix',
+    preload: playerSettings.preload,
+    stretching: playerSettings.stretching,
+    displayTitle: playerSettings.display_title,
+    displayRateControls: playerSettings.playback_rate,
+    captionsColor: `#${playerSettings.subtitle_color}`,
+    playerSkin: playerSettings.player_skin,
     vastAds: legacyVastConfiguration(ads),
     blockADB: ads.block_adblocker,
-    enableSharer: true,
-    logoHide: false,
-    logoPosition: 'top-right',
+    enableSharer: playerSettings.enable_share_button,
+    logoHide: playerSettings.logo_hide,
+    logoPosition: playerSettings.logo_position,
     visitAdsOnplay: ads.visitads_onplay,
     showIframeAds: ads.show_iframeads,
-    logoImage: '',
-    logoLink: '',
-    torrentList: [
-      'wss://tracker.novage.com.ua',
-      'wss://tracker.webtorrent.dev',
-      'wss://tracker.openwebtorrent.com',
-      'wss://tracker.btorrent.xyz'
-    ],
+    logoImage: playerSettings.logo_file,
+    logoLink: playerSettings.logo_open_link,
+    torrentList: playerSettings.torrent_tracker.split(/\r?\n/).filter(Boolean),
     disableDirectAds: ads.disable_direct_ads,
     directAdsLink: ads.direct_ads_link,
-    smallLogoFile: '',
-    smallLogoLink: '',
-    playerColor: '#e50914',
-    playerColor2: '#e50914',
+    smallLogoFile: playerSettings.small_logo_file,
+    smallLogoLink: playerSettings.small_logo_link,
+    playerColor: `#${playerSettings.player_color}`,
+    playerColor2: `#${playerSettings.player_color2}`,
     playerVersion: '4.6.6',
-    rgbColor: '229,9,20',
-    text_rewind: 'Rewind 10 Seconds',
-    text_forward: 'Forward 10 Seconds',
-    text_download: 'Download ',
+    rgbColor: rgbColor(playerSettings.player_color),
+    text_rewind: playerSettings.text_rewind,
+    text_forward: playerSettings.text_forward,
+    text_download: playerSettings.text_download,
     productionMode: false,
     statCounterRuntime: 60,
-    showDownloadButton: true,
+    showDownloadButton: playerSettings.enable_download_button,
     enableDownloadPage: true,
-    defaultResolution: 700,
-    logoMargin: 0,
-    pauseOnLeft: false
+    defaultResolution: numericResolution(playerSettings.default_resolution),
+    logoMargin: Number(playerSettings.logo_margin),
+    pauseOnLeft: playerSettings.pause_on_left
   }
 }
 
@@ -239,7 +244,8 @@ function createSourceResponse(
   security: Security,
   queryToken: string,
   media: PlayerMediaQuery,
-  result: MediaResult
+  result: MediaResult,
+  playerSettings: PlayerSettings
 ): Readonly<Record<string, unknown>> {
   const canonicalToken = queryToken.length > 0
     ? queryToken
@@ -249,7 +255,11 @@ function createSourceResponse(
     id: media.id ?? ''
   }
   const title = result.title.length > 0 ? result.title : titleFromMedia(media)
-  const poster = proxyPoster(media.poster ?? result.image, security, config.baseUrl)
+  const configuredPoster = playerSettings.poster
+  const posterSource = playerSettings.force_default_poster && configuredPoster.length > 0
+    ? configuredPoster
+    : media.poster || result.image || configuredPoster
+  const poster = proxyPoster(posterSource, security, config.baseUrl)
 
   return {
     query: {
@@ -261,11 +271,11 @@ function createSourceResponse(
     },
     status: 'ok',
     message: 'Success',
-    embed_url: absolutePlayerUrl(config, config.slugs.embed, canonicalToken),
-    download_url: absolutePlayerUrl(config, config.slugs.download, canonicalToken),
+    embed_url: absolutePlayerUrl(config, playerSettings.slug_embed, canonicalToken),
+    download_url: absolutePlayerUrl(config, playerSettings.slug_download, canonicalToken),
     title,
     poster,
-    filmstrip: proxyFilmstrip(result.filmstrip, security, config.baseUrl),
+    filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, config.baseUrl),
     sources: result.sources.flatMap((source) => proxySource(source, security, identity, config.baseUrl)),
     tracks: result.tracks.flatMap((track) => proxyTrack(track, security, config.baseUrl))
   }
@@ -340,6 +350,16 @@ function titleFromMedia(media: PlayerMediaQuery): string {
 
 function isSafariOrInternetExplorer(userAgent: string): boolean {
   return /(?:MSIE|Trident)/i.test(userAgent) || /Safari/i.test(userAgent) && !/(?:Chrome|Chromium|CriOS|Edg)/i.test(userAgent)
+}
+
+function numericResolution(value: PlayerSettings['default_resolution']): number | string {
+  return /^\d+$/.test(value) ? Number(value) : value
+}
+
+function rgbColor(value: string): string {
+  return [value.slice(0, 2), value.slice(2, 4), value.slice(4, 6)]
+    .map((part) => Number.parseInt(part, 16))
+    .join(',')
 }
 
 function legacyBoolean(value: string | undefined): boolean {

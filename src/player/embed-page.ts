@@ -1,5 +1,6 @@
 import { Hosting } from '../core/hosting.js'
 import type { PlayerMediaQuery, PlayerPublicOptions } from '../core/player-query.js'
+import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 
 type RenderedSource = Readonly<{
   kind: 'video' | 'hls' | 'dash' | 'provider' | 'unavailable'
@@ -16,6 +17,11 @@ export type EmbedAdsOptions = Readonly<{
   popupDelaySeconds: number
 }>
 
+export type EmbedPlayerOptions = Readonly<{
+  settings: PlayerSettings
+  downloadUrl: string
+}>
+
 const DISABLED_EMBED_ADS: EmbedAdsOptions = Object.freeze({
   blockAdblocker: false,
   directAdUrl: '',
@@ -28,19 +34,25 @@ const DISABLED_EMBED_ADS: EmbedAdsOptions = Object.freeze({
 export function renderEmbedPage(
   media: PlayerMediaQuery,
   options: PlayerPublicOptions,
-  ads: EmbedAdsOptions = DISABLED_EMBED_ADS
+  ads: EmbedAdsOptions = DISABLED_EMBED_ADS,
+  playerOptions?: EmbedPlayerOptions
 ): string {
+  const settings = playerOptions?.settings
   const source = resolveRenderedSource(media)
   const poster = safePlayerResource(media.poster ?? '', '/poster/')
   const tracks = renderTracks(
     [...(media.sub ?? []), ...(media.subs === undefined ? [] : [media.subs])],
-    media.lang ?? []
+    media.lang ?? [],
+    settings?.default_subtitle ?? ''
   )
   const videoAttributes = [
     options.autoplay ? ' autoplay' : '',
     options.mute ? ' muted' : '',
     options.repeat ? ' loop' : ''
   ].join('')
+  const preload = settings?.preload ?? 'metadata'
+  const stretching = settings?.stretching ?? 'uniform'
+  const title = playerTitle(media)
 
   let player: string
   if (source.kind === 'provider') {
@@ -49,7 +61,7 @@ export function renderEmbedPage(
     player = `<div class="player-notice"><span>Source accepted</span><h1>Provider adapter in progress</h1><p>${escapeHtml(source.message ?? 'This provider is not available in the Node player yet.')}</p></div>`
   } else {
     const sourceAttribute = source.kind === 'hls' ? '' : ` src="${escapeHtmlAttribute(source.url)}"`
-    player = `<video id="media-player" controls playsinline preload="metadata"${videoAttributes}${sourceAttribute}${poster ? ` poster="${escapeHtmlAttribute(poster)}"` : ''} data-source="${escapeHtmlAttribute(source.url)}" data-source-kind="${source.kind}">${tracks}<p>Your browser cannot play this media.</p></video>`
+    player = `<video id="media-player" class="player-stretch-${stretching}" controls playsinline preload="${preload}"${videoAttributes}${sourceAttribute}${poster ? ` poster="${escapeHtmlAttribute(poster)}"` : ''} data-source="${escapeHtmlAttribute(source.url)}" data-source-kind="${source.kind}">${tracks}<p>Your browser cannot play this media.</p></video>`
   }
 
   const directEnabled = ads.directAdOnPlay && ads.directAdUrl.length > 0
@@ -63,6 +75,21 @@ export function renderEmbedPage(
   const adblockNotice = ads.blockAdblocker
     ? '<section class="adblock-notice" data-adblock-notice hidden role="alert"><strong>Ad blocker detected</strong><span>Please disable your ad blocker and reload the player to continue.</span></section>'
     : ''
+  const logo = settings === undefined ? '' : renderPlayerLogo(settings.logo_file, settings.logo_open_link, settings.logo_position, settings.logo_margin, settings.logo_hide, 'player-logo')
+  const smallLogo = settings === undefined ? '' : renderPlayerLogo(settings.small_logo_file, settings.small_logo_link, 'bottom-left', '0', false, 'player-small-logo')
+  const titleOverlay = settings?.display_title === true
+    ? `<h1 class="player-title" data-player-title>${escapeHtml(title)}</h1>`
+    : `<h1 class="sr-only">${escapeHtml(title)}</h1>`
+  const fakePlay = settings?.fake_play_button === true && (source.kind === 'video' || source.kind === 'hls' || source.kind === 'dash')
+    ? '<button class="player-fake-play" type="button" data-player-fake-play aria-label="Play video"><span aria-hidden="true">▶</span></button>'
+    : ''
+  const toolbar = settings === undefined ? '' : renderPlayerToolbar(settings, playerOptions?.downloadUrl ?? '')
+  const resumePrompt = settings?.continue_watching === true
+    ? `<section class="player-resume" data-player-resume hidden role="dialog" aria-modal="true" aria-labelledby="player-resume-text"><p id="player-resume-text" data-player-resume-text>${escapeHtml(settings.text_resume)}</p><div><button type="button" data-player-resume-yes>${escapeHtml(settings.text_resume_yes)}</button><button type="button" data-player-resume-no>${escapeHtml(settings.text_resume_no)}</button></div></section>`
+    : ''
+  const documentTitle = settings === undefined
+    ? 'GPlayer'
+    : settings.text_title.replaceAll('{title}', title).replaceAll('{siteName}', 'GPlayer')
 
   return `<!doctype html>
 <html lang="en">
@@ -70,13 +97,14 @@ export function renderEmbedPage(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>GDPlayer</title>
+  <title>${escapeHtml(documentTitle)}</title>
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
-<body data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}">
-  <main class="player-stage">${player}${providerGate}</main>
+<body data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
+  <main class="player-stage" aria-label="Video player">${player}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}</main>
   ${directFallback}
   ${adblockNotice}
+  ${resumePrompt}
   ${source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>' : ''}
   <script src="/assets/js/gplayer-embed.js"></script>
 </body>
@@ -130,13 +158,60 @@ function providerEmbedUrl(host: string, id: string): string | null {
   }
 }
 
-function renderTracks(subtitles: readonly string[], labels: readonly string[]): string {
+function renderTracks(subtitles: readonly string[], labels: readonly string[], defaultLanguage: string): string {
+  const language = languageEntry(defaultLanguage)
+  const preferred = labels.findIndex((label) => {
+    const normalized = label.trim().toLowerCase()
+    return normalized === language.key.toLowerCase() || normalized === language.value.toLowerCase()
+  })
   return subtitles.flatMap((subtitle, index) => {
     const url = safePlayerResource(subtitle, '/subtitle/')
     if (url.length === 0) return []
     const label = labels[index]?.trim() || `Subtitle ${index + 1}`
-    return [`<track kind="subtitles" src="${escapeHtmlAttribute(url)}" label="${escapeHtmlAttribute(label)}"${index === 0 ? ' default' : ''}>`]
+    return [`<track kind="subtitles" src="${escapeHtmlAttribute(url)}" label="${escapeHtmlAttribute(label)}"${index === (preferred < 0 ? 0 : preferred) ? ' default' : ''}>`]
   }).join('')
+}
+
+function renderPlayerLogo(
+  image: string,
+  link: string,
+  position: PlayerSettings['logo_position'],
+  margin: string,
+  hidden: boolean,
+  className: 'player-logo' | 'player-small-logo'
+): string {
+  const source = safeHttpUrl(image)
+  if (hidden || source.length === 0) return ''
+  const logo = `<img src="${escapeHtmlAttribute(source)}" alt="" data-player-logo data-logo-margin="${escapeHtmlAttribute(margin)}">`
+  const href = safeHttpUrl(link)
+  const content = href.length === 0 ? logo : `<a href="${escapeHtmlAttribute(href)}" target="_blank" rel="noopener noreferrer" aria-label="Open player brand link">${logo}</a>`
+  return `<div class="${className} logo-${position}">${content}</div>`
+}
+
+function renderPlayerToolbar(settings: PlayerSettings, downloadUrl: string): string {
+  if (!settings.enable_share_button && !settings.enable_download_button) return ''
+  const share = settings.enable_share_button
+    ? '<button type="button" data-player-share aria-label="Share video">Share</button>'
+    : ''
+  const download = settings.enable_download_button && downloadUrl.length > 0
+    ? `<a href="${escapeHtmlAttribute(downloadUrl)}" target="_blank" rel="noopener noreferrer">Download</a>`
+    : ''
+  return `<nav class="player-toolbar" aria-label="Player actions">${share}${download}</nav>`
+}
+
+function playerTitle(media: PlayerMediaQuery): string {
+  if (media.host === 'direct' && media.id !== undefined) {
+    const source = safeHttpUrl(media.id)
+    if (source.length > 0) {
+      try {
+        const filename = decodeURIComponent(new URL(source).pathname.split('/').filter(Boolean).at(-1) ?? '')
+        if (filename.trim().length > 0) return filename
+      } catch {
+        // A malformed escape sequence falls back to the provider label below.
+      }
+    }
+  }
+  return `${(media.host ?? 'video').replaceAll(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} video`
 }
 
 function safeHttpUrl(value: string): string {

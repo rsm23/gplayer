@@ -145,6 +145,78 @@ describe('player HTTP routes', () => {
     expect(bait.rawPayload.length).toBeGreaterThan(40)
   })
 
+  it('uses configured player slugs, embed markup, query policy, and native presentation settings', async () => {
+    const values = {
+      slug_embed: 'watch',
+      slug_download: 'fetch',
+      slug_request: 'request-player',
+      iframe_code: '<iframe class="custom-player" title="{title}" src="{embed_url}"></iframe>',
+      allow_public_qry: 'false',
+      autoplay: 'true',
+      mute: 'true',
+      repeat: 'true',
+      preload: 'auto',
+      stretching: 'exactfit',
+      display_title: 'true',
+      fake_play_button: 'true',
+      continue_watching: 'true',
+      pause_on_left: 'true',
+      player_color: '095ae5',
+      player_color2: '062794',
+      poster: 'https://images.example/default.jpg',
+      force_default_poster: 'true',
+      logo_file: 'https://images.example/logo.png',
+      logo_open_link: 'https://brand.example/',
+      logo_position: 'bottom-left',
+      logo_margin: '12',
+      small_logo_file: 'https://images.example/small.png',
+      small_logo_link: 'https://brand.example/small',
+      enable_share_button: 'true',
+      enable_download_button: 'false',
+      hide_hostname: 'true',
+      text_download: 'Save {title}'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const generated = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=createPlayer&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4'
+    })
+    const result = generated.json().result
+    expect(result.embed_url).toMatch(/^https:\/\/player\.example\/watch\/\?/)
+    expect(result.download_url).toMatch(/^https:\/\/player\.example\/fetch\/\?/)
+    expect(result.request_url).toContain('/request-player/?host=direct')
+    expect(result.embed_code).toBe(`<iframe class="custom-player" title="" src="${result.embed_url}"></iframe>`)
+
+    const token = new URL(result.embed_url).search.slice(1)
+    const embed = await app.inject({ method: 'GET', url: `/watch/?${token}&autoplay=0&mute=0&repeat=0` })
+    expect(embed.statusCode).toBe(200)
+    expect(embed.body).toContain(' autoplay muted loop')
+    expect(embed.body).toContain('class="player-stretch-exactfit"')
+    expect(embed.body).toContain('preload="auto"')
+    expect(embed.body).toContain('data-pause-on-left="true"')
+    expect(embed.body).toContain('data-continue-watching="true"')
+    expect(embed.body).toContain('data-player-fake-play')
+    expect(embed.body).toContain('data-player-title')
+    expect(embed.body).toContain('https://images.example/logo.png')
+    expect(embed.body).toContain('https://images.example/small.png')
+    expect(embed.body).toContain('data-player-share')
+    expect(embed.body).not.toContain(`href="/fetch/?${token}"`)
+    expect(embed.body).toMatch(/poster="\/poster\/[A-Za-z0-9_,\-]+\.jpg"/)
+
+    const requestRedirect = await app.inject({ method: 'GET', url: '/request-player/?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4' })
+    expect(requestRedirect.statusCode).toBe(302)
+    expect(requestRedirect.headers.location).toMatch(/^\/watch\/\?/)
+
+    const download = await app.inject({ method: 'GET', url: `/fetch/?${token}` })
+    expect(download.statusCode).toBe(200)
+    expect(download.body).toContain('Save movie.mp4')
+    expect(download.body).toContain(`href="/watch/?${token}"`)
+  })
+
   it('renders the legacy single-subs field through the WebVTT compatibility route', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=&subs=https%3A%2F%2Fcdn.example%2Flegacy.srt')

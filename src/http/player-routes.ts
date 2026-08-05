@@ -5,6 +5,8 @@ import { buildPlayerQuery, parsePlayerQuery, type PlayerMediaQuery } from '../co
 import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath } from './streaming-routes.js'
 import { loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
+import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
+import type { PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 import { renderAdFrameDocument, type AdFrameContent } from '../player/ad-frame.js'
 import { renderDownloadError, renderDownloadPage } from '../player/download-page.js'
@@ -30,6 +32,7 @@ const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1H
 
 export type PlayerRouteOptions = Readonly<{
   loadAdsSettings?: AdsSettingsLoader
+  loadPlayerSettings?: PlayerSettingsLoader
 }>
 
 export async function registerPlayerRoutes(
@@ -38,12 +41,7 @@ export async function registerPlayerRoutes(
   options: PlayerRouteOptions = {}
 ): Promise<void> {
   const security = new Security(config.secureSalt)
-  const generator = new PlayerLinkGenerator(security, {
-    baseUrl: config.baseUrl,
-    embedSlug: config.slugs.embed,
-    downloadSlug: config.slugs.download,
-    requestSlug: config.slugs.request
-  })
+  const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
 
   const createPlayer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const parsed = inputSchema.safeParse(request.body)
@@ -53,6 +51,14 @@ export async function registerPlayerRoutes(
     }
 
     try {
+      const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+      const generator = new PlayerLinkGenerator(security, {
+        baseUrl: config.baseUrl,
+        embedSlug: player.slug_embed,
+        downloadSlug: player.slug_download,
+        requestSlug: player.slug_request,
+        iframeCode: player.iframe_code
+      })
       const sub = toArray(parsed.data['sub[]'] ?? parsed.data.sub)
       const lang = toArray(parsed.data['lang[]'] ?? parsed.data.lang)
       const aid = toArray(parsed.data.aid)[0]
@@ -108,6 +114,7 @@ export async function registerPlayerRoutes(
   })
 
   const redirectPlaintextRequest = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
     const rawQuery = rawQueryFromUrl(request.url)
     const parsed = parsePlayerQuery(rawQuery, security, {
       secureSalt: config.secureSalt,
@@ -118,35 +125,51 @@ export async function registerPlayerRoutes(
       return { status: 'fail', message: parsed.errors[0] ?? 'Bad Request', result: null }
     }
     const token = security.encryptURL(buildPlayerQuery(parsed.media))
-    return reply.redirect(routePath(config.slugs.embed, token))
+    return reply.redirect(routePath(player.slug_embed, token))
   }
 
   app.get(`/${config.slugs.request}`, redirectPlaintextRequest)
   app.get(`/${config.slugs.request}/`, redirectPlaintextRequest)
 
   const showEmbed = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const [ads, player] = await Promise.all([
+      loadRuntimeAdsSettings(options.loadAdsSettings),
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    ])
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
       secureSalt: config.secureSalt,
-      allowPublicQuery: true
+      allowPublicQuery: player.allow_public_qry,
+      publicDefaults: {
+        autoplay: player.autoplay,
+        mute: player.mute,
+        repeat: player.repeat
+      }
     })
     if (parsed.media === null) {
       reply.code(400).type('text/html; charset=utf-8')
       return renderEmbedError(parsed.errors[0] ?? 'The player link is invalid.')
     }
-    const ads = await loadRuntimeAdsSettings(options.loadAdsSettings)
     reply
       .header('cache-control', 'private, no-store')
       .header('content-security-policy', embedContentSecurityPolicy(ads))
       .header('x-content-type-options', 'nosniff')
       .header('referrer-policy', 'strict-origin-when-cross-origin')
       .type('text/html; charset=utf-8')
-    return renderEmbedPage(proxyPlayerMedia(parsed.media, security), parsed.publicOptions, embedAdsOptions(ads))
+    const media = proxyPlayerMedia(withDefaultPoster(parsed.media, player), security)
+    return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
+      settings: player,
+      downloadUrl: routePath(player.slug_download, parsed.token)
+    })
   }
 
   app.get(`/${config.slugs.embed}`, showEmbed)
   app.get(`/${config.slugs.embed}/`, showEmbed)
 
   const showDownload = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const [ads, player] = await Promise.all([
+      loadRuntimeAdsSettings(options.loadAdsSettings),
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    ])
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
       secureSalt: config.secureSalt
     })
@@ -155,20 +178,32 @@ export async function registerPlayerRoutes(
       reply.code(400).type('text/html; charset=utf-8')
       return renderDownloadError(parsed.errors[0] ?? 'The download link is invalid.')
     }
-
-    const ads = await loadRuntimeAdsSettings(options.loadAdsSettings)
-    const embedUrl = routePath(config.slugs.embed, parsed.token)
-    const alternativeUrl = createAlternativeDownloadUrl(parsed.media, security, config.slugs.download)
+    const embedUrl = routePath(player.slug_embed, parsed.token)
+    const alternativeUrl = createAlternativeDownloadUrl(parsed.media, security, player.slug_download)
     reply.type('text/html; charset=utf-8')
     return renderDownloadPage(parsed.media, {
       embedUrl,
       ...(alternativeUrl === undefined ? {} : { alternativeUrl }),
+      downloadLabel: player.text_download,
+      hideHostname: player.hide_hostname,
       ...downloadAdFrames(ads)
     })
   }
 
   app.get(`/${config.slugs.download}`, showDownload)
   app.get(`/${config.slugs.download}/`, showDownload)
+
+  const dispatchConfiguredPlayerRoute = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const slug = String((request.params as { playerSlug?: unknown }).playerSlug ?? '').toLowerCase()
+    const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    if (slug === player.slug_embed.toLowerCase()) return await showEmbed(request, reply)
+    if (slug === player.slug_download.toLowerCase()) return await showDownload(request, reply)
+    if (slug === player.slug_request.toLowerCase()) return await redirectPlaintextRequest(request, reply)
+    return reply.callNotFound()
+  }
+
+  app.get('/:playerSlug', dispatchConfiguredPlayerRoute)
+  app.get('/:playerSlug/', dispatchConfiguredPlayerRoute)
 }
 
 function embedAdsOptions(ads: AdsSettings): EmbedAdsOptions {
@@ -317,4 +352,11 @@ function proxyPlayerMedia(media: PlayerMediaQuery, security: Security): PlayerMe
     ...(subtitles.length === 0 ? {} : { sub: subtitles }),
     ...(legacySubtitle === undefined ? {} : { subs: legacySubtitle })
   }
+}
+
+function withDefaultPoster(media: PlayerMediaQuery, settings: PlayerSettings): PlayerMediaQuery {
+  const poster = settings.force_default_poster && settings.poster.length > 0
+    ? settings.poster
+    : media.poster || settings.poster
+  return poster === undefined || poster.length === 0 ? media : { ...media, poster }
 }

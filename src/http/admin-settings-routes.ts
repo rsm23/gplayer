@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
+import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminPlayerSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
 import { InvalidVastAssetError, type VastAssetManager } from '../settings/vast-assets-service.js'
@@ -20,6 +20,7 @@ export async function registerAdminSettingsRoutes(
   vastAssets: VastAssetManager
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
+  const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
   const loginUrl = `${adminBase}/login/`
   const generalUrl = `${adminBase}/settings/general/`
   const publicUrl = `${adminBase}/settings/public/`
@@ -27,6 +28,7 @@ export async function registerAdminSettingsRoutes(
   const siteUrl = `${adminBase}/settings/site/`
   const shortlinkUrl = `${adminBase}/settings/shortlink/`
   const customHeadersUrl = `${adminBase}/settings/custom-headers/`
+  const playerUrl = `${adminBase}/settings/player/`
   const adsUrl = `${adminBase}/settings/ads/`
   const vastCreateUrl = `${adsUrl}vast/create/`
   const vastDeleteUrl = `${adsUrl}vast/delete/`
@@ -38,6 +40,7 @@ export async function registerAdminSettingsRoutes(
   app.get(`${adminBase}/settings/site`, async (_request, reply) => await reply.redirect(siteUrl, 308))
   app.get(`${adminBase}/settings/shortlink`, async (_request, reply) => await reply.redirect(shortlinkUrl, 308))
   app.get(`${adminBase}/settings/custom-headers`, async (_request, reply) => await reply.redirect(customHeadersUrl, 308))
+  app.get(`${adminBase}/settings/player`, async (_request, reply) => await reply.redirect(playerUrl, 308))
   app.get(`${adminBase}/settings/ads`, async (_request, reply) => await reply.redirect(adsUrl, 308))
 
   app.get(generalUrl, async (request, reply) => {
@@ -341,6 +344,53 @@ export async function registerAdminSettingsRoutes(
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The custom-header settings could not be saved.'))
+    }
+  })
+
+  app.get(playerUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    try {
+      const values = await settings.playerSettings(playerDefaults)
+      const message: AdminMessage | undefined = stringValue(objectValue(request.query).updated) === '1'
+        ? { kind: 'success', text: 'The Player Settings have been successfully updated' }
+        : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminPlayerSettings({
+        adminBase,
+        values,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-player'),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The player settings are temporarily unavailable.'))
+    }
+  })
+
+  app.post(playerUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-player')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const result = await settings.savePlayer(body, playerDefaults)
+      if (result.status === 'ok') return await reply.redirect(`${playerUrl}?updated=1`, 303)
+      const values = await settings.playerSettings(playerDefaults)
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminPlayerSettings({
+        adminBase,
+        values,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-player'),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The player settings could not be saved.'))
     }
   })
 

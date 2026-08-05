@@ -1,5 +1,6 @@
 import { customHeadersForUrl, decodeCustomHeaderRules, defaultCustomHeaderRules, parseCustomHeaderSubmission, type CustomHeaderRule } from './custom-headers.js'
 import { isSafeVastAssetName } from './vast-assets-service.js'
+import { parsePlayerSettingsSubmission, playerSettings, type PlayerSettings, type PlayerSettingsDefaults } from './player-settings.js'
 
 const BOOLEAN_KEYS = [
   'production_mode',
@@ -451,6 +452,21 @@ export class SettingsAdminService {
       visitads_onplay: raw.visitads_onplay === 'true',
       show_iframeads: raw.show_iframeads === 'true'
     })
+  }
+
+  public async playerSettings(defaultSlugs: PlayerSettingsDefaults): Promise<PlayerSettings> {
+    return playerSettings(await this.store.getAll(), defaultSlugs)
+  }
+
+  public async savePlayer(
+    input: Record<string, unknown>,
+    defaultSlugs: PlayerSettingsDefaults
+  ): Promise<SettingsMutationResult> {
+    const raw = await this.store.getAll()
+    const result = parsePlayerSettingsSubmission(input, raw, defaultSlugs)
+    if (result.status === 'invalid') return result
+    await this.store.upsertMany(result.entries)
+    return Object.freeze({ status: 'ok', message: 'The Player Settings have been successfully updated' })
   }
 
   public async saveAds(input: Record<string, unknown>): Promise<SettingsMutationResult> {

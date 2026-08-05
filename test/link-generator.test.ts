@@ -44,4 +44,16 @@ describe('player link generator', () => {
     expect(() => generator.generate({ id: 'file:///tmp/video.mp4' })).toThrow(/HTTP/)
     expect(() => generator.generate({ id: 'https://user:pass@example.com/video.mp4' })).toThrow(/credentials/)
   })
+
+  it('applies an administrator-provided iframe template without executing it', () => {
+    const custom = new PlayerLinkGenerator(security, {
+      baseUrl: new URL('https://player.example/'),
+      embedSlug: 'watch',
+      downloadSlug: 'fetch',
+      requestSlug: 'request-player',
+      iframeCode: '<iframe title="{title}" data-player="custom" src="{embed_url}"></iframe>'
+    })
+    const result = custom.generate({ id: 'https://cdn.example/video.mp4' })
+    expect(result.embedCode).toBe(`<iframe title="" data-player="custom" src="${result.embedUrl}"></iframe>`)
+  })
 })

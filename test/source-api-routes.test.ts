@@ -140,6 +140,106 @@ describe('legacy player source API routes', () => {
     })
   })
 
+  it('maps the complete player contract into config and source responses', async () => {
+    await app.close()
+    const values = {
+      player: 'plyr',
+      player_skin: 'hotstar',
+      player_color: '095ae5',
+      player_color2: '062794',
+      stretching: 'exactfit',
+      preload: 'auto',
+      default_resolution: 'Original',
+      default_audio: 'French',
+      default_subtitle: 'English',
+      subtitle_color: 'abcdef',
+      font_family: 'Verdana',
+      edge_style: 'uniform',
+      background_opacity: '80',
+      background_color: '010203',
+      window_opacity: '25',
+      window_color: '112233',
+      display_title: 'true',
+      playback_rate: 'false',
+      enable_share_button: 'false',
+      enable_download_button: 'false',
+      disable_filmstrip: 'true',
+      p2p: 'true',
+      logo_hide: 'true',
+      logo_position: 'bottom-left',
+      logo_file: 'https://images.example.test/logo.png',
+      logo_open_link: 'https://brand.example.test/',
+      logo_margin: '12',
+      small_logo_file: 'https://images.example.test/small.png',
+      small_logo_link: 'https://brand.example.test/small',
+      torrent_tracker: 'wss://tracker.example.test/socket\nwss://tracker2.example.test/',
+      text_rewind: 'Back ten',
+      text_forward: 'Ahead ten',
+      text_download: 'Save {title}',
+      pause_on_left: 'true',
+      force_default_poster: 'true',
+      poster: 'https://images.example.test/configured.jpg',
+      slug_embed: 'watch',
+      slug_download: 'fetch',
+      slug_request: 'request-player'
+    }
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4', poster: 'https://images.example.test/source.jpg' })
+    const response = await app.inject({ method: 'GET', url: `/api-config/${request.queryToken}?p=${request.passwordToken}` })
+    expect(decryptJson(response.body, request.password)).toMatchObject({
+      defaultSubtitle: { key: 'en', value: 'English' },
+      defaultAudio: { key: 'fr', value: 'French' },
+      backgroundColor: '#010203',
+      backgroundOpacity: 80,
+      edgeStyle: 'uniform',
+      fontFamily: 'Verdana',
+      windowColor: '#112233',
+      windowOpacity: 25,
+      player: 'plyr',
+      enableP2P: true,
+      preload: 'auto',
+      stretching: 'exactfit',
+      displayTitle: true,
+      displayRateControls: false,
+      captionsColor: '#abcdef',
+      playerSkin: 'hotstar',
+      enableSharer: false,
+      logoHide: true,
+      logoPosition: 'bottom-left',
+      logoImage: 'https://images.example.test/logo.png',
+      logoLink: 'https://brand.example.test/',
+      torrentList: ['wss://tracker.example.test/socket', 'wss://tracker2.example.test/'],
+      smallLogoFile: 'https://images.example.test/small.png',
+      smallLogoLink: 'https://brand.example.test/small',
+      playerColor: '#095ae5',
+      playerColor2: '#062794',
+      rgbColor: '9,90,229',
+      text_rewind: 'Back ten',
+      text_forward: 'Ahead ten',
+      text_download: 'Save {title}',
+      showDownloadButton: false,
+      defaultResolution: 'Original',
+      logoMargin: 12,
+      pauseOnLeft: true
+    })
+
+    const source = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const decoded = decryptJson(source.body, request.password)
+    expect(decoded.embed_url).toBe(`https://player.example/watch/?${request.queryToken}`)
+    expect(decoded.download_url).toBe(`https://player.example/fetch/?${request.queryToken}`)
+    expect(decoded.filmstrip).toBe('')
+    expect(decoded.poster).toMatch(/^https:\/\/player\.example\/poster\//)
+    expect(decoded.poster).not.toContain('source.jpg')
+  })
+
   it('encrypts a successful source response and proxies every public media URL', async () => {
     const request = authenticatedRequest({
       host: 'direct',
