@@ -92,6 +92,7 @@ export function renderEmbedPage(
   const fakePlay = settings?.fake_play_button === true && (source.kind === 'video' || source.kind === 'hls' || source.kind === 'dash')
     ? '<button class="player-fake-play" type="button" data-player-fake-play aria-label="Play video"><span aria-hidden="true">▶</span></button>'
     : ''
+  const loader = settings === undefined ? '' : renderPlayerLoader(settings, source.kind)
   const toolbar = settings === undefined ? '' : renderPlayerToolbar(settings, playerOptions?.downloadUrl ?? '')
   const resumePrompt = settings?.continue_watching === true
     ? `<section class="player-resume" data-player-resume hidden role="dialog" aria-modal="true" aria-labelledby="player-resume-text"><p id="player-resume-text" data-player-resume-text>${escapeHtml(settings.text_resume)}</p><div><button type="button" data-player-resume-yes>${escapeHtml(settings.text_resume_yes)}</button><button type="button" data-player-resume-no>${escapeHtml(settings.text_resume_no)}</button></div></section>`
@@ -109,8 +110,8 @@ export function renderEmbedPage(
   <title>${escapeHtml(documentTitle)}</title>
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
-<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
-  <main class="player-stage" aria-label="Video player">${player}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}</main>
+<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-caption-color="#${escapeHtmlAttribute(settings?.subtitle_color ?? 'ffffff')}" data-caption-font="${escapeHtmlAttribute(settings?.font_family ?? 'Arial')}" data-caption-edge="${escapeHtmlAttribute(settings?.edge_style ?? 'dropShadow')}" data-caption-background-color="#${escapeHtmlAttribute(settings?.background_color ?? '000000')}" data-caption-background-opacity="${escapeHtmlAttribute(settings?.background_opacity ?? '75')}" data-caption-window-color="#${escapeHtmlAttribute(settings?.window_color ?? '000000')}" data-caption-window-opacity="${escapeHtmlAttribute(settings?.window_opacity ?? '0')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
+  <main class="player-stage" aria-label="Video player">${player}${loader}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}</main>
   ${directFallback}
   ${adblockNotice}
   ${resumePrompt}
@@ -206,6 +207,14 @@ function renderPlayerToolbar(settings: PlayerSettings, downloadUrl: string): str
     ? `<a href="${escapeHtmlAttribute(downloadUrl)}" target="_blank" rel="noopener noreferrer">Download</a>`
     : ''
   return `<nav class="player-toolbar" aria-label="Player actions">${share}${download}</nav>`
+}
+
+function renderPlayerLoader(settings: PlayerSettings, sourceKind: RenderedSource['kind']): string {
+  if (sourceKind === 'unavailable') return ''
+  const label = settings.text_loading.trim() || 'Loading video'
+  const text = settings.text_loading.trim() === '' ? '' : `<span class="player-loader-text">${escapeHtml(settings.text_loading)}</span>`
+  const pieces = Array.from({ length: 9 }, () => '<span></span>').join('')
+  return `<div class="player-loader player-loader-${settings.loader}" data-player-loader role="status" aria-live="polite" aria-label="${escapeHtmlAttribute(label)}"><span class="player-loader-visual" aria-hidden="true">${pieces}</span>${text}</div>`
 }
 
 function playerTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {

@@ -44,6 +44,34 @@
     if (/^#[a-f0-9]{6}$/i.test(body.dataset.playerColor2 || '')) {
       document.documentElement.style.setProperty('--brand-secondary', body.dataset.playerColor2)
     }
+    const captionColor = body.dataset.captionColor || ''
+    if (/^#[a-f0-9]{6}$/i.test(captionColor)) {
+      document.documentElement.style.setProperty('--caption-color', captionColor)
+    }
+    const captionFonts = new Set(['Arial', 'Courier', 'Georgia', 'Impact', 'Lucida Console', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana'])
+    const captionFont = body.dataset.captionFont || ''
+    if (captionFonts.has(captionFont)) {
+      document.documentElement.style.setProperty('--caption-font', `"${captionFont}"`)
+    }
+    const rgbaCaptionColor = (color, opacity) => {
+      if (!/^#[a-f0-9]{6}$/i.test(color || '')) return ''
+      const alpha = Number.parseInt(opacity || '', 10)
+      if (!Number.isInteger(alpha) || alpha < 0 || alpha > 100) return ''
+      return `rgba(${Number.parseInt(color.slice(1, 3), 16)}, ${Number.parseInt(color.slice(3, 5), 16)}, ${Number.parseInt(color.slice(5, 7), 16)}, ${alpha / 100})`
+    }
+    const captionBackground = rgbaCaptionColor(body.dataset.captionBackgroundColor, body.dataset.captionBackgroundOpacity)
+    if (captionBackground) document.documentElement.style.setProperty('--caption-background', captionBackground)
+    const captionWindow = rgbaCaptionColor(body.dataset.captionWindowColor, body.dataset.captionWindowOpacity)
+    if (captionWindow) document.documentElement.style.setProperty('--caption-window', captionWindow)
+    const captionEdges = {
+      none: 'none',
+      raised: '-1px -1px 0 #000, 1px 1px 0 rgba(255, 255, 255, 0.45)',
+      depressed: '1px 1px 0 #000, -1px -1px 0 rgba(255, 255, 255, 0.35)',
+      uniform: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000',
+      dropShadow: '2px 2px 3px #000'
+    }
+    const captionEdge = captionEdges[body.dataset.captionEdge]
+    if (captionEdge) document.documentElement.style.setProperty('--caption-edge', captionEdge)
     document.querySelectorAll('[data-player-logo]').forEach((logo) => {
       const margin = Number.parseInt(logo.dataset.logoMargin || body.dataset.logoMargin || '0', 10)
       const container = logo.closest('.player-logo, .player-small-logo')
@@ -51,6 +79,26 @@
         container.style.setProperty('--logo-margin', `${margin}px`)
       }
     })
+  }
+
+  const initializeLoader = () => {
+    const loader = document.querySelector('[data-player-loader]')
+    if (!(loader instanceof HTMLElement)) return
+    const hide = () => { loader.hidden = true }
+    const show = () => { loader.hidden = false }
+    if (video instanceof HTMLVideoElement) {
+      for (const event of ['loadstart', 'waiting', 'stalled', 'seeking']) video.addEventListener(event, show)
+      for (const event of ['loadeddata', 'canplay', 'playing', 'seeked', 'error']) video.addEventListener(event, hide)
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) hide()
+      return
+    }
+    const provider = document.querySelector('[data-provider-frame]')
+    if (provider instanceof HTMLIFrameElement) {
+      provider.addEventListener('load', hide, { once: true })
+      provider.addEventListener('error', hide, { once: true })
+      return
+    }
+    hide()
   }
 
   const fakePlay = document.querySelector('[data-player-fake-play]')
@@ -270,6 +318,7 @@
   }
 
   initializePlayerAppearance()
+  initializeLoader()
   initializeDeferredSources()
   initializeStreamingPlayback()
   initializeVisibilityPause()
