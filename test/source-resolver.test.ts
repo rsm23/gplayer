@@ -54,7 +54,9 @@ class FakeExtractor implements HostingExtractor {
 describe('Core source resolver parity', () => {
   it('uses all legacy cache dimensions and returns a valid cached result', async () => {
     const cache = new MemorySourceCache()
-    const cached = result({ file: 'cached.mp4', type: 'mp4' })
+    const cached = result({ file: 'cached.mp4', type: 'mp4' }, '198.51.100.4', {
+      host: 'earnvids', id: 'abc', userAgent: 'Browser UA', language: 'fr-FR'
+    })
     cache.record = record(cached)
     const extractor = new FakeExtractor()
     const resolver = createResolver(cache, extractor)
@@ -84,7 +86,11 @@ describe('Core source resolver parity', () => {
 
     const output = await resolver.getResult()
 
-    expect(output).toEqual(result({ file: 'https://cdn.example/video.mp4', type: 'mp4' }, '198.51.100.4'))
+    expect(output).toEqual(result(
+      { file: 'https://cdn.example/video.mp4', type: 'mp4' },
+      '198.51.100.4',
+      { host: 'streamhg', id: 'xyz', userAgent: 'Default UA', language: 'en;q=0.9' }
+    ))
     expect(extractor).toMatchObject({ host: 'Streamhg', downloadable: true, email: 'user@example.com' })
     expect(cache.inserts).toHaveLength(1)
     expect(cache.inserts[0]).toEqual(expect.objectContaining({
@@ -114,6 +120,25 @@ describe('Core source resolver parity', () => {
     expect(extractor.sourceCalls).toBe(1)
   })
 
+  it('recovers complete results written in the previous wrapper-shaped cache format', async () => {
+    const cache = new MemorySourceCache()
+    const legacy = result({ file: 'https://cdn.example/video.mp4', type: 'mp4' })
+    cache.record = {
+      ...record(legacy),
+      data: JSON.stringify({ result: legacy, sources: legacy.sources, serverIp: '203.0.113.9' })
+    }
+    const extractor = new FakeExtractor()
+    const resolver = createResolver(cache, extractor).setQuery({ host: 'streamhg', id: 'wrapped' })
+
+    await expect(resolver.getResult()).resolves.toMatchObject({
+      tracks: legacy.tracks,
+      referer: legacy.referer,
+      cookies: legacy.cookies,
+      upstream: { host: 'streamhg', id: 'wrapped', userAgent: 'Browser UA', language: 'fr-FR' }
+    })
+    expect(extractor.sourceCalls).toBe(0)
+  })
+
   it('does not persist empty extractor results', async () => {
     const cache = new MemorySourceCache()
     const extractor = new FakeExtractor()
@@ -124,6 +149,34 @@ describe('Core source resolver parity', () => {
       sources: [], tracks: [], referer: '', title: '', email: '', image: '', cookies: [], filmstrip: '', clientip: ''
     })
     expect(cache.inserts).toHaveLength(0)
+  })
+
+  it('round-trips every extracted result field through a newly inserted cache record', async () => {
+    const cache = new MemorySourceCache()
+    const firstExtractor = new FakeExtractor()
+    const first = createResolver(cache, firstExtractor).setQuery({ host: 'streamhg', id: 'round-trip', email: 'user@example.com' })
+    const extracted = await first.getResult()
+    const inserted = cache.inserts[0]
+    expect(inserted).toBeDefined()
+
+    cache.record = {
+      data: inserted?.data ?? '',
+      language: inserted?.language ?? '',
+      userAgent: inserted?.userAgent ?? '',
+      created: inserted?.created ?? 0,
+      expired: inserted?.expired ?? 0
+    }
+    const cachedExtractor = new FakeExtractor()
+    const second = createResolver(cache, cachedExtractor).setQuery({ host: 'streamhg', id: 'round-trip', email: 'user@example.com' })
+
+    await expect(second.getResult()).resolves.toEqual(extracted)
+    expect(cachedExtractor.sourceCalls).toBe(0)
+    expect(JSON.parse(inserted?.data ?? '{}')).toMatchObject({
+      tracks: [{ file: 'sub.vtt', kind: 'captions' }],
+      referer: 'https://origin.example/',
+      cookies: ['session=value'],
+      upstream: { host: 'streamhg', id: 'round-trip', userAgent: 'Default UA', language: 'en;q=0.9' }
+    })
   })
 
   it('enables download extraction only for configured HLS/MP4 hosts', async () => {
@@ -179,7 +232,11 @@ function resolverOptions(options: {
   }
 }
 
-function result(source: Record<string, unknown>, clientip = '198.51.100.4'): MediaResult {
+function result(
+  source: Record<string, unknown>,
+  clientip = '198.51.100.4',
+  upstream?: MediaResult['upstream']
+): MediaResult {
   return {
     sources: [source],
     tracks: [{ file: 'sub.vtt', kind: 'captions' }],
@@ -189,7 +246,8 @@ function result(source: Record<string, unknown>, clientip = '198.51.100.4'): Med
     image: 'poster.jpg',
     cookies: ['session=value'],
     filmstrip: 'strip.vtt',
-    clientip
+    clientip,
+    ...(upstream === undefined ? {} : { upstream })
   }
 }
 

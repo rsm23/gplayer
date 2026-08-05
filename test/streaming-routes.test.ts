@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
@@ -15,6 +15,7 @@ import {
   type StreamingRouteOptions
 } from '../src/http/streaming-routes.js'
 import { Security } from '../src/security/security.js'
+import { ProviderStreamContextRegistry } from '../src/stream/provider-stream-context.js'
 
 const secureSalt = '1234567890123456'
 const media = Buffer.from('0123456789abcdefghijklmnopqrstuvwxyz')
@@ -40,6 +41,34 @@ beforeEach(async () => {
       response.writeHead(200, { 'content-type': 'application/vnd.apple.mpegurl' }).end(
         '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000\nvariant.m3u8\n'
       )
+      return
+    }
+    if (request.url === '/cross-origin-master.m3u8') {
+      const child = new URL('/variant.m3u8', upstreamUrl)
+      child.hostname = 'localhost'
+      response.writeHead(200, { 'content-type': 'application/vnd.apple.mpegurl' }).end(
+        `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000\n${child}\n`
+      )
+      return
+    }
+    if (request.url === '/same-origin-redirect') {
+      response.writeHead(302, { location: '/echo-headers' }).end()
+      return
+    }
+    if (request.url === '/cross-origin-redirect') {
+      const child = new URL('/echo-headers', upstreamUrl)
+      child.hostname = 'localhost'
+      response.writeHead(302, { location: child.toString() }).end()
+      return
+    }
+    if (request.url === '/echo-headers') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        cookie: request.headers.cookie,
+        origin: request.headers.origin,
+        referer: request.headers.referer,
+        userAgent: request.headers['user-agent'],
+        language: request.headers['accept-language']
+      }))
       return
     }
     if (request.url === '/variant.m3u8') {
@@ -233,6 +262,39 @@ describe('authenticated streaming routes', () => {
     expect(upstreamHits.get('/segment0.ts?sig=abc')).toBe(1)
   })
 
+  it('rebinds cached manifests to the current provider context without caching credentials', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const target = new URL('/cross-origin-master.m3u8', upstreamUrl)
+    const firstToken = providerContexts.register({ host: 'direct', targets: [target], cookies: ['session=first'] }) ?? ''
+    app = await buildStreamingApp(true, undefined, {
+      providerContexts,
+      cacheRoot,
+      loadCacheSettings: async () => ({ enabled: true, maxAgeSeconds: 3_600, mode: 'php' })
+    })
+    const security = new Security(secureSalt)
+    const firstPath = createStreamingProxyPath('hls', target, security, { host: 'direct', id: 'context-cache', contextToken: firstToken })
+    const first = await app.inject({ method: 'GET', url: firstPath })
+    expect(first.body).toContain(`gsc=${firstToken}`)
+    const cachedFiles = (await readdir(path.join(cacheRoot, 'files'), { recursive: true }))
+      .filter((file) => file.endsWith('.cache'))
+    const cachedManifest = await readFile(path.join(cacheRoot, 'files', cachedFiles[0] ?? ''), 'utf8')
+    expect(cachedManifest).toContain('gsc=__GPLAYER_PROVIDER_CONTEXT__')
+    expect(cachedManifest).not.toContain(firstToken)
+    expect(cachedManifest).not.toContain('session=first')
+
+    const secondToken = providerContexts.register({ host: 'direct', targets: [target], cookies: ['session=second'] }) ?? ''
+    const secondPath = createStreamingProxyPath('hls', target, security, { host: 'direct', id: 'context-cache', contextToken: secondToken })
+    const second = await app.inject({ method: 'GET', url: secondPath })
+    expect(second.headers['x-cache']).toBe('HIT')
+    expect(second.body).toContain(`gsc=${secondToken}`)
+    expect(second.body).not.toContain(firstToken)
+    expect(upstreamHits.get('/cross-origin-master.m3u8')).toBe(1)
+
+    const childPath = second.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''
+    expect((await app.inject({ method: 'GET', url: childPath })).statusCode).toBe(200)
+    expect(lastUpstreamHeaders.cookie).toBe('session=second')
+  })
+
   it.each([
     ['apache', 'x-sendfile'],
     ['litespeed', 'x-litespeed-location'],
@@ -318,6 +380,146 @@ describe('authenticated streaming routes', () => {
     expect(lastUpstreamHeaders.host).not.toBe('attacker.example')
   })
 
+  it('keeps extractor headers server-side across child manifests and segments', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const target = new URL('/master.m3u8', upstreamUrl)
+    const contextToken = providerContexts.register({
+      host: 'streamhg',
+      targets: [target],
+      referer: 'https://embed.example/e/fixture',
+      cookies: ['session=provider-secret'],
+      userAgent: 'Provider Browser',
+      language: 'fr-FR'
+    }) ?? ''
+    app = await buildStreamingApp(true, undefined, { providerContexts })
+    const path = createStreamingProxyPath('hls', target, new Security(secureSalt), {
+      host: 'streamhg', id: 'fixture', contextToken
+    })
+
+    expect(path).not.toContain('provider-secret')
+    const master = await app.inject({
+      method: 'GET',
+      url: path,
+      headers: { 'user-agent': 'Untrusted Browser', 'accept-language': 'de-DE' }
+    })
+    expect(lastUpstreamHeaders).toMatchObject({
+      cookie: 'session=provider-secret',
+      origin: 'https://embed.example',
+      referer: 'https://embed.example/e/fixture',
+      'user-agent': 'Provider Browser',
+      'accept-language': 'fr-FR'
+    })
+
+    const variantPath = master.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''
+    expect(variantPath).toContain(`gsc=${contextToken}`)
+    const variant = await app.inject({ method: 'GET', url: variantPath })
+    expect(lastUpstreamHeaders.cookie).toBe('session=provider-secret')
+    const segmentPath = variant.body.split('\n').find((line) => line.startsWith('/stream-ts/')) ?? ''
+    expect(segmentPath).toContain(`gsc=${contextToken}`)
+    expect((await app.inject({ method: 'GET', url: segmentPath })).statusCode).toBe(200)
+    expect(lastUpstreamHeaders.cookie).toBe('session=provider-secret')
+  })
+
+  it('applies provider context to ranged MP4 requests without exposing it downstream', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const target = new URL('/video.mp4', upstreamUrl)
+    const contextToken = providerContexts.register({
+      host: 'direct',
+      targets: [target],
+      cookies: ['session=range-secret'],
+      referer: 'https://embed.example/range'
+    }) ?? ''
+    app = await buildStreamingApp(true, undefined, { providerContexts })
+    const path = createStreamingProxyPath('stream-vid', target, new Security(secureSalt), {
+      host: 'direct', id: 'range-fixture', contextToken
+    })
+
+    const response = await app.inject({ method: 'GET', url: path, headers: { range: 'bytes=4-9' } })
+    expect(response.statusCode).toBe(206)
+    expect(response.rawPayload).toEqual(media.subarray(4, 10))
+    expect(lastUpstreamHeaders).toMatchObject({ range: 'bytes=4-9', cookie: 'session=range-secret' })
+    expect(response.headers).not.toHaveProperty('set-cookie')
+    expect(response.body).not.toContain('range-secret')
+  })
+
+  it('authorizes a cross-origin child declared by an authenticated manifest', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const target = new URL('/cross-origin-master.m3u8', upstreamUrl)
+    const contextToken = providerContexts.register({ host: 'direct', targets: [target], cookies: ['session=manifest-secret'] }) ?? ''
+    app = await buildStreamingApp(true, undefined, { providerContexts })
+    const path = createStreamingProxyPath('hls', target, new Security(secureSalt), { host: 'direct', id: 'cross-child', contextToken })
+
+    const master = await app.inject({ method: 'GET', url: path })
+    const childPath = master.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''
+    const child = await app.inject({ method: 'GET', url: childPath })
+
+    expect(child.statusCode).toBe(200)
+    expect(lastUpstreamUrl).toBe('/variant.m3u8')
+    expect(lastUpstreamHeaders.cookie).toBe('session=manifest-secret')
+  })
+
+  it('rejects a stolen context token on unrelated targets and strips it across redirects', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const authorized = new URL('/same-origin-redirect', upstreamUrl)
+    const contextToken = providerContexts.register({
+      host: 'direct',
+      targets: [authorized],
+      referer: 'https://embed.example/e/fixture',
+      cookies: ['session=redirect-secret'],
+      userAgent: 'Provider Browser'
+    }) ?? ''
+    app = await buildStreamingApp(true, undefined, { providerContexts })
+    const security = new Security(secureSalt)
+    const identity = { host: 'direct', id: 'redirect-fixture', contextToken }
+
+    const sameOrigin = await app.inject({
+      method: 'GET',
+      url: createStreamingProxyPath('stream-vid', authorized, security, identity)
+    })
+    expect(JSON.parse(sameOrigin.body)).toMatchObject({ cookie: 'session=redirect-secret', userAgent: 'Provider Browser' })
+
+    const crossOriginTarget = new URL('/cross-origin-redirect', upstreamUrl)
+    const crossOrigin = await app.inject({
+      method: 'GET',
+      url: createStreamingProxyPath('stream-vid', crossOriginTarget, security, identity)
+    })
+    expect(JSON.parse(crossOrigin.body)).not.toHaveProperty('cookie')
+    expect(JSON.parse(crossOrigin.body)).not.toHaveProperty('referer')
+
+    const unrelated = new URL('/echo-headers', upstreamUrl)
+    unrelated.hostname = 'localhost'
+    const stolen = await app.inject({
+      method: 'GET',
+      url: createStreamingProxyPath('stream-vid', unrelated, security, identity)
+    })
+    expect(JSON.parse(stolen.body)).not.toHaveProperty('cookie')
+    expect(JSON.parse(stolen.body)).not.toHaveProperty('referer')
+  })
+
+  it('applies configured custom headers after provider context headers', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const target = new URL('/echo-headers', upstreamUrl)
+    const contextToken = providerContexts.register({
+      host: 'direct',
+      targets: [target],
+      referer: 'https://provider.example/',
+      cookies: ['session=provider']
+    }) ?? ''
+    app = await buildStreamingApp(true, async () => ({
+      Referer: 'https://custom.example/',
+      Cookie: 'session=custom'
+    }), { providerContexts })
+    const path = createStreamingProxyPath('stream-vid', target, new Security(secureSalt), {
+      host: 'direct', id: 'custom-fixture', contextToken
+    })
+
+    const response = await app.inject({ method: 'GET', url: path })
+    expect(JSON.parse(response.body)).toMatchObject({
+      cookie: 'session=custom',
+      referer: 'https://custom.example/'
+    })
+  })
+
   it('rewrites DASH templates while leaving placeholders outside encrypted tokens', async () => {
     app = await buildStreamingApp()
     const security = new Security(secureSalt)
@@ -338,6 +540,29 @@ describe('authenticated streaming routes', () => {
     expect(segment.statusCode).toBe(200)
     expect(segment.rawPayload).toEqual(media)
     expect(lastUpstreamUrl).toBe('/dash/chunk-1.m4s?token=a&b=c')
+  })
+
+  it('propagates provider context through DASH templates and segment requests', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const target = new URL('/manifest.mpd', upstreamUrl)
+    const contextToken = providerContexts.register({
+      host: 'direct',
+      targets: [target],
+      cookies: ['session=dash-secret'],
+      referer: 'https://embed.example/dash'
+    }) ?? ''
+    app = await buildStreamingApp(true, undefined, { providerContexts })
+    const manifestPath = createStreamingProxyPath('mpd', target, new Security(secureSalt), {
+      host: 'direct', id: 'dash-context', contextToken
+    })
+
+    const response = await app.inject({ method: 'GET', url: manifestPath })
+    const template = (response.body.match(/media="([^"]+)"/)?.[1] ?? '')
+      .replaceAll('&amp;', '&')
+      .replace('$Number$', '1')
+    expect(template).toContain(`gsc=${contextToken}`)
+    expect((await app.inject({ method: 'GET', url: template })).statusCode).toBe(200)
+    expect(lastUpstreamHeaders.cookie).toBe('session=dash-secret')
   })
 
   it('rejects malformed tokens without reflecting them', async () => {

@@ -257,6 +257,7 @@ describe('legacy player source API routes', () => {
       poster: 'https://images.example.test/poster.jpg',
       download: '1'
     })
+    resolve.mockResolvedValueOnce({ ...mediaResult(), cookies: ['session=provider-secret'] })
     const response = await app.inject({
       method: 'POST',
       url: `/api?p=${request.passwordToken}`,
@@ -291,6 +292,9 @@ describe('legacy player source API routes', () => {
     expect(decoded.sources).toEqual([
       expect.objectContaining({ file: expect.stringMatching(/^https:\/\/player\.example\/hls\//), type: 'hls', label: 'Original' })
     ])
+    expect(decoded.sources[0].file).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
+    expect(JSON.stringify(decoded)).not.toContain('provider-secret')
+    expect(JSON.stringify(decoded)).not.toContain('https://origin.example.test/')
     expect(decoded.tracks).toEqual([
       expect.objectContaining({ file: expect.stringMatching(/^https:\/\/player\.example\/subtitle\//), kind: 'captions', label: 'English' })
     ])
@@ -350,6 +354,36 @@ describe('legacy player source API routes', () => {
     })
     expect(decoded.sources[1].file).toMatch(/^https:\/\/player\.example\/stream-vid\//)
     expect(decoded.sources[1]).not.toHaveProperty('proxy')
+  })
+
+  it('uses the extractor candidate identity for alternative-source streaming paths', async () => {
+    const request = authenticatedRequest({
+      host: 'direct',
+      id: 'https://primary.example/video.mp4',
+      ahost: 'youtube',
+      aid: 'alternative-id'
+    })
+    resolve.mockResolvedValueOnce({
+      ...mediaResult(),
+      upstream: {
+        host: 'youtube',
+        id: 'alternative-id',
+        userAgent: 'Provider Browser',
+        language: 'en;q=0.9'
+      }
+    })
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const decoded = decryptJson(response.body, request.password)
+    const sourceUrl = new URL(decoded.sources[0].file)
+    const identityToken = sourceUrl.pathname.split('/')[2] ?? ''
+
+    expect(security.decryptURLStrict(identityToken)).toBe('youtube~alternative-id')
+    expect(decoded.query).toMatchObject({ host: 'direct', id: 'https://primary.example/video.mp4' })
   })
 
   it('keeps malformed authentication and empty results as plaintext JSON failures', async () => {

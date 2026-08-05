@@ -17,6 +17,7 @@ import { accessPolicyFromMisc, accessPolicyRejects, filterSourcesByResolution, l
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
+import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
 
 const MAX_API_TOKEN_LENGTH = 65_536
 const SOURCE_TOKEN_SEPARATOR = '-,'
@@ -47,6 +48,7 @@ export type SourceApiRouteOptions = Readonly<{
   countryCodeLookup?: CountryCodeLookup
   filterResponse?: (response: unknown, query: Readonly<Record<string, unknown>>) => Promise<unknown>
   capturePublicVideo?: (media: PlayerMediaQuery, result: MediaResult) => Promise<unknown>
+  providerContexts?: ProviderStreamContextRegistry
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -104,14 +106,15 @@ export async function registerSourceApiRoutes(
     if (resolvedMedia === null || networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(resolvedMedia, misc.disable_host)) return plaintextFailure(reply)
     const playableMedia = withoutDisabledAlternatives(resolvedMedia, misc.disable_host)
 
+    const requestContext: SourceApiRequestContext = Object.freeze({
+      clientIp: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+      language: request.headers['accept-language'] ?? '',
+      downloadable: legacyBoolean(envelope.media.download)
+    })
     let result: MediaResult
     try {
-      result = await options.resolve(playableMedia, {
-        clientIp: request.ip,
-        userAgent: request.headers['user-agent'] ?? '',
-        language: request.headers['accept-language'] ?? '',
-        downloadable: legacyBoolean(envelope.media.download)
-      })
+      result = await options.resolve(playableMedia, requestContext)
     } catch {
       return plaintextFailure(reply, 'Server Error')
     }
@@ -129,7 +132,9 @@ export async function registerSourceApiRoutes(
       envelope.queryToken,
       playableMedia,
       result,
-      player
+      player,
+      requestContext,
+      options.providerContexts
     )
     const filtered = await filterResponse(options.filterResponse, output, Object.freeze({ route: 'api', media: playableMedia }))
     return reply
@@ -357,14 +362,31 @@ function createSourceResponse(
   queryToken: string,
   media: PlayerMediaQuery,
   result: MediaResult,
-  playerSettings: PlayerSettings
+  playerSettings: PlayerSettings,
+  requestContext: SourceApiRequestContext,
+  providerContexts: ProviderStreamContextRegistry | undefined
 ): Readonly<Record<string, unknown>> {
   const canonicalToken = queryToken.length > 0
     ? queryToken
     : security.encryptURL(buildPlayerQuery(media))
-  const identity = {
+  const upstream = result.upstream ?? Object.freeze({
     host: media.host ?? 'direct',
-    id: media.id ?? ''
+    id: media.id ?? '',
+    userAgent: requestContext.userAgent,
+    language: requestContext.language
+  })
+  const contextToken = providerContexts?.register({
+    host: upstream.host,
+    targets: result.sources.flatMap(sourceTargets),
+    referer: result.referer,
+    cookies: result.cookies,
+    userAgent: upstream.userAgent,
+    language: upstream.language
+  }) ?? undefined
+  const identity = {
+    host: upstream.host,
+    id: upstream.id,
+    ...(contextToken === undefined ? {} : { contextToken })
   }
   const title = result.title.length > 0 ? result.title : titleFromMedia(media)
   const configuredPoster = playerSettings.poster
@@ -390,6 +412,16 @@ function createSourceResponse(
     filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, config.baseUrl),
     sources: result.sources.flatMap((source) => proxySource(source, security, identity, config.baseUrl)),
     tracks: result.tracks.flatMap((track) => proxyTrack(track, security, config.baseUrl))
+  }
+}
+
+function sourceTargets(source: MediaSource): URL[] {
+  if (typeof source.file !== 'string') return []
+  try {
+    const target = new URL(source.file)
+    return target.protocol === 'http:' || target.protocol === 'https:' ? [target] : []
+  } catch {
+    return []
   }
 }
 

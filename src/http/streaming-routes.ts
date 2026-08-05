@@ -7,13 +7,16 @@ import type { AppConfig } from '../config.js'
 import { Security } from '../security/security.js'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
 import { StreamCache, type StreamCacheEntry, type StreamCacheMode, type StreamCacheSettings } from '../stream/stream-cache.js'
+import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
 import { mediaCachePaths } from '../background/media-cache-path.js'
 import { parseByteRange } from '../background/media-download-worker.js'
 
 const MAX_MANIFEST_BYTES = 5 * 1_024 * 1_024
 const MAX_STREAM_URL_LENGTH = 16_384
 const MAX_CACHEABLE_RESOURCE_BYTES = 128 * 1_024 * 1_024
-const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gd', 'gl', 'gx', 'gxr', 'gt'])
+const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gsc', 'gd', 'gl', 'gx', 'gxr', 'gt'])
+const PROVIDER_CONTEXT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
+const CACHED_PROVIDER_CONTEXT_PLACEHOLDER = '__GPLAYER_PROVIDER_CONTEXT__'
 const HLS_DIRECT_TRANSPORT_DOMAINS = ['tiktokcdn.com', 'cloudfront-net.online'] as const
 const binaryResponseHeaders = [
   'accept-ranges',
@@ -35,6 +38,7 @@ export type StreamingIdentity = Readonly<{
   id: string
   label?: string
   live?: boolean
+  contextToken?: string
 }>
 
 export type StreamingRouteOptions = Readonly<{
@@ -42,6 +46,7 @@ export type StreamingRouteOptions = Readonly<{
   /** Integration-test escape hatch. Public deployments must keep this false. */
   allowPrivateNetworks?: boolean
   customHeaders?: (target: URL) => RequestInit['headers'] | Promise<RequestInit['headers']>
+  providerContexts?: ProviderStreamContextRegistry
   cacheRoot?: string
   loadFileCacheEnabled?: () => boolean | Promise<boolean>
   loadCacheSettings?: () => StreamCacheSettings | Promise<StreamCacheSettings>
@@ -101,7 +106,11 @@ export async function registerStreamingRoutes(
     if (streamCache !== undefined && cacheSettings.enabled && parsed.identity.live !== true) {
       const cached = await streamCache.readText(parsed.identity, parsed.target, cacheSettings.maxAgeSeconds, MAX_MANIFEST_BYTES).catch(() => null)
       if (cached !== null) {
-        return sendManifest(reply, kind, cached, false, cacheSettings.maxAgeSeconds, true, request.method === 'HEAD')
+        const rebound = bindCachedManifestContext(cached, parsed.identity.contextToken)
+        if (rebound !== null) {
+          authorizeCachedManifestResources(rebound, parsed.target, security, parsed.identity, options.providerContexts)
+          return sendManifest(reply, kind, rebound, false, cacheSettings.maxAgeSeconds, true, request.method === 'HEAD')
+        }
       }
     }
 
@@ -110,7 +119,7 @@ export async function registerStreamingRoutes(
         url: parsed.target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
-        ...(options.customHeaders === undefined ? {} : { headersForTarget: options.customHeaders }),
+        ...targetHeadersOption(parsed.identity, options),
         allowPrivateNetworks
       })
       if (response.status === 304) return reply.code(304).send()
@@ -133,12 +142,13 @@ export async function registerStreamingRoutes(
         ? source.includes('#EXTINF') && !source.includes('#EXT-X-ENDLIST')
         : /\btype=["']dynamic["']/i.test(source)
       const identity = live ? Object.freeze({ ...parsed.identity, live: true }) : parsed.identity
+      const observeResource = manifestResourceObserver(identity, response.url, options.providerContexts)
       const content = kind === 'hls'
-        ? rewriteHlsPlaylist(source, response.url, security, identity)
-        : rewriteMpdManifest(source, response.url, security, identity)
+        ? rewriteHlsPlaylist(source, response.url, security, identity, observeResource)
+        : rewriteMpdManifest(source, response.url, security, identity, observeResource)
       if (content.trim().length === 0) return streamError(reply, 404, 'Stream manifest is unavailable')
       if (streamCache !== undefined && cacheSettings.enabled && cacheSettings.maxAgeSeconds > 0 && !live) {
-        await streamCache.writeText(parsed.identity, parsed.target, content).catch(() => undefined)
+        await streamCache.writeText(parsed.identity, parsed.target, cacheableManifest(content, identity.contextToken)).catch(() => undefined)
       }
 
       return sendManifest(reply, kind, content, live, cacheSettings.maxAgeSeconds, false, false)
@@ -168,7 +178,7 @@ export async function registerStreamingRoutes(
         url: parsed.target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
-        ...(options.customHeaders === undefined ? {} : { headersForTarget: options.customHeaders }),
+        ...targetHeadersOption(parsed.identity, options),
         allowPrivateNetworks
       })
       if (response.status === 304) return reply.code(304).send()
@@ -247,12 +257,14 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
     if (target.toString().length > MAX_STREAM_URL_LENGTH) return null
     const label = cacheLabel(request, security)
     const live = request.searchParams.get('gl') === '1'
+    const contextToken = providerContextToken(request)
     return {
       identity: {
         host: identityValue.slice(0, separator),
         id: identityValue.slice(separator + 1),
         ...(label === null ? {} : { label }),
-        ...(live ? { live: true } : {})
+        ...(live ? { live: true } : {}),
+        ...(contextToken === null ? {} : { contextToken })
       },
       target
     }
@@ -265,7 +277,8 @@ export function rewriteHlsPlaylist(
   input: string,
   manifestUrl: URL,
   security: Security,
-  identity: StreamingIdentity
+  identity: StreamingIdentity,
+  observeResource?: (target: URL) => void
 ): string {
   const lines = input.replace(/\r\n?/g, '\n').split('\n')
   let nextUriIsPlaylist = false
@@ -276,11 +289,13 @@ export function rewriteHlsPlaylist(
         const value = line.slice('#EXT-X-PREFETCH:'.length).trim()
         const target = resolveHttpResource(value, manifestUrl)
         if (target === null || bypassHlsTransport(target)) return line
+        observeResource?.(target)
         return `#EXT-X-PREFETCH:${createStreamingProxyPath('stream-ts', target, security, identity)}`
       }
       const rewritten = line.replace(/URI=(["'])(.*?)\1/g, (match, quote: string, value: string) => {
         const target = resolveHttpResource(decodeXml(value), manifestUrl)
         if (target === null || bypassHlsTransport(target)) return match
+        observeResource?.(target)
         const playlist = line.startsWith('#EXT-X-MEDIA') || target.pathname.toLowerCase().endsWith('.m3u8')
         const path = createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, identity)
         return `URI=${quote}${path}${quote}`
@@ -291,6 +306,7 @@ export function rewriteHlsPlaylist(
     if (line.trim().length === 0) return line
     const target = resolveHttpResource(line.trim(), manifestUrl)
     if (target === null || bypassHlsTransport(target)) return line
+    observeResource?.(target)
     const playlist = nextUriIsPlaylist || target.pathname.toLowerCase().endsWith('.m3u8')
     nextUriIsPlaylist = false
     return createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, identity)
@@ -302,7 +318,8 @@ export function rewriteMpdManifest(
   input: string,
   manifestUrl: URL,
   security: Security,
-  identity: StreamingIdentity
+  identity: StreamingIdentity,
+  observeResource?: (target: URL) => void
 ): string {
   input = repairMpdManifest(input)
   const firstBase = input.match(/<BaseURL\b[^>]*>([\s\S]*?)<\/BaseURL>/i)?.[1]
@@ -313,6 +330,7 @@ export function rewriteMpdManifest(
   let output = input.replace(/(<BaseURL\b[^>]*>)([\s\S]*?)(<\/BaseURL>)/gi, (_match, open: string, value: string, close: string) => {
     const target = resolveHttpResource(decodeXml(value.trim()), manifestUrl)
     if (target === null) return `${open}${value}${close}`
+    observeResource?.(target)
     const path = createStreamingBasePath(target, security, identity)
     return `${open}${escapeXml(path)}${close}`
   })
@@ -322,6 +340,7 @@ export function rewriteMpdManifest(
     if (decoded.startsWith('#') || /^[A-Za-z][A-Za-z0-9+.-]*:(?!https?:)/.test(decoded)) return match
     const target = resolveHttpResource(decoded, effectiveBase)
     if (target === null) return match
+    observeResource?.(target)
     const route: StreamingRoute = attribute.toLowerCase() === 'xlink:href'
       ? 'mpd'
       : 'stream-seg'
@@ -338,6 +357,7 @@ export function rewriteMpdManifest(
   output = output.replace(/(<UTCTiming\b[^>]*\bvalue=)(["'])(.*?)\2/gi, (match, prefix: string, quote: string, value: string) => {
     const target = resolveHttpResource(decodeXml(value), effectiveBase)
     if (target === null) return match
+    observeResource?.(target)
     const rewritten = createStreamingProxyPath('stream-seg', target, security, identity, true)
     return `${prefix}${quote}${escapeXml(rewritten)}${quote}`
   })
@@ -368,6 +388,7 @@ function withInternalQuery(value: string, identity: StreamingIdentity, security:
   const internal = new URLSearchParams()
   if (identity.live === true) internal.set('gl', '1')
   if (identity.label !== undefined && identity.label.trim() !== '') internal.set('gcl', security.encryptURL(identity.label))
+  if (identity.contextToken !== undefined && PROVIDER_CONTEXT_TOKEN_PATTERN.test(identity.contextToken)) internal.set('gsc', identity.contextToken)
   const query = internal.toString()
   return query === '' ? value : `${value}${value.includes('?') ? '&' : '?'}${query}`
 }
@@ -377,6 +398,70 @@ function cacheLabel(request: URL, security: Security): string | null {
   if (token === '' || token.length > 2_048) return null
   const label = security.decryptURLStrict(token)?.trim() ?? ''
   return label === '' || label.length > 120 ? null : label
+}
+
+function providerContextToken(request: URL): string | null {
+  const token = request.searchParams.get('gsc') ?? ''
+  return PROVIDER_CONTEXT_TOKEN_PATTERN.test(token) ? token : null
+}
+
+function targetHeadersOption(
+  identity: StreamingIdentity,
+  options: StreamingRouteOptions
+): Readonly<{ headersForTarget?: (target: URL) => Promise<Headers> }> {
+  if (options.providerContexts === undefined && options.customHeaders === undefined) return {}
+  return {
+    headersForTarget: async (target) => {
+      const headers = identity.contextToken === undefined || options.providerContexts === undefined
+        ? new Headers()
+        : options.providerContexts.headersForTarget(identity.contextToken, target)
+      if (options.customHeaders !== undefined) {
+        for (const [name, value] of new Headers(await options.customHeaders(target))) headers.set(name, value)
+      }
+      return headers
+    }
+  }
+}
+
+function manifestResourceObserver(
+  identity: StreamingIdentity,
+  manifestUrl: URL,
+  registry: ProviderStreamContextRegistry | undefined
+): ((target: URL) => void) | undefined {
+  if (identity.contextToken === undefined || registry === undefined) return undefined
+  return (target) => {
+    registry.authorizeManifestResource(identity.contextToken as string, manifestUrl, target)
+  }
+}
+
+function cacheableManifest(content: string, contextToken: string | undefined): string {
+  if (contextToken === undefined) return content
+  return content.replaceAll(`gsc=${contextToken}`, `gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`)
+}
+
+function bindCachedManifestContext(content: string, contextToken: string | undefined): string | null {
+  const hasPlaceholder = content.includes(`gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`)
+  if (contextToken === undefined) return hasPlaceholder ? null : content
+  if (!hasPlaceholder) return null
+  return content.replaceAll(`gsc=${CACHED_PROVIDER_CONTEXT_PLACEHOLDER}`, `gsc=${contextToken}`)
+}
+
+function authorizeCachedManifestResources(
+  content: string,
+  manifestUrl: URL,
+  security: Security,
+  identity: StreamingIdentity,
+  registry: ProviderStreamContextRegistry | undefined
+): void {
+  if (identity.contextToken === undefined || registry === undefined) return
+  const matches = content.matchAll(/\/(hls|mpd|stream-ts|stream-seg)\/[^\s"'<>]+/g)
+  for (const match of matches) {
+    const route = match[1] as StreamingRoute | undefined
+    if (route === undefined) continue
+    const decoded = decodeXml(match[0])
+    const parsed = parseStreamingTarget(decoded, route, security)
+    if (parsed !== null) registry.authorizeManifestResource(identity.contextToken, manifestUrl, parsed.target)
+  }
 }
 
 async function sendCachedMedia(

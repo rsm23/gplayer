@@ -61,6 +61,7 @@ import { ProxyMaintenanceWorker } from './background/proxy-maintenance-worker.js
 import { SourceRefreshWorker } from './background/source-refresh-worker.js'
 import { MediaDownloadWorker } from './background/media-download-worker.js'
 import { RemoteStream } from './stream/remote-stream.js'
+import { ProviderStreamContextRegistry } from './stream/provider-stream-context.js'
 import { readFile, statfs } from 'node:fs/promises'
 import { PluginBackgroundManager } from './plugins/plugin-background-manager.js'
 import { PluginMaintenanceWorker } from './plugins/plugin-maintenance-worker.js'
@@ -218,6 +219,7 @@ export async function buildApp(
     loadHostingSettings,
     gdrive: { privateSources: driveMediaRuntime, loadSettings: loadDriveSettings }
   })
+  const providerStreamContexts = sourceApiRuntime.providerContexts ?? new ProviderStreamContextRegistry()
   supportedHosts = sourceApiRuntime.supportedHosts ?? supportedHosts
   const sourceRefreshRuntime = dependencies.sourceRefreshWorker ?? new SourceRefreshWorker(
     authRuntime.sourceRefreshStore,
@@ -440,6 +442,7 @@ export async function buildApp(
   })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
+    providerContexts: providerStreamContexts,
     loadAdsSettings,
     loadPlayerSettings,
     loadMiscSettings,
@@ -460,6 +463,7 @@ export async function buildApp(
   await registerDriveMediaRoutes(app, driveMediaRuntime)
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {
+    providerContexts: providerStreamContexts,
     customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target),
     cacheRoot,
     loadCacheSettings: async () => {

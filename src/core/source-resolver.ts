@@ -3,6 +3,13 @@ import { normalizeLegacyHost } from './player-query.js'
 export type MediaSource = Readonly<Record<string, unknown>>
 export type MediaTrack = Readonly<Record<string, unknown>>
 
+export type MediaUpstreamContext = Readonly<{
+  host: string
+  id: string
+  userAgent: string
+  language: string
+}>
+
 export type MediaResult = Readonly<{
   sources: readonly MediaSource[]
   tracks: readonly MediaTrack[]
@@ -13,6 +20,7 @@ export type MediaResult = Readonly<{
   cookies: readonly unknown[]
   filmstrip: string
   clientip: string
+  upstream?: MediaUpstreamContext
 }>
 
 export type SourceCacheCriteria = Readonly<{
@@ -120,7 +128,12 @@ export class SourceResolver {
     const criteria = this.criteria()
     const cached = await this.options.cache.find(criteria)
     if (cached !== null) {
-      const parsed = parseCachedResult(cached.data)
+      const parsed = parseCachedResult(cached.data, {
+        host: this.#host,
+        id: this.#id,
+        userAgent: cached.userAgent,
+        language: cached.language
+      })
       if (parsed !== null) {
         const firstType = String(parsed.sources[0]?.type ?? '')
         const invalidGoogleHls = this.options.googleHlsHosts?.has(this.#host) === true &&
@@ -136,7 +149,7 @@ export class SourceResolver {
       await this.options.cache.insert({
         host: this.#host,
         hostId: this.#id,
-        data: JSON.stringify(extracted),
+        data: JSON.stringify(extracted.result),
         downloadable: this.#downloadable,
         serverId: this.options.serverId ?? null,
         created: now,
@@ -184,7 +197,8 @@ export class SourceResolver {
       image: extractor.getImage(),
       cookies: extractor.getCookies(),
       filmstrip: extractor.getFilmstrip(),
-      clientip: this.options.clientIp
+      clientip: this.options.clientIp,
+      upstream: Object.freeze({ host: this.#host, id: this.#id, ...this.browserInfo() })
     })
     return { result, sources, serverIp: extractor.getNetworkInterface() }
   }
@@ -232,20 +246,31 @@ export function emptyMediaResult(): MediaResult {
   })
 }
 
-function parseCachedResult(value: string): MediaResult | null {
+function parseCachedResult(serialized: string, fallbackUpstream: MediaUpstreamContext): MediaResult | null {
   try {
-    const parsed: unknown = JSON.parse(value)
-    if (!isObject(parsed) || !Array.isArray(parsed.sources) || parsed.sources.length === 0) return null
+    const parsed: unknown = JSON.parse(serialized)
+    if (!isObject(parsed)) return null
+    const value = isObject(parsed.result) && Array.isArray(parsed.result.sources) ? parsed.result : parsed
+    if (!Array.isArray(value.sources) || value.sources.length === 0) return null
+    const upstream = isObject(value.upstream)
+      ? Object.freeze({
+          host: stringValue(value.upstream.host) || fallbackUpstream.host,
+          id: stringValue(value.upstream.id) || fallbackUpstream.id,
+          userAgent: stringValue(value.upstream.userAgent) || fallbackUpstream.userAgent,
+          language: stringValue(value.upstream.language) || fallbackUpstream.language
+        })
+      : Object.freeze(fallbackUpstream)
     return Object.freeze({
-      sources: parsed.sources.filter(isObject),
-      tracks: Array.isArray(parsed.tracks) ? parsed.tracks.filter(isObject) : [],
-      referer: stringValue(parsed.referer),
-      title: stringValue(parsed.title),
-      email: stringValue(parsed.email),
-      image: stringValue(parsed.image),
-      cookies: Array.isArray(parsed.cookies) ? parsed.cookies : [],
-      filmstrip: stringValue(parsed.filmstrip),
-      clientip: stringValue(parsed.clientip)
+      sources: value.sources.filter(isObject),
+      tracks: Array.isArray(value.tracks) ? value.tracks.filter(isObject) : [],
+      referer: stringValue(value.referer),
+      title: stringValue(value.title),
+      email: stringValue(value.email),
+      image: stringValue(value.image),
+      cookies: Array.isArray(value.cookies) ? value.cookies : [],
+      filmstrip: stringValue(value.filmstrip),
+      clientip: stringValue(value.clientip),
+      upstream
     })
   } catch {
     return null
