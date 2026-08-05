@@ -663,7 +663,7 @@ export function renderAdminShortlinkSettings(input: Readonly<{
       <div class="settings-section-heading"><p class="panel-kicker">02 / Credentials</p><h2 id="shortlink-credentials-title">Provider API keys</h2><p>Credentials are write-only. The page reports whether a key exists but never returns its value to the browser.</p></div>
       <div class="settings-secret-grid">${secretFields}</div>
     </section>
-    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update shortlink settings</span><span aria-hidden="true">↗</span></button><p>The shortener runtime will consume these settings when outbound link transformation is connected to the download flow.</p></div>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update shortlink settings</span><span aria-hidden="true">↗</span></button><p>Configured providers are applied server-side to media and subtitle buttons on the download page; failures preserve the original destination.</p></div>
   </form>
 </main>`)
 }

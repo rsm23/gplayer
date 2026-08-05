@@ -12,6 +12,7 @@ export type DownloadPageOptions = Readonly<{
   hideHostname?: boolean
   hostingData?: HostingData
   customNames?: Readonly<Record<string, string>>
+  shortenedLinks?: ReadonlyMap<string, string>
 }>
 
 type DownloadItem = Readonly<{
@@ -21,10 +22,15 @@ type DownloadItem = Readonly<{
   kind: 'media' | 'source' | 'subtitle'
 }>
 
+type SubtitleTarget = Readonly<{
+  href: string
+  index: number
+}>
+
 export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPageOptions): string {
   const title = mediaTitle(media, options.customNames)
   const primary = mediaDownloadItem(media, title, options)
-  const subtitles = subtitleDownloadItems(media)
+  const subtitles = subtitleDownloadItems(media, options.shortenedLinks)
   const availableItems = primary === null ? subtitles : [primary, ...subtitles]
   const adapterPending = media.host !== 'direct'
 
@@ -64,23 +70,26 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
 </html>`
 }
 
+export function downloadPageLinkTargets(media: PlayerMediaQuery, hostingData?: HostingData): readonly string[] {
+  const primary = mediaDownloadHref(media, hostingData)
+  const subtitles = subtitleTargets(media).map(({ href }) => href)
+  return Object.freeze([...new Set([primary, ...subtitles].filter((value) => value !== ''))])
+}
+
 export function renderDownloadError(message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Download unavailable</title><link rel="stylesheet" href="/assets/css/gplayer-download.css"></head><body><main class="download-shell"><section class="download-card error-card"><p class="eyebrow">GDPlayer download</p><h1>Download unavailable</h1><p>${escapeHtml(message)}</p></section></main></body></html>`
 }
 
 function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: DownloadPageOptions): DownloadItem | null {
-  if (media.host === undefined || media.id === undefined) return null
-
-  const href = media.host === 'direct'
-    ? safeHttpUrl(media.id)
-    : safeHttpUrl(new Hosting('', options.hostingData).setHost(media.host).setID(media.id).getDownloadLink())
-  if (href.length === 0) return null
+  const originalHref = mediaDownloadHref(media, options.hostingData)
+  if (originalHref.length === 0) return null
+  const href = transformedDownloadHref(originalHref, options.shortenedLinks)
 
   if (media.host === 'direct') {
     return {
       href,
       label: configuredDownloadLabel(options.downloadLabel, title),
-      detail: fileDetail(href, 'Direct media file'),
+      detail: fileDetail(originalHref, 'Direct media file'),
       kind: 'media'
     }
   }
@@ -88,7 +97,7 @@ function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: Down
   return {
     href,
     label: 'Open source page',
-    detail: options.hideHostname === true ? 'Video source' : providerName(media.host, options.customNames),
+    detail: options.hideHostname === true ? 'Video source' : providerName(media.host ?? 'provider', options.customNames),
     kind: 'source'
   }
 }
@@ -98,21 +107,38 @@ function configuredDownloadLabel(template: string | undefined, title: string): s
   return normalized.length > 0 ? normalized : 'Download video'
 }
 
-function subtitleDownloadItems(media: PlayerMediaQuery): DownloadItem[] {
-  const subtitles = [...(media.sub ?? [])]
-  if (media.subs !== undefined) subtitles.push(media.subs)
-
-  return subtitles.flatMap((subtitle, index) => {
-    const href = safeHttpUrl(subtitle)
-    if (href.length === 0) return []
+function subtitleDownloadItems(media: PlayerMediaQuery, shortenedLinks?: ReadonlyMap<string, string>): DownloadItem[] {
+  return subtitleTargets(media).map(({ href, index }) => {
     const language = media.lang?.[index]?.trim() || `Subtitle ${index + 1}`
-    return [{
-      href,
+    return {
+      href: transformedDownloadHref(href, shortenedLinks),
       label: `Download ${language}`,
       detail: fileDetail(href, 'Subtitle file'),
       kind: 'subtitle' as const
-    }]
+    }
   })
+}
+
+function mediaDownloadHref(media: PlayerMediaQuery, hostingData?: HostingData): string {
+  if (media.host === undefined || media.id === undefined) return ''
+  return media.host === 'direct'
+    ? safeHttpUrl(media.id)
+    : safeHttpUrl(new Hosting('', hostingData).setHost(media.host).setID(media.id).getDownloadLink())
+}
+
+function subtitleTargets(media: PlayerMediaQuery): SubtitleTarget[] {
+  const subtitles = [...(media.sub ?? [])]
+  if (media.subs !== undefined) subtitles.push(media.subs)
+  return subtitles.flatMap((subtitle, index) => {
+    const href = safeHttpUrl(subtitle)
+    return href.length === 0 ? [] : [{ href, index }]
+  })
+}
+
+function transformedDownloadHref(href: string, shortenedLinks?: ReadonlyMap<string, string>): string {
+  const transformed = shortenedLinks?.get(href)
+  if (transformed === undefined) return href
+  return safeHttpUrl(transformed) || href
 }
 
 function renderDownloadItem(item: DownloadItem): string {

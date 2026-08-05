@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { AppConfig } from '../config.js'
+import type { HostingData } from '../core/hosting-data.js'
 import { buildPlayerQuery, parsePlayerQuery, type PlayerMediaQuery } from '../core/player-query.js'
 import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath } from './streaming-routes.js'
@@ -9,7 +10,7 @@ import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../setting
 import type { PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 import { renderAdFrameDocument, type AdFrameContent } from '../player/ad-frame.js'
-import { renderDownloadError, renderDownloadPage } from '../player/download-page.js'
+import { downloadPageLinkTargets, renderDownloadError, renderDownloadPage } from '../player/download-page.js'
 import { renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
 import { PlayerLinkGenerator } from '../player/link-generator.js'
 import { Security } from '../security/security.js'
@@ -32,6 +33,7 @@ const inputSchema = z.object({
 
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
 const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+const MAX_SHORTLINK_TARGETS = 20
 
 export type PlayerRouteOptions = Readonly<{
   loadAdsSettings?: AdsSettingsLoader
@@ -41,6 +43,7 @@ export type PlayerRouteOptions = Readonly<{
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
+  shortenUrl?: (target: string) => Promise<string>
 }>
 
 export async function registerPlayerRoutes(
@@ -224,6 +227,7 @@ export async function registerPlayerRoutes(
     }
     const embedUrl = routePath(player.slug_embed, parsed.token)
     const alternativeUrl = createAlternativeDownloadUrl(resolvedMedia, security, player.slug_download, misc.disable_host)
+    const shortenedLinks = await transformDownloadLinks(resolvedMedia, hosting.data, options.shortenUrl)
     reply.type('text/html; charset=utf-8')
     return renderDownloadPage(resolvedMedia, {
       embedUrl,
@@ -232,6 +236,7 @@ export async function registerPlayerRoutes(
       hideHostname: player.hide_hostname,
       hostingData: hosting.data,
       customNames: hosting.customNames,
+      shortenedLinks,
       ...downloadAdFrames(ads)
     })
   }
@@ -269,6 +274,23 @@ export async function registerPlayerRoutes(
 
   app.get('/:playerSlug/:savedSlug', dispatchSavedPlayerRoute)
   app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
+}
+
+async function transformDownloadLinks(
+  media: PlayerMediaQuery,
+  hostingData: HostingData | undefined,
+  shortenUrl: PlayerRouteOptions['shortenUrl']
+): Promise<ReadonlyMap<string, string>> {
+  if (shortenUrl === undefined) return new Map()
+  const targets = downloadPageLinkTargets(media, hostingData).slice(0, MAX_SHORTLINK_TARGETS)
+  const transformed = await Promise.all(targets.map(async (target) => {
+    try {
+      return [target, await shortenUrl(target)] as const
+    } catch {
+      return [target, target] as const
+    }
+  }))
+  return new Map(transformed)
 }
 
 async function resolveSavedMedia(

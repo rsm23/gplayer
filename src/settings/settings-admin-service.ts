@@ -133,6 +133,16 @@ export type ShortlinkSettings = Readonly<{
   providers: readonly Readonly<{ id: Exclude<ShortenerProviderId, 'random'>; name: string; configured: boolean }>[]
 }>
 
+export type RuntimeShortlinkSettings = Readonly<{
+  disabled: boolean
+  selected: ShortenerProviderId
+  providers: readonly Readonly<{
+    id: Exclude<ShortenerProviderId, 'random'>
+    apiUrl: string
+    apiKey: string
+  }>[]
+}>
+
 export type VastClient = typeof VAST_CLIENTS[number]
 
 export type AdsSettings = Readonly<{
@@ -378,6 +388,20 @@ export class SettingsAdminService {
         name: provider.name,
         configured: (raw[`additional_url_shortener_${provider.id}`] ?? '') !== ''
       })]))
+    })
+  }
+
+  public async runtimeShortlinkSettings(): Promise<RuntimeShortlinkSettings> {
+    const raw = await this.store.getAll()
+    const selected = raw.additional_url_shortener ?? ''
+    return Object.freeze({
+      disabled: raw.disable_shortener_link === 'true',
+      selected: isShortenerProviderId(selected) ? selected : 'random',
+      providers: Object.freeze(SHORTENER_PROVIDERS.flatMap((provider) => {
+        if (provider.id === 'random') return []
+        const apiKey = (raw[`additional_url_shortener_${provider.id}`] ?? '').trim().slice(0, 4_096)
+        return apiKey === '' ? [] : [Object.freeze({ id: provider.id, apiUrl: provider.apiUrl, apiKey })]
+      }))
     })
   }
 

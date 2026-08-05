@@ -370,6 +370,56 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain(`href="/e/?${token}"`)
   })
 
+  it('shortens only valid download destinations while preserving watch and alternative routes', async () => {
+    const transformed: string[] = []
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      shortlinks: {
+        shorten: async (target) => {
+          transformed.push(target)
+          return target.includes('/captions/') ? 'https://short.example/subtitle' : 'https://short.example/media'
+        }
+      }
+    })
+    const security = new Security(secureSalt)
+    const token = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmedia%2Fmovie.mp4&ahost=direct&aid=https%3A%2F%2Fbackup.example%2Ffallback.mp4&sub[]=javascript%3Aalert(1)&sub[]=https%3A%2F%2Fcdn.example%2Fcaptions%2Ffr.vtt&lang[]=Wrong&lang[]=French')
+    const response = await app.inject({ method: 'GET', url: `/d/?${token}` })
+
+    expect(response.statusCode).toBe(200)
+    expect(transformed).toEqual([
+      'https://cdn.example/media/movie.mp4',
+      'https://cdn.example/captions/fr.vtt'
+    ])
+    expect(response.body).toContain('href="https://short.example/media"')
+    expect(response.body).toContain('href="https://short.example/subtitle"')
+    expect(response.body).toContain('Download French')
+    expect(response.body).not.toContain('Download Wrong')
+    expect(response.body).toContain(`href="/e/?${token}"`)
+    expect(response.body).toMatch(/href="\/d\/\?[^\"]+">Use alternative server/)
+    expect(response.body).not.toContain('href="https://backup.example/fallback.mp4"')
+  })
+
+  it('caps per-page shortlink provider work while leaving every remaining destination direct', async () => {
+    const transformed: string[] = []
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      shortlinks: {
+        shorten: async (target) => {
+          transformed.push(target)
+          return target
+        }
+      }
+    })
+    const query = new URLSearchParams({ host: 'direct', id: 'https://cdn.example/movie.mp4' })
+    for (let index = 1; index <= 25; index += 1) query.append('sub[]', `https://cdn.example/captions/${index}.vtt`)
+    const token = new Security(secureSalt).encryptURL(query.toString())
+    const response = await app.inject({ method: 'GET', url: `/d/?${token}` })
+
+    expect(response.statusCode).toBe(200)
+    expect(transformed).toHaveLength(20)
+    expect(transformed[0]).toBe('https://cdn.example/movie.mp4')
+    expect(transformed.at(-1)).toBe('https://cdn.example/captions/19.vtt')
+    expect(response.body).toContain('href="https://cdn.example/captions/25.vtt"')
+  })
+
   it('provides authenticated alternative-server switching on download pages', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const security = new Security(secureSalt)

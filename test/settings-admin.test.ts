@@ -343,6 +343,11 @@ describe('settings administration service', () => {
     expect(values.additional_url_shortener).toBe('ouo_io')
     expect(values.providers.find((provider) => provider.id === 'ouo_io')).toEqual({ id: 'ouo_io', name: 'ouo.io', configured: true })
     expect(JSON.stringify(values)).not.toContain('never-return-this')
+    await expect(settings.runtimeShortlinkSettings()).resolves.toEqual(expect.objectContaining({
+      disabled: true,
+      selected: 'ouo_io',
+      providers: [expect.objectContaining({ id: 'ouo_io', apiKey: 'never-return-this' })]
+    }))
     expect(shortenerProviderList().map(({ id, apiUrl }) => [id, apiUrl])).toEqual([
       ['random', ''],
       ['adtival_network', 'https://adtival.network/st?api=%s&url=%s'],

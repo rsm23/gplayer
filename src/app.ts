@@ -27,6 +27,7 @@ import { registerStreamingRoutes } from './http/streaming-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
 import { publicErrors, renderPublicError } from './player/public-page.js'
 import { createCountryCodeLookup, type CountryCodeLookup } from './security/geoip-country.js'
+import { ShortlinkService, type ShortlinkTransformer } from './shortlinks/shortlink-service.js'
 import type { MiscSettingsLoader } from './settings/misc-runtime.js'
 import type { HostingSettingsLoader } from './settings/hosting-runtime.js'
 import { legacyHostingHosts } from './settings/hosting-settings.js'
@@ -54,6 +55,7 @@ export type AppDependencies = Readonly<{
   videoChecker?: VideoCheckerService
   videoTransfer?: VideoTransferService
   countryCodeLookup?: CountryCodeLookup
+  shortlinks?: ShortlinkTransformer
   clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
 
@@ -107,6 +109,9 @@ export async function buildApp(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
   )
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
+  const shortlinkRuntime = dependencies.shortlinks ?? new ShortlinkService(
+    async () => await settingsRuntime.runtimeShortlinkSettings()
+  )
   const loadImportFileSize = async (): Promise<number> => {
     const settings = await settingsRuntime.general(config.baseUrl)
     const configured = Number(settings.import_filesize)
@@ -155,7 +160,16 @@ export async function buildApp(
     loadImportFileSize
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
-  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, loadHostingSettings, countryCodeLookup, supportedHosts, resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug) })
+  await registerPlayerRoutes(app, config, {
+    loadAdsSettings,
+    loadPlayerSettings,
+    loadMiscSettings,
+    loadHostingSettings,
+    countryCodeLookup,
+    supportedHosts,
+    resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
+    shortenUrl: async (target) => await shortlinkRuntime.shorten(target)
+  })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
     loadAdsSettings,
