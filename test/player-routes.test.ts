@@ -7,7 +7,7 @@ import { parsePlayerQuery } from '../src/core/player-query.js'
 import { P2P_CORE_IMPORT_MAP_CSP_HASH } from '../src/player/embed-page.js'
 import { Security } from '../src/security/security.js'
 import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
-import { AuthService, type AuthStore, type AuthUser } from '../src/auth/auth-service.js'
+import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser } from '../src/auth/auth-service.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -45,6 +45,167 @@ describe('player HTTP routes', () => {
       id: 'abc',
       poster: 'https://img.example/p.jpg'
     })
+  })
+
+  it('restores multipart poster and subtitle uploads in the public generator', async () => {
+    const savePoster = vi.fn(async () => 'https://player.example/base/uploads/images/uploaded.jpg')
+    const saveSubtitle = vi.fn(async (input: Readonly<{ language: string }>) => ({
+      url: 'https://player.example/base/uploads/subtitles/uploaded.vtt',
+      label: input.language
+    }))
+    const verify = vi.fn(async (_secret: string, responseToken: string) => responseToken === 'captcha-ok')
+    app = await buildApp(loadConfig({
+      NODE_ENV: 'test',
+      BASE_URL: 'https://player.example/base/',
+      SECURE_SALT: secureSalt
+    }), {
+      settings: new SettingsAdminService({
+        getAll: async () => ({ enable_json_subtitles: 'true', recaptcha_secret_key: 'captcha-secret' }),
+        upsertMany: async () => {}
+      }),
+      recaptchaVerifier: { verify },
+      publicGeneratorUploads: { savePoster, saveSubtitle }
+    })
+    const multipart = publicGeneratorMultipart([
+      ['action', 'createPlayer'],
+      ['id', 'https://cdn.example/movie.mp4'],
+      ['poster', 'https://img.example/fallback.jpg'],
+      ['sub-url[]', 'https://captions.example/url.vtt'],
+      ['lang-url[]', 'URL English'],
+      ['lang-file[]', 'Uploaded French'],
+      ['subs', 'https://captions.example/tracks.json'],
+      ['g-recaptcha-response', 'captcha-ok']
+    ], [
+      { field: 'poster-file', filename: 'poster.png', type: 'image/png', content: Buffer.from('poster-content') },
+      { field: 'sub-file[]', filename: 'captions.vtt', type: 'text/vtt', content: Buffer.from('WEBVTT\n') }
+    ])
+    const response = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: {
+        origin: 'https://player.example',
+        'content-type': `multipart/form-data; boundary=${multipart.boundary}`
+      },
+      payload: multipart.payload
+    })
+
+    expect(response.json()).toMatchObject({ status: 'ok', message: '', result: { embed_url: expect.any(String) } })
+    const token = new URL(response.json().result.embed_url).search.slice(1)
+    expect(parsePlayerQuery(token, new Security(secureSalt), { secureSalt }).media).toEqual({
+      host: 'direct',
+      id: 'https://cdn.example/movie.mp4',
+      poster: 'https://player.example/base/uploads/images/uploaded.jpg',
+      sub: [
+        'https://player.example/base/uploads/subtitles/uploaded.vtt',
+        'https://captions.example/url.vtt'
+      ],
+      lang: ['Uploaded French', 'URL English'],
+      subs: 'https://captions.example/tracks.json'
+    })
+    expect(verify).toHaveBeenCalledWith('captcha-secret', 'captcha-ok', '127.0.0.1')
+    expect(savePoster).toHaveBeenCalledWith({ originalName: 'poster.png', content: Buffer.from('poster-content') }, expect.anything())
+    expect(saveSubtitle).toHaveBeenCalledWith({
+      originalName: 'captions.vtt',
+      content: Buffer.from('WEBVTT\n'),
+      language: 'Uploaded French'
+    }, expect.anything())
+
+    const rejected = publicGeneratorMultipart([
+      ['action', 'createPlayer'],
+      ['id', 'https://cdn.example/rejected.mp4'],
+      ['g-recaptcha-response', 'captcha-bad']
+    ], [{ field: 'poster-file', filename: 'rejected.png', type: 'image/png', content: Buffer.from('do-not-save') }])
+    const rejectedResponse = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: {
+        origin: 'https://player.example',
+        'content-type': `multipart/form-data; boundary=${rejected.boundary}`
+      },
+      payload: rejected.payload
+    })
+    expect(rejectedResponse.json()).toEqual({
+      status: 'fail',
+      message: 'The security code you entered is incorrect! Try again',
+      result: null
+    })
+    expect(savePoster).toHaveBeenCalledOnce()
+    expect(saveSubtitle).toHaveBeenCalledOnce()
+
+    const crossOrigin = publicGeneratorMultipart([
+      ['action', 'createPlayer'],
+      ['id', 'https://cdn.example/cross-origin.mp4'],
+      ['g-recaptcha-response', 'captcha-ok']
+    ], [{ field: 'poster-file', filename: 'cross-origin.png', type: 'image/png', content: Buffer.from('do-not-save') }])
+    const crossOriginResponse = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: {
+        origin: 'https://attacker.example',
+        'content-type': `multipart/form-data; boundary=${crossOrigin.boundary}`
+      },
+      payload: crossOrigin.payload
+    })
+    expect(crossOriginResponse.json()).toEqual({ status: 'fail', message: 'Access denied', result: null })
+    expect(savePoster).toHaveBeenCalledOnce()
+    expect(saveSubtitle).toHaveBeenCalledOnce()
+  })
+
+  it('stores public subtitle uploads under authenticated or configured ownership', async () => {
+    const member: AuthUser = Object.freeze({
+      id: 9,
+      username: 'uploader',
+      email: 'uploader@example.test',
+      name: 'Uploader',
+      role: 1,
+      status: 1,
+      created: 1,
+      updated: 1
+    })
+    const authStore: AuthStore = {
+      findUserByIdentifier: async () => null,
+      findActiveSession: async (token, userAgent) => token === 'upload-session-token' && userAgent === 'Upload browser' ? member : null,
+      createSession: async () => {},
+      recordFailedLogin: async () => {},
+      revokeSession: async () => true
+    }
+    const upload = vi.fn(async (_input: unknown, access: Readonly<{ userId: string }>) => ({
+      status: 'ok' as const,
+      message: '',
+      data: { sub: `https://player.example/uploads/subtitles/${access.userId}.vtt`, lang: 'English' }
+    }))
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(authStore),
+      settings: new SettingsAdminService({
+        getAll: async () => ({ enable_json_subtitles: 'true', public_video_user: '7' }),
+        upsertMany: async () => {}
+      }),
+      subtitles: { upload } as never
+    })
+
+    const submission = publicGeneratorMultipart([
+      ['action', 'createPlayer'],
+      ['id', 'https://cdn.example/movie.mp4'],
+      ['lang-file[]', 'English']
+    ], [{ field: 'sub-file[]', filename: 'captions.vtt', type: 'text/vtt', content: Buffer.from('WEBVTT\n') }])
+    const headers = { 'content-type': `multipart/form-data; boundary=${submission.boundary}` }
+    const authenticated = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { ...headers, 'user-agent': 'Upload browser', cookie: `${AUTH_COOKIE_NAME}=upload-session-token` },
+      payload: submission.payload
+    })
+    const anonymous = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers,
+      payload: submission.payload
+    })
+
+    expect(authenticated.json()).toMatchObject({ status: 'ok' })
+    expect(anonymous.json()).toMatchObject({ status: 'ok' })
+    expect(upload).toHaveBeenNthCalledWith(1, expect.objectContaining({ originalName: 'captions.vtt' }), { userId: '9', isAdmin: false })
+    expect(upload).toHaveBeenNthCalledWith(2, expect.objectContaining({ originalName: 'captions.vtt' }), { userId: '7', isAdmin: false })
   })
 
   it('captures generated public videos under the configured account without changing the response contract', async () => {
@@ -1259,3 +1420,21 @@ describe('player HTTP routes', () => {
     })
   })
 })
+
+function publicGeneratorMultipart(
+  fields: readonly (readonly [string, string])[],
+  files: readonly Readonly<{ field: string; filename: string; type: string; content: Buffer }>[]
+): Readonly<{ boundary: string; payload: Buffer }> {
+  const boundary = '----gplayer-public-generator-test-boundary'
+  const chunks: Buffer[] = []
+  for (const [name, value] of fields) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+  }
+  for (const file of files) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${file.filename}"\r\nContent-Type: ${file.type}\r\n\r\n`))
+    chunks.push(file.content)
+    chunks.push(Buffer.from('\r\n'))
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`))
+  return Object.freeze({ boundary, payload: Buffer.concat(chunks) })
+}

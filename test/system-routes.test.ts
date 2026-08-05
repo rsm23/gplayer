@@ -60,7 +60,11 @@ describe('legacy-compatible system routes', () => {
     expect(page.headers['content-type']).toContain('text/html')
     expect(page.body).toContain('One runtime. Every source.')
     expect(page.body).toContain('id="player-form"')
+    expect(page.body).toContain('enctype="multipart/form-data"')
     expect(page.body).toContain('name="id"')
+    expect(page.body).toContain('name="poster-file"')
+    expect(page.body).toContain('data-subtitle-file')
+    expect(page.body).not.toContain('runtime-recaptcha')
     expect(page.body).toContain('id="product-demo"')
     expect(page.body).toContain('./assets/img/product/gplayer-generator.png')
     expect(page.body).toContain('rel="manifest" href="./manifest.json"')
@@ -80,6 +84,9 @@ describe('legacy-compatible system routes', () => {
     expect(script.statusCode).toBe(200)
     expect(script.headers['content-type']).toContain('javascript')
     expect(script.body).toContain("fetch(new URL('ajax/public/', document.baseURI)")
+    expect(script.body).toContain('new FormData(form)')
+    expect(script.body).toContain("payload.append('sub-file[]'")
+    expect(script.body).not.toContain("'content-type': 'application/json'")
     expect(script.body).toContain("github\\.io")
     expect(script.body).toContain("document.querySelector('#product-demo')")
     expect(script.body).not.toMatch(/gdplayer\.(?:to|io)/i)
@@ -162,7 +169,7 @@ describe('legacy-compatible system routes', () => {
     expect(page.body).not.toContain('community-42.disqus.com/embed.js')
     expect(page.headers['content-security-policy']).toContain('https://community-42.disqus.com')
     expect(page.headers['content-security-policy']).toContain('https://c.disquscdn.com')
-    expect(page.headers['content-security-policy']).toContain('frame-src https://disqus.com https://*.disqus.com')
+    expect(page.headers['content-security-policy']).toContain("frame-src 'self' https://disqus.com https://*.disqus.com")
 
     const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-disqus.js' })
     expect(runtime.statusCode).toBe(200)
@@ -171,11 +178,28 @@ describe('legacy-compatible system routes', () => {
     expect(runtime.body).not.toContain('eval(')
   })
 
+  it('renders a validated reCAPTCHA widget with the exact public-page CSP sources', async () => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => ({ recaptcha_site_key: 'site_key-42' }),
+        upsertMany: async () => {}
+      })
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/' })
+    expect(page.body).toContain('class="g-recaptcha" data-sitekey="site_key-42"')
+    expect(page.body).toContain('src="https://www.google.com/recaptcha/api.js"')
+    expect(page.body).not.toContain('runtime-recaptcha')
+    expect(page.headers['content-security-policy']).toContain("connect-src 'self' https://www.google.com")
+    expect(page.headers['content-security-policy']).toContain("frame-src 'self' https://www.google.com")
+    expect(page.headers['content-security-policy']).toContain('https://www.gstatic.com')
+  })
+
   it('does not reflect malformed Disqus settings or widen the public-page CSP', async () => {
     const payload = 'bad"><script>globalThis.disqusInjected=true</script>'
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
       settings: new SettingsAdminService({
-        getAll: async () => ({ disqus_shortname: payload }),
+        getAll: async () => ({ disqus_shortname: payload, recaptcha_site_key: payload }),
         upsertMany: async () => {}
       })
     })
@@ -184,8 +208,11 @@ describe('legacy-compatible system routes', () => {
     expect(page.body).not.toContain('disqusInjected')
     expect(page.body).not.toContain('gplayer-disqus.js')
     expect(page.body).not.toContain('runtime-disqus')
+    expect(page.body).not.toContain('g-recaptcha')
     expect(page.headers['content-security-policy']).not.toContain('disqus.com')
-    expect(page.headers['content-security-policy']).not.toContain('frame-src')
+    expect(page.headers['content-security-policy']).not.toContain('google.com')
+    expect(page.headers['content-security-policy']).toContain("connect-src 'self'")
+    expect(page.headers['content-security-policy']).toContain("frame-src 'self'")
   })
 
   it('serves the health contract', async () => {

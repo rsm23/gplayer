@@ -84,28 +84,33 @@
     }
     mainInput.removeAttribute('aria-invalid')
 
-    const subtitles = [...form.querySelectorAll('[data-subtitle-url]')]
-      .filter((input) => input instanceof HTMLInputElement && input.value.trim().length > 0)
-      .map((input) => input.value.trim())
-    const labels = [...form.querySelectorAll('[data-subtitle-label]')]
-      .filter((input) => input instanceof HTMLInputElement)
-      .map((input, index) => input.value.trim() || `Subtitle ${index + 1}`)
-
-    const payload = {
-      action: 'createPlayer',
-      id: mainInput.value.trim(),
-      aid: valueOf(form, 'aid'),
-      poster: valueOf(form, 'poster'),
-      'sub[]': subtitles,
-      'lang[]': labels.slice(0, subtitles.length)
-    }
+    const payload = new FormData(form)
+    payload.set('action', 'createPlayer')
+    for (const field of ['sub-url[]', 'lang-url[]', 'sub-file[]', 'lang-file[]']) payload.delete(field)
+    const rows = [...form.querySelectorAll('.subtitle-item')].slice(0, 10)
+    rows.forEach((row, index) => {
+      const labelInput = row.querySelector('[data-subtitle-label]')
+      const urlInput = row.querySelector('[data-subtitle-url]')
+      const fileInput = row.querySelector('[data-subtitle-file]')
+      const label = labelInput instanceof HTMLInputElement && labelInput.value.trim() !== ''
+        ? labelInput.value.trim()
+        : `Subtitle ${index + 1}`
+      if (urlInput instanceof HTMLInputElement && urlInput.value.trim() !== '') {
+        payload.append('sub-url[]', urlInput.value.trim())
+        payload.append('lang-url[]', label)
+      }
+      if (fileInput instanceof HTMLInputElement && fileInput.files?.[0] !== undefined) {
+        payload.append('sub-file[]', fileInput.files[0], fileInput.files[0].name)
+        payload.append('lang-file[]', label)
+      }
+    })
 
     setLoading(true)
     try {
       const response = await fetch(new URL('ajax/public/', document.baseURI), {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify(payload)
+        headers: { accept: 'application/json' },
+        body: payload
       })
       if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
       const body = await response.json()
@@ -124,14 +129,13 @@
 
   function addSubtitleRow() {
     if (!(subtitleTemplate instanceof HTMLTemplateElement) || !(subtitleList instanceof HTMLElement)) return
+    if (subtitleList.querySelectorAll('.subtitle-item').length >= 10) {
+      showMessage('You can add up to 10 subtitle tracks.')
+      return
+    }
     const row = subtitleTemplate.content.cloneNode(true)
     subtitleList.append(row)
     subtitleList.lastElementChild?.querySelector('input')?.focus()
-  }
-
-  function valueOf(formElement, name) {
-    const input = formElement.elements.namedItem(name)
-    return input instanceof HTMLInputElement ? input.value.trim() : ''
   }
 
   function showResult(result) {

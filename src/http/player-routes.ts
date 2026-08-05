@@ -36,6 +36,8 @@ import type { ProviderStreamContextRegistry } from '../stream/provider-stream-co
 import type { DeliveryBaseUrlSelector } from '../load-balancers/load-balancer-selector.js'
 import type { MediaResult } from '../core/source-resolver.js'
 import { analyticsConfig, analyticsCspSources, histatsOnly, type AnalyticsConfig } from '../player/analytics.js'
+import { SUBTITLE_MAX_BYTES } from '../subtitles/subtitle-assets-service.js'
+import { VIDEO_POSTER_MAX_BYTES } from '../videos/video-assets-service.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -46,8 +48,15 @@ const inputSchema = z.object({
   'sub[]': z.union([z.string(), z.array(z.string())]).optional(),
   lang: z.union([z.string(), z.array(z.string())]).optional(),
   'lang[]': z.union([z.string(), z.array(z.string())]).optional(),
+  'sub-url': z.union([z.string(), z.array(z.string())]).optional(),
+  'sub-url[]': z.union([z.string(), z.array(z.string())]).optional(),
+  'lang-url': z.union([z.string(), z.array(z.string())]).optional(),
+  'lang-url[]': z.union([z.string(), z.array(z.string())]).optional(),
+  'lang-file': z.union([z.string(), z.array(z.string())]).optional(),
+  'lang-file[]': z.union([z.string(), z.array(z.string())]).optional(),
   subs: z.string().optional(),
-  uid: z.string().optional()
+  uid: z.string().optional(),
+  'g-recaptcha-response': z.string().max(8_192).optional()
 }).passthrough()
 
 const driveBypassInputSchema = z.object({
@@ -79,6 +88,15 @@ const emailLookupSchema = z.object({
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
 const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const MAX_SHORTLINK_TARGETS = 20
+const MAX_PUBLIC_SUBTITLE_FILES = 10
+
+type PublicGeneratorFile = Readonly<{ fieldname: string; filename: string; content: Buffer }>
+type PublicGeneratorRequestData = Readonly<{ fields: Record<string, unknown>; files: readonly PublicGeneratorFile[] }>
+
+export interface PublicGeneratorUploads {
+  savePoster(input: Readonly<{ originalName: string; content: Buffer }>, request: FastifyRequest): Promise<string | null>
+  saveSubtitle(input: Readonly<{ originalName: string; content: Buffer; language: string }>, request: FastifyRequest): Promise<Readonly<{ url: string; label: string }> | null>
+}
 
 export type PlayerRouteOptions = Readonly<{
   loadAdsSettings?: AdsSettingsLoader
@@ -95,6 +113,7 @@ export type PlayerRouteOptions = Readonly<{
   isAdmin?: (request: FastifyRequest) => Promise<boolean>
   bypassDrive?: (input: string) => Promise<DriveBypassResult | null>
   verifyRecaptcha?: (responseToken: string, remoteIp: string) => Promise<boolean>
+  publicGeneratorUploads?: PublicGeneratorUploads
   loadRecaptchaSiteKey?: () => Promise<string>
   capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
   captureView?: (input: ViewCounterCapture) => Promise<string | null>
@@ -143,7 +162,18 @@ export async function registerPlayerRoutes(
   }
 
   const createPlayer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const parsed = inputSchema.safeParse(request.body)
+    if (request.isMultipart() && !hasSameOrigin(request, config)) {
+      reply.code(200)
+      return { status: 'fail', message: 'Access denied', result: null }
+    }
+    let requestInput: PublicGeneratorRequestData
+    try {
+      requestInput = await publicGeneratorRequestData(request)
+    } catch {
+      reply.code(200)
+      return { status: 'fail', message: 'The uploaded player form is invalid', result: null }
+    }
+    const parsed = inputSchema.safeParse(requestInput.fields)
     if (!parsed.success || (parsed.data.action !== undefined && parsed.data.action !== 'createPlayer')) {
       reply.code(200)
       return { status: 'fail', message: 'Main video URL is required', result: null }
@@ -169,19 +199,66 @@ export async function registerPlayerRoutes(
         iframeCode: player.iframe_code,
         hostingData: hosting.data
       })
-      const sub = publicSettings.enable_json_subtitles ? toArray(parsed.data['sub[]'] ?? parsed.data.sub) : []
-      const lang = publicSettings.enable_json_subtitles ? toArray(parsed.data['lang[]'] ?? parsed.data.lang) : []
+      const urlSubtitles = publicSettings.enable_json_subtitles
+        ? toArray(parsed.data['sub-url[]'] ?? parsed.data['sub-url'] ?? parsed.data['sub[]'] ?? parsed.data.sub).slice(0, MAX_PUBLIC_SUBTITLE_FILES)
+        : []
+      const urlLanguages = publicSettings.enable_json_subtitles
+        ? toArray(parsed.data['lang-url[]'] ?? parsed.data['lang-url'] ?? parsed.data['lang[]'] ?? parsed.data.lang).slice(0, MAX_PUBLIC_SUBTITLE_FILES)
+        : []
       const aid = toArray(parsed.data.aid)[0]
-      const generated = generator.generate({
+      const baseInput = {
         id: parsed.data.id,
         ...(aid !== undefined ? { aid } : {}),
         ...(parsed.data.poster !== undefined ? { poster: parsed.data.poster } : {}),
-        ...(sub.length > 0 ? { sub } : {}),
-        ...(lang.length > 0 ? { lang } : {}),
+        ...(urlSubtitles.length > 0 ? { sub: urlSubtitles } : {}),
+        ...(urlLanguages.length > 0 ? { lang: urlLanguages } : {}),
         ...(publicSettings.enable_json_subtitles && parsed.data.subs !== undefined ? { subs: parsed.data.subs } : {}),
         ...(parsed.data.uid !== undefined ? { uid: parsed.data.uid } : {})
+      }
+      const validated = generator.generate(baseInput)
+      if (mediaContainsDisabledHost(validated.query, misc.disable_host)) throw new Error('This video host is disabled')
+      const captchaValid = options.verifyRecaptcha === undefined || await options.verifyRecaptcha(
+        parsed.data['g-recaptcha-response'] ?? '',
+        request.ip
+      )
+      if (!captchaValid) throw new Error('The security code you entered is incorrect! Try again')
+
+      let poster = parsed.data.poster
+      const posterFile = requestInput.files.find((file) => normalizeUploadField(file.fieldname) === 'poster-file')
+      if (posterFile !== undefined && options.publicGeneratorUploads !== undefined) {
+        poster = await options.publicGeneratorUploads.savePoster({
+          originalName: posterFile.filename,
+          content: posterFile.content
+        }, request).catch(() => null) ?? poster
+      }
+
+      const uploadedSubtitles: string[] = []
+      const uploadedLanguages: string[] = []
+      if (publicSettings.enable_json_subtitles && options.publicGeneratorUploads !== undefined) {
+        const fileLanguages = toArray(parsed.data['lang-file[]'] ?? parsed.data['lang-file']).slice(0, MAX_PUBLIC_SUBTITLE_FILES)
+        const subtitleFiles = requestInput.files
+          .filter((file) => normalizeUploadField(file.fieldname) === 'sub-file')
+          .slice(0, MAX_PUBLIC_SUBTITLE_FILES)
+        for (const [index, file] of subtitleFiles.entries()) {
+          const language = fileLanguages[index]?.trim() || `Subtitle ${index + 1}`
+          const uploaded = await options.publicGeneratorUploads.saveSubtitle({
+            originalName: file.filename,
+            content: file.content,
+            language
+          }, request).catch(() => null)
+          if (uploaded === null) continue
+          uploadedSubtitles.push(uploaded.url)
+          uploadedLanguages.push(uploaded.label)
+        }
+      }
+      const sub = [...uploadedSubtitles, ...urlSubtitles]
+      const lang = [...uploadedLanguages, ...urlLanguages]
+      const generated = generator.generate({
+        ...baseInput,
+        ...(poster !== undefined ? { poster } : {}),
+        ...(sub.length > 0 ? { sub } : {}),
+        ...(lang.length > 0 ? { lang } : {})
       })
-      if (mediaContainsDisabledHost(generated.query, misc.disable_host)) throw new Error('This video host is disabled')
       if (publicSettings.save_public_video && publicSettings.public_video_user !== '') {
         await options.capturePublicVideo?.(generated.query, publicSettings.public_video_user).catch(() => undefined)
       }
@@ -294,6 +371,7 @@ export async function registerPlayerRoutes(
   }
 
   const dispatchPublicAjax = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    if (request.isMultipart()) return await createPlayer(request, reply)
     const action = requestData(request).action
     if (action === 'gdriveBypassLimit') return await bypassDrive(request, reply)
     if (action === 'statCounter') return await statCounter(request, reply)
@@ -665,6 +743,64 @@ function requestData(request: FastifyRequest): Record<string, unknown> {
     ? request.body as Record<string, unknown>
     : {}
   return { ...query, ...body }
+}
+
+async function publicGeneratorRequestData(request: FastifyRequest): Promise<PublicGeneratorRequestData> {
+  if (!request.isMultipart()) return Object.freeze({ fields: requestData(request), files: Object.freeze([]) })
+  const fields: Record<string, unknown> = { ...requestQuery(request) }
+  const files: PublicGeneratorFile[] = []
+  let posters = 0
+  let subtitles = 0
+  for await (const part of request.parts({
+    limits: { fieldNameSize: 100, fieldSize: 100_000, fields: 80, fileSize: VIDEO_POSTER_MAX_BYTES, files: 11, parts: 91 }
+  })) {
+    if (part.type === 'field') {
+      addRepeatedField(fields, part.fieldname, part.value)
+      continue
+    }
+    const fieldname = normalizeUploadField(part.fieldname)
+    if (part.filename === '' || !['poster-file', 'sub-file'].includes(fieldname)) {
+      part.file.resume()
+      continue
+    }
+    if ((fieldname === 'poster-file' && posters >= 1) || (fieldname === 'sub-file' && subtitles >= MAX_PUBLIC_SUBTITLE_FILES)) {
+      part.file.resume()
+      continue
+    }
+    const content = await part.toBuffer()
+    if (part.file.truncated || (fieldname === 'sub-file' && content.length > SUBTITLE_MAX_BYTES)) throw new Error('File limit exceeded')
+    files.push(Object.freeze({ fieldname: part.fieldname, filename: part.filename, content }))
+    if (fieldname === 'poster-file') posters += 1
+    else subtitles += 1
+  }
+  return Object.freeze({ fields, files: Object.freeze(files) })
+}
+
+function requestQuery(request: FastifyRequest): Record<string, unknown> {
+  return typeof request.query === 'object' && request.query !== null && !Array.isArray(request.query)
+    ? request.query as Record<string, unknown>
+    : {}
+}
+
+function addRepeatedField(fields: Record<string, unknown>, key: string, value: unknown): void {
+  const current = fields[key]
+  if (current === undefined) fields[key] = value
+  else if (Array.isArray(current)) current.push(value)
+  else fields[key] = [current, value]
+}
+
+function normalizeUploadField(value: string): string {
+  return value.replace(/\[\]$/u, '')
+}
+
+function hasSameOrigin(request: FastifyRequest, config: AppConfig): boolean {
+  const source = request.headers.origin ?? request.headers.referer
+  if (source === undefined) return true
+  try {
+    return new URL(source).origin === config.baseUrl.origin
+  } catch {
+    return false
+  }
 }
 
 async function authenticatedRequest(

@@ -59,7 +59,7 @@
           <span class="secure-chip"><span aria-hidden="true"></span> Ready</span>
         </div>
 
-        <form id="player-form" novalidate>
+        <form id="player-form" method="post" enctype="multipart/form-data" novalidate>
           <p id="static-generator-notice" class="static-generator-notice" hidden>This static GitHub Pages build shows the real interface below. Run the Node app to generate authenticated player links.</p>
           <div class="field field-main">
             <label for="video-url">Main video URL <span aria-hidden="true">*</span></label>
@@ -78,6 +78,14 @@
                 <label for="poster-url">Poster URL</label>
                 <input id="poster-url" name="poster" type="url" inputmode="url" placeholder="https://example.com/poster.jpg">
               </div>
+              <div class="field">
+                <label for="poster-file">Upload poster</label>
+                <input id="poster-file" name="poster-file" type="file" accept="image/gif,image/jpeg,image/png,image/webp">
+              </div>
+              <div class="field">
+                <label for="json-subtitles">JSON subtitle manifest URL</label>
+                <input id="json-subtitles" name="subs" type="url" inputmode="url" placeholder="https://example.com/subtitles.json">
+              </div>
             </div>
 
             <div class="subtitle-heading">
@@ -90,6 +98,7 @@
             <div id="subtitle-list" class="subtitle-list"></div>
           </details>
 
+          <!-- runtime-recaptcha -->
           <div id="form-message" class="form-message" role="status" aria-live="polite"></div>
           <button id="generate-button" class="generate-button" type="submit">
             <span class="button-label">Generate player</span>
@@ -292,6 +301,10 @@
       <div class="field subtitle-url-field">
         <label>Subtitle URL</label>
         <input data-subtitle-url type="url" inputmode="url" placeholder="https://example.com/subtitles.vtt">
+      </div>
+      <div class="field subtitle-file-field">
+        <label>Or upload a file</label>
+        <input data-subtitle-file type="file" accept=".srt,.vtt,.ass,.sub,.stl,.dfxp,.ttml,.sbv,.txt">
       </div>
       <button class="remove-subtitle" type="button" aria-label="Remove subtitle track">Remove</button>
     </div>

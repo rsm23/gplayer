@@ -17,7 +17,7 @@ import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../setti
 import { disqusConfig, disqusCsp, renderDisqus, type DisqusConfig } from '../player/disqus.js'
 import type { ProxyMaintenanceResult } from '../background/proxy-maintenance-worker.js'
 
-const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
+const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
 function memoryUsagePercent(): number {
   const total = totalmem()
@@ -66,9 +66,13 @@ export async function registerSystemRoutes(
         loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
       ])
       const comments = disqusConfig(general, config.baseUrl)
-      applyPublicPageHeaders(reply, false, comments)
+      const recaptchaSiteKey = validRecaptchaSiteKey(String(general.recaptcha_site_key))
+      applyPublicPageHeaders(reply, false, comments, recaptchaSiteKey !== '')
       reply.header('cache-control', settings.anonymous_generator ? 'public, max-age=60' : 'private, no-store').type('text/html; charset=utf-8')
-      return renderLandingDisqus(renderLandingContact(landingHtml, settings.contact_page_link), comments)
+      return renderLandingRecaptcha(
+        renderLandingDisqus(renderLandingContact(landingHtml, settings.contact_page_link), comments),
+        recaptchaSiteKey
+      )
     })
   }
 
@@ -237,6 +241,15 @@ export function renderLandingDisqus(html: string, config: DisqusConfig | null): 
   return html.replace('<!-- runtime-disqus -->', renderDisqus(config))
 }
 
+export function renderLandingRecaptcha(html: string, siteKey: string): string {
+  const key = validRecaptchaSiteKey(siteKey)
+  if (key === '') return html.replace('<!-- runtime-recaptcha -->', '')
+  return html.replace(
+    '<!-- runtime-recaptcha -->',
+    `<div class="g-recaptcha" data-sitekey="${key}"></div><script src="https://www.google.com/recaptcha/api.js" async defer></script>`
+  )
+}
+
 async function authenticatedRequest(
   request: FastifyRequest,
   authenticate: ((request: FastifyRequest) => Promise<boolean>) | undefined
@@ -312,9 +325,14 @@ function cacheToken(request: FastifyRequest): string {
   return authTokenFromRequest({ authorization: request.headers.authorization, cookie: request.cookies[AUTH_COOKIE_NAME] })
 }
 
-export function applyPublicPageHeaders(reply: FastifyReply, noStore = false, disqus: DisqusConfig | null = null): void {
+export function applyPublicPageHeaders(
+  reply: FastifyReply,
+  noStore = false,
+  disqus: DisqusConfig | null = null,
+  recaptcha = false
+): void {
   reply
-    .header('content-security-policy', publicPageContentSecurityPolicy(disqus))
+    .header('content-security-policy', publicPageContentSecurityPolicy(disqus, recaptcha))
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'strict-origin-when-cross-origin')
     .header('x-frame-options', 'SAMEORIGIN')
@@ -323,10 +341,24 @@ export function applyPublicPageHeaders(reply: FastifyReply, noStore = false, dis
   }
 }
 
-function publicPageContentSecurityPolicy(disqus: DisqusConfig | null): string {
-  if (disqus === null) return DEFAULT_PUBLIC_PAGE_CSP
-  const sources = disqusCsp(disqus)
-  return `default-src 'none'; script-src 'self' ${sources.scripts.join(' ')}; style-src 'self'; connect-src ${sources.connections.join(' ')}; img-src 'self' data: ${sources.images.join(' ')}; frame-src ${sources.frames.join(' ')}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'`
+function publicPageContentSecurityPolicy(disqus: DisqusConfig | null, recaptcha: boolean): string {
+  if (disqus === null && !recaptcha) return DEFAULT_PUBLIC_PAGE_CSP
+  const sources = disqus === null ? null : disqusCsp(disqus)
+  const scripts = ["'self'", ...(sources?.scripts ?? []), ...(recaptcha ? ['https://www.google.com', 'https://www.gstatic.com'] : [])]
+  const styles = ["'self'", ...(recaptcha ? ["'unsafe-inline'", 'https://www.gstatic.com'] : [])]
+  const connections = ["'self'", ...(sources?.connections ?? []), ...(recaptcha ? ['https://www.google.com'] : [])]
+  const images = ["'self'", 'data:', ...(sources?.images ?? []), ...(recaptcha ? ['https://www.google.com', 'https://www.gstatic.com'] : [])]
+  const frames = ["'self'", ...(sources?.frames ?? []), ...(recaptcha ? ['https://www.google.com'] : [])]
+  return `default-src 'none'; script-src ${uniqueSources(scripts)}; style-src ${uniqueSources(styles)}; connect-src ${uniqueSources(connections)}; img-src ${uniqueSources(images)}; frame-src ${uniqueSources(frames)}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'`
+}
+
+function uniqueSources(values: readonly string[]): string {
+  return [...new Set(values)].join(' ')
+}
+
+function validRecaptchaSiteKey(value: string): string {
+  const key = value.trim()
+  return key.length <= 4_096 && /^[A-Za-z0-9_-]+$/u.test(key) ? key : ''
 }
 
 function parseLegacyRedirect(requestUrl: string, security: Security): URL | null {

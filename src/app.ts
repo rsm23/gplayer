@@ -20,7 +20,7 @@ import { registerVideoAdminRoutes } from './http/video-admin-routes.js'
 import { registerDriveAdminRoutes } from './http/drive-admin-routes.js'
 import { registerDriveMediaRoutes } from './http/drive-media-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
-import { registerPlayerRoutes } from './http/player-routes.js'
+import { registerPlayerRoutes, type PublicGeneratorUploads } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
 import { DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, type SettingsAdminService } from './settings/settings-admin-service.js'
 import { FileSystemSiteAssetManager, type SiteAssetManager } from './settings/site-assets-service.js'
@@ -126,6 +126,7 @@ export type AppDependencies = Readonly<{
   dashboard?: DashboardAdminService
   privateAdmin?: PrivateAdminService
   settingsMaintenance?: SettingsMaintenanceService
+  publicGeneratorUploads?: PublicGeneratorUploads
 }>
 
 export async function buildApp(
@@ -175,9 +176,10 @@ export async function buildApp(
     new RemoteStream(),
     { loadSettings: async () => await settingsRuntime.runtimeProxySettings() }
   )
+  const videoPosterAssets = new FileSystemVideoPosterAssetManager(path.join(publicRoot, 'uploads/images'), config.baseUrl)
   const videosRuntime = dependencies.videos ?? new VideoAdminService(
     authRuntime.videoStore,
-    new FileSystemVideoPosterAssetManager(path.join(publicRoot, 'uploads/images'), config.baseUrl),
+    videoPosterAssets,
     config.baseUrl,
     { embedSlug: config.slugs.embed, downloadSlug: config.slugs.download }
   )
@@ -460,6 +462,28 @@ export async function buildApp(
   const selectDeliveryBaseUrl = sourceApiRuntime.selectDeliveryBaseUrl ?? (defaultLoadBalancerSelector === undefined
     ? undefined
     : async (input: Parameters<NonNullable<SourceApiRouteOptions['selectDeliveryBaseUrl']>>[0]) => await defaultLoadBalancerSelector.select(input))
+  const publicGeneratorUploads = dependencies.publicGeneratorUploads ?? Object.freeze({
+    savePoster: async (input: Readonly<{ originalName: string; content: Buffer }>) => {
+      try {
+        return (await videoPosterAssets.create(input.originalName, input.content)).url
+      } catch {
+        return null
+      }
+    },
+    saveSubtitle: async (input: Readonly<{ originalName: string; content: Buffer; language: string }>, request: FastifyRequest) => {
+      const user = await authenticateRequest(request).catch(() => null)
+      const activeUser = user !== null && user.status === 1 ? user : null
+      const settings = activeUser === null ? await loadPublicSettings() : null
+      const userId = activeUser === null ? settings?.public_video_user.trim() || '1' : String(activeUser.id)
+      const result = await subtitlesRuntime.upload({
+        originalName: input.originalName,
+        content: input.content,
+        language: input.language
+      }, { userId, isAdmin: activeUser?.role === 0 })
+      if (result.status !== 'ok' || result.data?.sub === undefined) return null
+      return Object.freeze({ url: result.data.sub, label: result.data.lang ?? input.language })
+    }
+  } satisfies PublicGeneratorUploads)
   await registerPlayerRoutes(app, config, {
     loadAdsSettings,
     loadPlayerSettings,
@@ -474,10 +498,15 @@ export async function buildApp(
     isAuthenticated,
     isAdmin,
     bypassDrive: async (input) => await driveSharer.bypass(input),
-    verifyRecaptcha: async (responseToken, remoteIp) => {
-      const general = await settingsRuntime.general(config.baseUrl)
-      return await recaptchaVerifier.verify(String(general.recaptcha_secret_key), responseToken, remoteIp)
-    },
+    ...(config.nodeEnv === 'test' && dependencies.settings === undefined && dependencies.recaptchaVerifier === undefined
+      ? {}
+      : {
+          verifyRecaptcha: async (responseToken: string, remoteIp: string) => {
+            const general = await settingsRuntime.general(config.baseUrl)
+            return await recaptchaVerifier.verify(String(general.recaptcha_secret_key), responseToken, remoteIp)
+          }
+        }),
+    publicGeneratorUploads,
     loadRecaptchaSiteKey: async () => {
       const general = await settingsRuntime.general(config.baseUrl)
       return String(general.recaptcha_site_key)
