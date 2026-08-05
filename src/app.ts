@@ -11,9 +11,11 @@ import type { SessionAdminService } from './auth/session-admin-service.js'
 import type { UserAdminService } from './auth/user-admin-service.js'
 import { loadConfig, type AppConfig } from './config.js'
 import { registerAdminRoutes } from './http/admin-routes.js'
+import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
+import type { SettingsAdminService } from './settings/settings-admin-service.js'
 import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/source-api-routes.js'
 import { registerStreamingRoutes } from './http/streaming-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
@@ -26,6 +28,7 @@ export type AppDependencies = Readonly<{
   auth?: AuthService
   sessions?: SessionAdminService
   users?: UserAdminService
+  settings?: SettingsAdminService
 }>
 
 export async function buildApp(
@@ -57,6 +60,7 @@ export async function buildApp(
     dependencies.sessions ?? authRuntime.sessions,
     dependencies.users ?? authRuntime.users
   )
+  await registerAdminSettingsRoutes(app, config, dependencies.auth ?? authRuntime.auth, dependencies.settings ?? authRuntime.settings)
   await registerPlayerRoutes(app, config)
   await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
   await registerMediaRoutes(app, config)

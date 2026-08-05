@@ -7,11 +7,14 @@ import { MySqlSessionAdminStore } from './mysql-session-admin-store.js'
 import { MySqlUserAdminStore } from './mysql-user-admin-store.js'
 import { SessionAdminService, type SessionAdminStore } from './session-admin-service.js'
 import { UserAdminService, type UserAdminStore } from './user-admin-service.js'
+import { MySqlSettingsAdminStore } from '../settings/mysql-settings-admin-store.js'
+import { SettingsAdminService, type SettingsAdminStore } from '../settings/settings-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
   sessions: SessionAdminService
   users: UserAdminService
+  settings: SettingsAdminService
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -19,6 +22,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let authStore: MySqlAuthStore | undefined
   let sessionStore: MySqlSessionAdminStore | undefined
   let userStore: MySqlUserAdminStore | undefined
+  let settingsStore: MySqlSettingsAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -35,6 +39,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentUserStore = (): MySqlUserAdminStore => {
     userStore ??= new MySqlUserAdminStore(currentDatabase())
     return userStore
+  }
+  const currentSettingsStore = (): MySqlSettingsAdminStore => {
+    settingsStore ??= new MySqlSettingsAdminStore(currentDatabase())
+    return settingsStore
   }
 
   const lazyStore: AuthStore = {
@@ -58,6 +66,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     updateUsername: async (id, username, updated) => await currentUserStore().updateUsername(id, username, updated),
     deleteUser: async (id) => await currentUserStore().deleteUser(id)
   }
+  const lazySettingsStore: SettingsAdminStore = {
+    getAll: async () => await currentSettingsStore().getAll(),
+    upsertMany: async (entries) => await currentSettingsStore().upsertMany(entries)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -66,6 +78,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   return Object.freeze({
     auth: new AuthService(lazyStore),
     sessions: new SessionAdminService(lazySessionStore),
-    users: new UserAdminService(lazyUserStore)
+    users: new UserAdminService(lazyUserStore),
+    settings: new SettingsAdminService(lazySettingsStore)
   })
 }

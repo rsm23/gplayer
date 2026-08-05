@@ -1,6 +1,7 @@
 import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord } from '../auth/user-admin-service.js'
+import { timezoneList, type GeneralSettingKey, type GeneralSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -34,13 +35,7 @@ export function renderAdminLoginPage(adminBase: string, message?: AdminMessage):
 
 export function renderAdminDashboard(adminBase: string, user: AuthUser): string {
   const role = ['Admin', 'User', 'Premium'][user.role] ?? 'User'
-  return adminDocument('Dashboard', `<header class="admin-bar">
-  <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
-    <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-    <span>G<span>PLAYER</span><small>NODE</small></span>
-  </a>
-  <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
-</header>
+  return adminDocument('Dashboard', `${adminHeader(adminBase, 'dashboard')}
 <main class="admin-dashboard">
   <p class="eyebrow"><span></span>Control plane</p>
   <div class="admin-dashboard-heading"><div><h1>Good to see you, ${escapeHtml(user.name)}.</h1><p>The authenticated Node.js administration boundary is active.</p></div><span class="admin-role">${escapeHtml(role)}</span></div>
@@ -74,14 +69,7 @@ export function renderAdminSessions(input: Readonly<{
     </form></td>
   </tr>`).join('')
 
-  return adminDocument('Sessions', `<header class="admin-bar">
-  <a class="wordmark" href="${escapeHtml(input.adminBase)}/dashboard/" aria-label="GPlayer dashboard">
-    <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-    <span>G<span>PLAYER</span><small>NODE</small></span>
-  </a>
-  <nav class="admin-nav" aria-label="Administration"><a href="${escapeHtml(input.adminBase)}/dashboard/">Dashboard</a><a href="${escapeHtml(input.adminBase)}/users/">Users</a><a aria-current="page" href="${escapeHtml(input.adminBase)}/users/sessions/">Sessions</a></nav>
-  <form action="${escapeHtml(input.adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
-</header>
+  return adminDocument('Sessions', `${adminHeader(input.adminBase, 'sessions')}
 <main class="admin-dashboard admin-sessions-page">
   <p class="eyebrow"><span></span>Access control</p>
   <div class="admin-dashboard-heading"><div><h1>Session list.</h1><p>Review the legacy-compatible session ledger. Authentication tokens are never rendered.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
@@ -181,6 +169,74 @@ export function renderAdminUserForm(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminGeneralSettings(input: Readonly<{
+  adminBase: string
+  values: GeneralSettings
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const value = (key: GeneralSettingKey): string => escapeHtml(String(input.values[key]))
+  const checked = (key: GeneralSettingKey): string => input.values[key] === true ? ' checked' : ''
+  const timezoneOptions = timezoneList().map((timezone) => `<option value="${escapeHtml(timezone)}"${input.values.timezone === timezone ? ' selected' : ''}>${escapeHtml(timezone)}</option>`).join('')
+
+  return adminDocument('General settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Runtime configuration</p>
+  <div class="admin-dashboard-heading"><div><h1>General settings.</h1><p>Manage the legacy-compatible configuration keys that control the Node.js runtime and connected services.</p></div><span class="admin-role">Core</span></div>
+  ${renderMessage(input.message)}
+  <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/settings/general/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="settings-runtime-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Runtime</p><h2 id="settings-runtime-title">Application and cache</h2><p>Origin, timezone, runtime mode, and server-side media cache behavior.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('main_site', 'Main site URL', value('main_site'), 'url', 'https://player.example/', true)}
+        <div class="field"><label for="timezone">Timezone</label><select id="timezone" name="timezone" required>${timezoneOptions}</select></div>
+        <div class="field"><label for="cache_mode">Cache delivery mode</label><select id="cache_mode" name="cache_mode" required>${stringOption('php', 'Node stream (legacy default)', input.values.cache_mode)}${stringOption('apache', 'Apache X-Sendfile', input.values.cache_mode)}${stringOption('litespeed', 'LiteSpeed X-Litespeed-Location', input.values.cache_mode)}${stringOption('nginx', 'Nginx X-Accel-Redirect', input.values.cache_mode)}</select></div>
+        ${settingsInput('cache_file_timeout', 'Proxy cache timeout', value('cache_file_timeout'), 'number', '3600', true, 'Seconds before cached media expires.', '0', '31536000')}
+        ${settingsToggle('production_mode', 'Production mode', 'Use production error handling and optimized runtime behavior.', checked('production_mode'))}
+        ${settingsToggle('enable_cache_file', 'Cache media files', 'Retain bounded upstream media responses for repeat delivery.', checked('enable_cache_file'))}
+        ${settingsToggle('enable_bg_download', 'Background downloads', 'Allow the Node worker layer to continue eligible downloads asynchronously.', checked('enable_bg_download'))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="settings-drive-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Sources</p><h2 id="settings-drive-title">Drive and load balancing</h2><p>Compatibility flags retained for Google media and distributed delivery.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('gphotos_hls', 'Google Photos HLS', 'Prefer segmented delivery for eligible Google Photos media.', checked('gphotos_hls'))}
+        ${settingsToggle('gdrive_hls', 'Google Drive HLS', 'Prefer segmented delivery for eligible Drive media.', checked('gdrive_hls'))}
+        ${settingsToggle('gdrive_copy', 'Drive copy fallback', 'Permit configured Drive mirrors to copy an unavailable source.', checked('gdrive_copy'))}
+        ${settingsToggle('gdrive_copy_all', 'Copy every Drive source', 'Apply the copy workflow to all eligible Drive sources.', checked('gdrive_copy_all'))}
+        ${settingsToggle('load_balancer_rand', 'Random load balancer', 'Randomize among eligible load-balancer targets.', checked('load_balancer_rand'))}
+        ${settingsToggle('disable_validation', 'Disable source validation', 'Retain the legacy override for installations that validate upstream links elsewhere.', checked('disable_validation'))}
+        ${settingsToggle('select_active_connections', 'Prefer active-connection counts', 'Use connection telemetry when selecting a load balancer.', checked('select_active_connections'))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="settings-service-title">
+      <div class="settings-section-heading"><p class="panel-kicker">03 / Services</p><h2 id="settings-service-title">API and traffic controls</h2><p>Third-party credentials stay server-side in the legacy settings table and are never bundled into public assets.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('maxmind_license_key', 'MaxMind license key', value('maxmind_license_key'), 'password', 'Enter license key', false, 'Used for optional country and ASN database updates.')}
+        ${settingsInput('anti_captcha', 'Anti-Captcha API key', value('anti_captcha'), 'password', 'Enter API key')}
+        ${settingsInput('visit_counter', 'Views per video and IP', value('visit_counter'), 'number', '1', true, '', '1', '1000000')}
+        ${settingsInput('visit_counter_runtime', 'Visit counter window', value('visit_counter_runtime'), 'number', '10', true, 'Runtime in seconds.', '0', '86400')}
+        ${settingsInput('import_filesize', 'Import file size', value('import_filesize'), 'number', '1024', true, 'Legacy import limit value.', '1', '10000000000')}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="settings-integrations-title">
+      <div class="settings-section-heading"><p class="panel-kicker">04 / Integrations</p><h2 id="settings-integrations-title">Analytics and widgets</h2><p>Optional identifiers and embedded support widgets used by public pages.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('google_analytics_id', 'Google Analytics ID', value('google_analytics_id'), 'text', 'G- or UA- identifier')}
+        ${settingsInput('google_tag_manager', 'Google Tag Manager', value('google_tag_manager'), 'text', 'GTM- identifier')}
+        ${settingsInput('histats_id', 'Histats ID', value('histats_id'), 'text', 'Site identifier')}
+        ${settingsInput('recaptcha_site_key', 'reCAPTCHA site key', value('recaptcha_site_key'), 'text', 'Public site key')}
+        ${settingsInput('recaptcha_secret_key', 'reCAPTCHA secret key', value('recaptcha_secret_key'), 'password', 'Server secret')}
+        ${settingsInput('disqus_shortname', 'Disqus shortname', value('disqus_shortname'), 'text', 'Community shortname')}
+        <div class="field settings-wide"><label for="chat_widget">Chat widget code</label><textarea id="chat_widget" name="chat_widget" rows="7" maxlength="100000" placeholder="Optional HTML or script widget">${value('chat_widget')}</textarea><p class="field-hint">Stored for legacy public-page compatibility. Only trusted administrators should add executable markup.</p></div>
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update general settings</span><span aria-hidden="true">↗</span></button><p>Only the allowlisted General Settings keys above are written.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminError(adminBase: string, status: 403 | 404 | 503, description: string): string {
   const title = status === 403 ? 'Access denied.' : status === 404 ? 'User not found.' : 'Service unavailable.'
   return adminDocument(String(status), `<main class="admin-error-main">
@@ -220,15 +276,38 @@ function renderTimestamp(value: number, fallback: string): string {
   return `<time datetime="${iso}">${iso.slice(0, 16).replace('T', ' ')} UTC</time>`
 }
 
-function adminHeader(adminBase: string, current: 'users' | 'sessions'): string {
+function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings'): string {
   return `<header class="admin-bar">
   <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
     <span>G<span>PLAYER</span><small>NODE</small></span>
   </a>
-  <nav class="admin-nav" aria-label="Administration"><a href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a></nav>
+  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a></nav>
   <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
 </header>`
+}
+
+function settingsInput(
+  name: GeneralSettingKey,
+  label: string,
+  value: string,
+  type: 'text' | 'url' | 'number' | 'password',
+  placeholder: string,
+  required = false,
+  hint = '',
+  minimum?: string,
+  maximum?: string
+): string {
+  const maxlength = type === 'number' ? '' : ` maxlength="${type === 'password' ? '4096' : '100000'}"`
+  return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="${type}" value="${value}" placeholder="${escapeHtml(placeholder)}"${maxlength}${required ? ' required' : ''}${minimum === undefined ? '' : ` min="${escapeHtml(minimum)}"`}${maximum === undefined ? '' : ` max="${escapeHtml(maximum)}"`}>${hint === '' ? '' : `<p class="field-hint">${escapeHtml(hint)}</p>`}</div>`
+}
+
+function settingsToggle(name: GeneralSettingKey, label: string, description: string, checked: string): string {
+  return `<label class="settings-toggle" for="${name}"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span><span class="settings-switch"><input type="hidden" name="${name}" value="false"><input id="${name}" name="${name}" type="checkbox" value="true"${checked}><i aria-hidden="true"></i></span></label>`
+}
+
+function stringOption(value: string, label: string, selected: string | boolean): string {
+  return `<option value="${escapeHtml(value)}"${selected === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
 }
 
 function userStatusLabel(status: number): string {

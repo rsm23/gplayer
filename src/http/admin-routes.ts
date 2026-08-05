@@ -426,7 +426,7 @@ function applyAdminHeaders(reply: FastifyReply, config: AppConfig): void {
     pragma: 'no-cache',
     expires: '0',
     'content-security-policy': ADMIN_CSP,
-    'referrer-policy': 'no-referrer',
+    'referrer-policy': 'same-origin',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
     'x-robots-tag': 'noindex, nofollow',

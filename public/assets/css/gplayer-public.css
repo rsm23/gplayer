@@ -710,6 +710,196 @@
   width: min(100%, 320px);
 }
 
+.admin-settings-page {
+  padding-top: clamp(56px, 7vw, 86px);
+}
+
+.admin-settings-page > .admin-message {
+  margin-top: 38px;
+}
+
+.admin-settings-form {
+  display: grid;
+  gap: 24px;
+  margin-top: 52px;
+}
+
+.settings-section {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.75fr) minmax(0, 2fr);
+  gap: clamp(28px, 4vw, 64px);
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.settings-section-heading {
+  align-self: start;
+}
+
+.settings-section-heading h2 {
+  margin-top: 7px;
+  font-size: clamp(26px, 3vw, 36px);
+}
+
+.settings-section-heading > p:last-child {
+  margin: 17px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 18px;
+  min-width: 0;
+}
+
+.settings-grid select,
+.settings-grid textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--bg-raised);
+  color: var(--ink);
+  font: inherit;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-grid select {
+  height: 48px;
+  padding: 0 13px;
+}
+
+.settings-grid textarea {
+  min-height: 144px;
+  padding: 13px 14px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.settings-grid select:focus,
+.settings-grid textarea:focus {
+  border-color: var(--brand);
+  background: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand), transparent 85%);
+}
+
+.settings-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-toggle-grid {
+  align-content: start;
+}
+
+.settings-toggle {
+  display: flex;
+  min-height: 108px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised), transparent 24%);
+  cursor: pointer;
+}
+
+.settings-toggle > span:first-child {
+  min-width: 0;
+}
+
+.settings-toggle strong,
+.settings-toggle small {
+  display: block;
+}
+
+.settings-toggle strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.settings-toggle small {
+  margin-top: 7px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-switch {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.settings-switch input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.settings-switch i {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.settings-switch i::after {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--faint);
+  content: "";
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.settings-switch input[type="checkbox"]:checked + i {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand), transparent 72%);
+}
+
+.settings-switch input[type="checkbox"]:checked + i::after {
+  background: var(--brand-soft);
+  transform: translateX(20px);
+}
+
+.settings-switch input[type="checkbox"]:focus-visible + i {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand), transparent 80%);
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 0 0;
+}
+
+.settings-actions .generate-button {
+  width: min(100%, 360px);
+}
+
+.settings-actions p {
+  max-width: 430px;
+  margin: 0;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -794,7 +984,8 @@
   }
 
   .admin-users-page,
-  .admin-user-form-page {
+  .admin-user-form-page,
+  .admin-settings-page {
     padding-top: 48px;
   }
 
@@ -820,6 +1011,33 @@
   .admin-user-form-shell {
     margin-top: 38px;
     padding: 23px 18px;
+  }
+
+  .admin-settings-form {
+    margin-top: 38px;
+  }
+
+  .settings-section {
+    grid-template-columns: 1fr;
+    gap: 26px;
+    padding: 23px 18px;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-wide {
+    grid-column: auto;
+  }
+
+  .settings-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-actions p {
+    text-align: left;
   }
 
   .session-table-shell {
