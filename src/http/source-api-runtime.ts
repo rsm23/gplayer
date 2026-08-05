@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify'
-import type { RowDataPacket } from 'mysql2/promise'
 import type { AppConfig } from '../config.js'
 import { emptyMediaResult, SourceResolver } from '../core/source-resolver.js'
 import { Database } from '../database/database.js'
@@ -9,11 +8,10 @@ import { RemoteProviderHttpClient } from '../hosting/provider-http.js'
 import { ProviderCookieHttpClient, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 import type { SourceApiRouteOptions } from './source-api-routes.js'
 import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
+import { MySqlMediaDownloadStore } from '../background/mysql-media-download-store.js'
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
 const DEFAULT_LANGUAGE = 'en;q=0.9'
-
-type LoadBalancerRow = RowDataPacket & Readonly<{ id: string | number }>
 
 export function createSourceApiRuntime(
   app: FastifyInstance,
@@ -38,6 +36,7 @@ export function createSourceApiRuntime(
   const supportedHosts = new Set(extractors.supportedHosts())
   let database: Database | undefined
   let cache: MySqlSourceCacheRepository | undefined
+  let serverStore: MySqlMediaDownloadStore | undefined
   let serverId: number | null | undefined
 
   app.addHook('onClose', async () => {
@@ -55,12 +54,9 @@ export function createSourceApiRuntime(
 
       database ??= new Database(config.database)
       cache ??= new MySqlSourceCacheRepository(database)
+      serverStore ??= new MySqlMediaDownloadStore(database)
       if (serverId === undefined) {
-        const rows = await database.read<LoadBalancerRow[]>(
-          'SELECT `id` FROM `tb_load_balancers` WHERE `link` = ? LIMIT 1',
-          [config.baseUrl.toString()]
-        )
-        const value = Number(rows[0]?.id ?? 0)
+        const value = Number(await serverStore.currentServerId(config.baseUrl.toString()) ?? 0)
         serverId = Number.isSafeInteger(value) && value > 0 ? value : null
       }
       for (const candidate of candidates) {

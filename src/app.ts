@@ -50,10 +50,16 @@ import { RemoteProviderHttpClient } from './hosting/provider-http.js'
 import { StatsWorker } from './background/stats-worker.js'
 import { createGeoIpDetailsLookup } from './security/geoip-details.js'
 import { GeneralWorker } from './background/general-worker.js'
+import { RemoteLoadBalancerHealthProbe } from './background/load-balancer-health-probe.js'
+import { FixedFreeProxySource, NodeProxyProbe } from './background/proxy-network.js'
+import { ProxyMaintenanceWorker } from './background/proxy-maintenance-worker.js'
 import { SourceRefreshWorker } from './background/source-refresh-worker.js'
 import { MediaDownloadWorker } from './background/media-download-worker.js'
 import { RemoteStream } from './stream/remote-stream.js'
 import { statfs } from 'node:fs/promises'
+import { PluginBackgroundManager } from './plugins/plugin-background-manager.js'
+import { PluginMaintenanceWorker } from './plugins/plugin-maintenance-worker.js'
+import { PluginSyncClient } from './plugins/plugin-sync-client.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -142,11 +148,32 @@ export async function buildApp(
       path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-ASN.mmdb')
     )
   )
+  const pluginsRoot = path.resolve(currentDirectory, '../plugins')
+  const pluginBackgrounds = new PluginBackgroundManager(pluginsRoot)
+  app.addHook('onClose', async () => await pluginBackgrounds.close())
+  const pluginMaintenance = new PluginMaintenanceWorker(
+    authRuntime.pluginMaintenanceStore,
+    new PluginSyncClient(new RemoteStream(), config.adminDirectory, config.secureSalt),
+    pluginBackgrounds,
+    pluginsRoot,
+    async () => {
+      const general = await settingsRuntime.general(config.baseUrl)
+      const mainSite = new URL(String(general.main_site))
+      return Object.freeze({ loadBalancer: mainSite.toString() !== config.baseUrl.toString(), mainSite })
+    }
+  )
   const generalWorkerRuntime = dependencies.generalWorker ?? new GeneralWorker(authRuntime.generalWorkerStore, {
     baseUrl: config.baseUrl,
     cacheRoot: path.resolve(currentDirectory, '../cache'),
     temporaryRoot: path.resolve(currentDirectory, '../tmp'),
     uploadsRoot: path.join(publicRoot, 'uploads'),
+    healthProbe: new RemoteLoadBalancerHealthProbe(),
+    proxyMaintenance: new ProxyMaintenanceWorker(
+      authRuntime.proxyMaintenanceStore,
+      new FixedFreeProxySource(),
+      new NodeProxyProbe()
+    ),
+    pluginMaintenance,
     loadCacheMaxAge: async () => {
       const settings = await settingsRuntime.general(config.baseUrl)
       const configured = Number(settings.cache_file_timeout)

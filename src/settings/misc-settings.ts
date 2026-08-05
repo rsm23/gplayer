@@ -15,7 +15,7 @@ export const MISC_COUNTRY_OPTIONS = Object.freeze(
 )
 
 const BOOLEAN_KEYS = Object.freeze(['disable_proxy', 'free_proxy', 'block_vpn'] as const)
-const PROXY_TYPES = new Set(['socks4', 'socks4a', 'socks5', 'https'])
+const PROXY_TYPES = new Set(['http', 'http1.0', 'https', 'socks4', 'socks4a', 'socks5'])
 const COUNTRY_CODES = new Set(Object.keys(countries))
 const RESOLUTION_VALUES = new Set<string>(MISC_RESOLUTION_OPTIONS)
 const MAX_LIST_ITEMS = 1_000
@@ -231,34 +231,71 @@ function normalizeVpnPrefix(value: string): string | null {
   return null
 }
 
-function normalizeProxy(value: string): string | null {
+export type ProxyType = 'http' | 'http1.0' | 'https' | 'socks4' | 'socks4a' | 'socks5'
+export type ProxyDefinition = Readonly<{
+  format: string
+  hostname: string
+  port: number
+  type: ProxyType
+  username: string
+  password: string
+}>
+
+export function parseProxyDefinition(value: string): ProxyDefinition | null {
   if (value.length === 0 || value.length > 8_192 || /[\u0000-\u001f\u007f]/.test(value)) return null
   const parts = value.split(',').map((entry) => entry.trim())
   if (parts.length < 1 || parts.length > 3 || parts.some((entry) => entry === '')) return null
   const endpoint = parts[0] ?? ''
-  if (!validProxyEndpoint(endpoint)) return null
+  const endpointParts = proxyEndpoint(endpoint)
+  if (endpointParts === null) return null
 
   let credentials = ''
-  let type = ''
+  let type: ProxyType = 'http'
   if (parts.length === 2) {
     const second = (parts[1] ?? '').toLowerCase()
-    if (PROXY_TYPES.has(second)) type = second
+    if (isProxyType(second)) type = second
     else credentials = validProxyCredentials(parts[1] ?? '') ? parts[1] ?? '' : ''
-    if (type === '' && credentials === '') return null
+    if (credentials === '' && !isProxyType(second)) return null
   } else if (parts.length === 3) {
     credentials = validProxyCredentials(parts[1] ?? '') ? parts[1] ?? '' : ''
-    type = (parts[2] ?? '').toLowerCase()
-    if (credentials === '' || !PROXY_TYPES.has(type)) return null
+    const candidateType = (parts[2] ?? '').toLowerCase()
+    if (credentials === '' || !isProxyType(candidateType)) return null
+    type = candidateType
   }
-  return [endpoint, credentials, type].filter(Boolean).join(',')
+  const separator = credentials.indexOf(':')
+  const username = separator < 0 ? '' : credentials.slice(0, separator)
+  const password = separator < 0 ? '' : credentials.slice(separator + 1)
+  const explicitType = parts.length > 1 && (parts.length === 3 || isProxyType((parts[1] ?? '').toLowerCase()))
+  return Object.freeze({
+    format: [endpoint, credentials, explicitType ? type : ''].filter(Boolean).join(','),
+    hostname: endpointParts.hostname,
+    port: endpointParts.port,
+    type,
+    username,
+    password
+  })
 }
 
-function validProxyEndpoint(value: string): boolean {
+function normalizeProxy(value: string): string | null {
+  return parseProxyDefinition(value)?.format ?? null
+}
+
+function proxyEndpoint(value: string): Readonly<{ hostname: string; port: number }> | null {
   const bracketed = /^\[([^\]]+)]:(\d{1,5})$/.exec(value)
-  if (bracketed !== null) return isIP(bracketed[1] ?? '') === 6 && validPort(bracketed[2] ?? '')
+  if (bracketed !== null) {
+    const hostname = bracketed[1] ?? ''
+    const port = bracketed[2] ?? ''
+    return isIP(hostname) === 6 && validPort(port) ? Object.freeze({ hostname, port: Number(port) }) : null
+  }
   const separator = value.lastIndexOf(':')
-  if (separator < 1) return false
-  return isIP(value.slice(0, separator)) === 4 && validPort(value.slice(separator + 1))
+  if (separator < 1) return null
+  const hostname = value.slice(0, separator)
+  const port = value.slice(separator + 1)
+  return isIP(hostname) === 4 && validPort(port) ? Object.freeze({ hostname, port: Number(port) }) : null
+}
+
+function isProxyType(value: string): value is ProxyType {
+  return PROXY_TYPES.has(value)
 }
 
 function validPort(value: string): boolean {

@@ -17,7 +17,7 @@ export class MySqlMediaDownloadStore implements MediaDownloadStore {
 
   public async currentServerId(baseUrl: string): Promise<string | null> {
     const rows = await this.database.read<ServerRow[]>(
-      'SELECT `id` FROM `tb_load_balancers` WHERE `link` = ? LIMIT 1',
+      'SELECT `id` FROM `tb_loadbalancers` WHERE `link` = ? LIMIT 1',
       [baseUrl]
     )
     return rows[0] === undefined ? null : String(rows[0].id)

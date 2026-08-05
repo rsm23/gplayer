@@ -232,7 +232,7 @@ describe('MySQL media download store', () => {
     const database = {
       read: async <T>(sql: string, values: readonly unknown[] = []): Promise<T> => {
         reads.push([sql, values])
-        if (sql.includes('tb_load_balancers')) return [{ id: 4 }] as T
+        if (sql.includes('tb_loadbalancers')) return [{ id: 4 }] as T
         return [{ id: 9, host: 'Dailymotion', host_id: 'abc', data: '{}', ua: 'UA', lang: 'en' }] as T
       }
     }
@@ -242,6 +242,7 @@ describe('MySQL media download store', () => {
       id: '9', host: 'dailymotion', hostId: 'abc', data: '{}', userAgent: 'UA', language: 'en'
     }])
     expect(reads[0]?.[1]).toEqual(['https://player.example/'])
+    expect(reads[0]?.[0]).toContain('FROM `tb_loadbalancers`')
     expect(reads[1]?.[1]).toEqual(['7', '4', 100])
     expect(reads.every(([sql]) => !sql.includes('player.example') && !sql.includes('Dailymotion'))).toBe(true)
   })

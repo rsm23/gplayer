@@ -81,7 +81,7 @@ describe('Node-native Drive background queue', () => {
   it('starts and coalesces Drive and stats jobs independently', async () => {
     const drive = { runOnce: vi.fn(async () => ({ processed: 0, deleted: 0, retained: 0 })) }
     const stats = { runOnce: vi.fn(async () => ({ acquired: true, cleaned: 0, processed: 0, enriched: 0 })) }
-    const general = { runOnce: vi.fn(async () => ({ expiredSources: 0, normalizedSubtitles: 0, missingSubtitles: 0, temporaryEntries: 0, cacheCleared: false, lowSpace: false })) }
+    const general = { runOnce: vi.fn(async () => ({ expiredSources: 0, normalizedSubtitles: 0, missingSubtitles: 0, temporaryEntries: 0, cacheCleared: false, lowSpace: false, loadBalancersChecked: 0, loadBalancersFailed: 0, proxyDisabled: false, proxiesDiscovered: 0, proxiesChecked: 0, proxiesValid: 0, pluginsActive: 0, pluginsSynchronized: 0, pluginsFailed: 0, pluginBackgroundsRunning: 0, phpPluginBackgroundsUnsupported: 0 })) }
     const sourceRefresh = { runOnce: vi.fn(async () => ({ pending: 0 })) }
     const mediaDownload = { runOnce: vi.fn(async () => ({ scanned: 0 })) }
     const coordinator = new DriveBackgroundCoordinator(drive, async () => ({ copy: false, copyAll: false }), { stats, general, sourceRefresh: sourceRefresh as never, mediaDownload: mediaDownload as never })

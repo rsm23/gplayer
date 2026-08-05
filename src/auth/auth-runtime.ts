@@ -23,10 +23,13 @@ import { MySqlStatsWorkerStore } from '../background/mysql-stats-worker-store.js
 import type { StatsWorkerStore } from '../background/stats-worker.js'
 import { MySqlGeneralWorkerStore } from '../background/mysql-general-worker-store.js'
 import type { GeneralWorkerStore } from '../background/general-worker.js'
+import type { ProxyMaintenanceStore } from '../background/proxy-maintenance-worker.js'
 import { MySqlSourceRefreshStore } from '../background/mysql-source-refresh-store.js'
 import type { SourceRefreshStore } from '../background/source-refresh-worker.js'
 import { MySqlMediaDownloadStore } from '../background/mysql-media-download-store.js'
 import type { MediaDownloadStore } from '../background/media-download-worker.js'
+import { MySqlPluginMaintenanceStore } from '../plugins/mysql-plugin-maintenance-store.js'
+import type { PluginMaintenanceStore } from '../plugins/plugin-maintenance-worker.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -40,6 +43,8 @@ export type AuthRuntime = Readonly<{
   driveAdminStore: DriveAdminStore
   statsWorkerStore: StatsWorkerStore
   generalWorkerStore: GeneralWorkerStore
+  proxyMaintenanceStore: ProxyMaintenanceStore
+  pluginMaintenanceStore: PluginMaintenanceStore
   sourceRefreshStore: SourceRefreshStore
   mediaDownloadStore: MediaDownloadStore
 }>
@@ -57,6 +62,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let driveAdminStore: MySqlDriveAdminStore | undefined
   let statsWorkerStore: MySqlStatsWorkerStore | undefined
   let generalWorkerStore: MySqlGeneralWorkerStore | undefined
+  let pluginMaintenanceStore: MySqlPluginMaintenanceStore | undefined
   let sourceRefreshStore: MySqlSourceRefreshStore | undefined
   let mediaDownloadStore: MySqlMediaDownloadStore | undefined
 
@@ -107,6 +113,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentGeneralWorkerStore = (): MySqlGeneralWorkerStore => {
     generalWorkerStore ??= new MySqlGeneralWorkerStore(currentDatabase())
     return generalWorkerStore
+  }
+  const currentPluginMaintenanceStore = (): MySqlPluginMaintenanceStore => {
+    pluginMaintenanceStore ??= new MySqlPluginMaintenanceStore(currentDatabase())
+    return pluginMaintenanceStore
   }
   const currentSourceRefreshStore = (): MySqlSourceRefreshStore => {
     sourceRefreshStore ??= new MySqlSourceRefreshStore(currentDatabase())
@@ -210,8 +220,16 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const lazyGeneralWorkerStore: GeneralWorkerStore = {
     deleteExpiredSources: async (now) => await currentGeneralWorkerStore().deleteExpiredSources(now),
     normalizeSubtitleLanguages: async () => await currentGeneralWorkerStore().normalizeSubtitleLanguages(),
+    listActiveLoadBalancers: async (baseUrl) => await currentGeneralWorkerStore().listActiveLoadBalancers(baseUrl),
     listManagedSubtitles: async (host, afterId, limit) => await currentGeneralWorkerStore().listManagedSubtitles(host, afterId, limit),
     deleteManagedSubtitle: async (id, host) => await currentGeneralWorkerStore().deleteManagedSubtitle(id, host)
+  }
+  const lazyProxyMaintenanceStore: ProxyMaintenanceStore = {
+    loadProxyConfiguration: async () => await currentGeneralWorkerStore().loadProxyConfiguration(),
+    saveProxyList: async (proxies) => await currentGeneralWorkerStore().saveProxyList(proxies)
+  }
+  const lazyPluginMaintenanceStore: PluginMaintenanceStore = {
+    listPlugins: async () => await currentPluginMaintenanceStore().listPlugins()
   }
   const lazySourceRefreshStore: SourceRefreshStore = {
     maintainLegacyData: async () => await currentSourceRefreshStore().maintainLegacyData(),
@@ -242,6 +260,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     driveAdminStore: lazyDriveAdminStore,
     statsWorkerStore: lazyStatsWorkerStore,
     generalWorkerStore: lazyGeneralWorkerStore,
+    proxyMaintenanceStore: lazyProxyMaintenanceStore,
+    pluginMaintenanceStore: lazyPluginMaintenanceStore,
     sourceRefreshStore: lazySourceRefreshStore,
     mediaDownloadStore: lazyMediaDownloadStore
   })
