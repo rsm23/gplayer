@@ -141,6 +141,16 @@ describe('user administration service', () => {
     expect(userId('4294967296')).toBeNull()
   })
 
+  it('checks normalized username and email availability while excluding the current user', async () => {
+    const users = service(new MemoryUserStore())
+    await expect(users.usernameExists(' ADMIN ')).resolves.toBe(true)
+    await expect(users.emailExists(' ADMIN@GPLAYER.LOCAL ')).resolves.toBe(true)
+    await expect(users.usernameExists('admin', '1')).resolves.toBe(false)
+    await expect(users.emailExists('admin@gplayer.local', '1')).resolves.toBe(false)
+    await expect(users.usernameExists('')).resolves.toBe(false)
+    await expect(users.emailExists('')).resolves.toBe(false)
+  })
+
   it('creates and updates users with validation, conflicts, and optional bcrypt hashes', async () => {
     const store = new MemoryUserStore()
     const users = service(store)
@@ -317,6 +327,9 @@ describe('user administration routes', () => {
     const page = await app.inject({ method: 'GET', url: '/administrator/profile/', headers })
     expect(page.statusCode).toBe(200)
     expect(page.body).toContain('My Account.')
+    expect(page.body).toContain('data-account-availability')
+    expect(page.headers['content-security-policy']).toContain("script-src 'self'")
+    expect(page.headers['content-security-policy']).toContain("connect-src 'self'")
     expect(page.body).toContain('value="admin@gplayer.local"')
     expect(page.body).not.toContain(token)
     const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''

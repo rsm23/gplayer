@@ -135,6 +135,18 @@ export class UserAdminService {
     return normalized === null ? null : await this.store.getUser(normalized)
   }
 
+  public async usernameExists(value: unknown, excludeId?: string): Promise<boolean> {
+    const username = stringValue(value).trim().slice(0, 50)
+    if (username === '') return false
+    return (await this.store.findConflict(username, username, excludeId)).username
+  }
+
+  public async emailExists(value: unknown, excludeId?: string): Promise<boolean> {
+    const email = stringValue(value).trim().toLowerCase().slice(0, 254)
+    if (email === '') return false
+    return (await this.store.findConflict(email, email, excludeId)).email
+  }
+
   public async options(maximum = 10_000): Promise<readonly UserOption[]> {
     const boundedMaximum = Number.isFinite(maximum) ? Math.min(10_000, Math.max(1, Math.trunc(maximum))) : 10_000
     const options: UserOption[] = []

@@ -187,6 +187,71 @@ describe('player HTTP routes', () => {
     expect(invalidateSource).toHaveBeenCalledOnce()
   })
 
+  it('serves the recovered public account and load-balancer lookup contracts', async () => {
+    const currentUser: AuthUser = Object.freeze({
+      id: 9,
+      username: 'member',
+      email: 'member@example.test',
+      name: 'Member',
+      role: 1,
+      status: 1,
+      created: 1,
+      updated: 1
+    })
+    const authStore: AuthStore = {
+      findUserByIdentifier: async () => null,
+      findActiveSession: async (token, userAgent) => token === 'account-lookup-token' && userAgent === 'Account lookup browser' ? currentUser : null,
+      createSession: async () => {},
+      recordFailedLogin: async () => {},
+      revokeSession: async () => true
+    }
+    const usernameExists = vi.fn(async (value: string, excludeId?: string) => value === 'taken' && excludeId === '9')
+    const emailExists = vi.fn(async (value: string, excludeId?: string) => value === 'taken@example.test' && excludeId === '9')
+    const activeLinks = vi.fn(async () => [
+      'https://edge.example/',
+      'https://edge.example/',
+      '',
+      'https://player.example/'
+    ])
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(authStore),
+      users: { usernameExists, emailExists } as never,
+      loadBalancers: { activeLinks } as never
+    })
+    const headers = {
+      authorization: 'Bearer account-lookup-token',
+      'user-agent': 'Account lookup browser',
+      'content-type': 'application/x-www-form-urlencoded'
+    }
+
+    const takenUsername = await app.inject({ method: 'POST', url: '/ajax/public/', headers, payload: 'action=checkUsername&username=taken' })
+    const freeUsername = await app.inject({ method: 'POST', url: '/ajax/public/', headers, payload: 'action=checkUsername&username=free' })
+    const takenEmail = await app.inject({ method: 'POST', url: '/ajax/public/', headers, payload: 'action=checkEmail&email=taken%40example.test' })
+    const freeEmail = await app.inject({ method: 'POST', url: '/ajax/public/', headers, payload: 'action=checkEmail&email=free%40example.test' })
+    const loadBalancers = await app.inject({ method: 'GET', url: '/ajax/public/?action=getLoadBalancerList' })
+
+    expect(takenUsername.json()).toEqual({ status: 'fail', message: 'The username is already registered', result: null })
+    expect(freeUsername.json()).toEqual({ status: 'ok', message: '', result: null })
+    expect(takenEmail.json()).toEqual({ status: 'fail', message: 'The email address is already registered', result: null })
+    expect(freeEmail.json()).toEqual({ status: 'ok', message: '', result: null })
+    expect(loadBalancers.json()).toEqual({ status: 'ok', message: 'OK', result: ['https://edge.example/', 'https://player.example/'] })
+    for (const response of [takenUsername, freeUsername, takenEmail, freeEmail, loadBalancers]) {
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['cache-control']).toBe('private, no-store')
+      expect(response.headers['x-content-type-options']).toBe('nosniff')
+      expect(response.headers['x-robots-tag']).toBe('noindex, nofollow')
+    }
+    expect(usernameExists).toHaveBeenNthCalledWith(1, 'taken', '9')
+    expect(usernameExists).toHaveBeenNthCalledWith(2, 'free', '9')
+    expect(emailExists).toHaveBeenNthCalledWith(1, 'taken@example.test', '9')
+    expect(emailExists).toHaveBeenNthCalledWith(2, 'free@example.test', '9')
+    expect(activeLinks).toHaveBeenCalledOnce()
+
+    const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-admin-settings.js' })
+    expect(runtime.body).toContain("action: 'checkUsername'")
+    expect(runtime.body).toContain("payload?.status === 'fail'")
+  })
+
   it('consumes custom provider domains, source-page templates, and display names', async () => {
     const values = {
       'custom-hostnames': JSON.stringify({ youtube: ['video.private.example'] }),

@@ -68,7 +68,7 @@ export function renderAdminRegistrationPage(input: AccountPageInput): string {
   <section class="admin-auth-panel" aria-label="Register an account">
     <div><p class="panel-kicker">New account</p><h2>Register</h2></div>
     ${renderMessage(input.message)}
-    <form class="admin-login-form" action="${escapeHtml(input.adminBase)}/register/" method="post">
+    <form class="admin-login-form" action="${escapeHtml(input.adminBase)}/register/" method="post" data-account-availability>
       <div class="admin-account-grid">
         <div class="field"><label for="name">Full name</label><input id="name" name="name" type="text" value="${escapeHtml(values.name ?? '')}" autocomplete="name" maxlength="50" required></div>
         <div class="field"><label for="user">Username</label><input id="user" name="user" type="text" value="${escapeHtml(values.user ?? '')}" autocomplete="username" maxlength="50" required></div>
@@ -274,7 +274,7 @@ export function renderAdminProfile(input: Readonly<{
   <p class="eyebrow"><span></span>Personal settings</p>
   <div class="admin-dashboard-heading"><div><h1>My Account.</h1><p>Update your account identity or rotate your password. A username or email change signs this browser out.</p></div><span class="admin-role">${escapeHtml(userRoleLabel(input.user.role))}</span></div>
   ${renderMessage(input.message)}
-  <form class="admin-settings-form admin-profile-form" action="${escapeHtml(input.adminBase)}/profile/" method="post" autocomplete="off">
+  <form class="admin-settings-form admin-profile-form" action="${escapeHtml(input.adminBase)}/profile/" method="post" autocomplete="off" data-account-availability>
     <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
     <section class="settings-section" aria-labelledby="profile-identity-title">
       <div class="settings-section-heading"><p class="panel-kicker">01 / Identity</p><h2 id="profile-identity-title">Account details</h2><p>These values are used by the administration interface and ownership records.</p></div>

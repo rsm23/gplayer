@@ -486,6 +486,56 @@
     })
   }
 
+  const setupAccountAvailability = () => {
+    const form = document.querySelector('form[data-account-availability]')
+    if (!(form instanceof HTMLFormElement)) return
+    const lookups = [
+      { input: form.querySelector('#user'), action: 'checkUsername', key: 'username' },
+      { input: form.querySelector('#email'), action: 'checkEmail', key: 'email' }
+    ]
+    lookups.forEach((lookup) => {
+      if (!(lookup.input instanceof HTMLInputElement)) return
+      let controller
+      lookup.input.addEventListener('input', () => {
+        controller?.abort()
+        controller = undefined
+        if (lookup.input.dataset.availabilityError === 'true') {
+          lookup.input.setCustomValidity('')
+          delete lookup.input.dataset.availabilityError
+        }
+      })
+      lookup.input.addEventListener('change', async () => {
+        controller?.abort()
+        const nextController = new AbortController()
+        controller = nextController
+        const value = lookup.input.value.trim()
+        if (value === '' || !lookup.input.validity.valid) return
+        try {
+          const response = await window.fetch('/ajax/public/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body: new URLSearchParams({ action: lookup.action, [lookup.key]: value }),
+            signal: nextController.signal
+          })
+          const payload = await response.json()
+          if (controller !== nextController) return
+          const message = response.ok && payload?.status === 'fail' && typeof payload.message === 'string'
+            ? payload.message
+            : ''
+          lookup.input.setCustomValidity(message)
+          if (message === '') delete lookup.input.dataset.availabilityError
+          else lookup.input.dataset.availabilityError = 'true'
+        } catch (error) {
+          if (error?.name !== 'AbortError') {
+            lookup.input.setCustomValidity('Account availability could not be checked. Try again.')
+            lookup.input.dataset.availabilityError = 'true'
+          }
+        }
+      })
+    })
+  }
+
   setupCustomHeaders()
   setupVastSchedule()
   setupPlayerSettings()
@@ -493,5 +543,6 @@
   setupVideoEditor()
   setupVideoBulk()
   setupVideoChecker()
+  setupAccountAvailability()
   revealActiveSettingsTab()
 })()

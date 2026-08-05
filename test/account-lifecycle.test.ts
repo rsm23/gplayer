@@ -315,7 +315,9 @@ describe('account lifecycle routes', () => {
     const register = await app.inject({ method: 'GET', url: '/administrator/register/' })
     expect(register.statusCode).toBe(200)
     expect(register.body).toContain('name="retype_password"')
+    expect(register.body).toContain('data-account-availability')
     expect(register.headers['cache-control']).toBe('no-store')
+    expect(register.headers['content-security-policy']).toContain("connect-src 'self'")
 
     const created = await app.inject({
       method: 'POST',

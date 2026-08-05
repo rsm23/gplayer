@@ -11,8 +11,8 @@ import {
   type AdminMessage
 } from '../player/admin-page.js'
 
-const BASE_ACCOUNT_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
-const CAPTCHA_ACCOUNT_CSP = "default-src 'none'; script-src 'self' https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com; img-src 'self' data: https://www.google.com https://www.gstatic.com; frame-src https://www.google.com; connect-src https://www.google.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+const BASE_ACCOUNT_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+const CAPTCHA_ACCOUNT_CSP = "default-src 'none'; script-src 'self' https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com; img-src 'self' data: https://www.google.com https://www.gstatic.com; frame-src https://www.google.com; connect-src 'self' https://www.google.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 export type AccountRouteOptions = Readonly<{
   verifyRecaptcha: (secret: string, responseToken: string, remoteIp: string) => Promise<boolean>

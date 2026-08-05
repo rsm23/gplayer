@@ -372,12 +372,13 @@ export async function buildApp(
     config.baseUrl,
     config.slugs
   )
+  const usersRuntime = dependencies.users ?? authRuntime.users
   await registerAdminRoutes(
     app,
     config,
     authService,
     dependencies.sessions ?? authRuntime.sessions,
-    dependencies.users ?? authRuntime.users,
+    usersRuntime,
     dependencies.logs ?? new LogAdminService(path.resolve(currentDirectory, '../tmp/logs')),
     dashboardRuntime,
     async () => (await loadAccountSettings()).enableRegistration,
@@ -392,7 +393,7 @@ export async function buildApp(
     config,
     authService,
     settingsRuntime,
-    dependencies.users ?? authRuntime.users,
+    usersRuntime,
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl),
     settingsMaintenanceRuntime,
@@ -474,6 +475,15 @@ export async function buildApp(
     capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId),
     captureView: async (input) => await viewCounterRuntime.capture(input),
     ...(sourceApiRuntime.invalidateSource === undefined ? {} : { invalidateSource: sourceApiRuntime.invalidateSource }),
+    usernameExists: async (username, request) => {
+      const user = await authenticateRequest(request).catch(() => null)
+      return await usersRuntime.usernameExists(username, user === null ? undefined : String(user.id))
+    },
+    emailExists: async (email, request) => {
+      const user = await authenticateRequest(request).catch(() => null)
+      return await usersRuntime.emailExists(email, user === null ? undefined : String(user.id))
+    },
+    loadBalancerLinks: async () => await loadBalancerRuntime.activeLinks(),
     resolvePlayback: sourceApiRuntime.resolve,
     providerContexts: providerStreamContexts,
     ...(selectDeliveryBaseUrl === undefined ? {} : { selectDeliveryBaseUrl })

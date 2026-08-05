@@ -9,7 +9,7 @@ import { renderAdminDashboard, renderAdminDmca, renderAdminError, renderAdminLog
 import { DashboardAdminService, type DashboardAccess } from '../dashboard/dashboard-admin-service.js'
 import type { SystemStatusSnapshot } from '../system/system-inspector.js'
 
-const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const SESSION_DELETE_FAIL = 'The session failed to delete'
 const SESSION_DELETE_SUCCESS = 'The session has been successfully deleted'
 const UNAUTHORIZED = 'You are not authorized to access this feature'

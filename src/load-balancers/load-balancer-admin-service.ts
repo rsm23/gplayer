@@ -98,6 +98,31 @@ export class LoadBalancerAdminService {
     return normalized === null ? null : await this.store.getLoadBalancer(normalized)
   }
 
+  public async activeLinks(maximum = 10_000): Promise<readonly string[]> {
+    const limit = Number.isFinite(maximum) ? Math.min(10_000, Math.max(1, Math.trunc(maximum))) : 10_000
+    const links: string[] = []
+    let start = 0
+    while (start < limit) {
+      const page = await this.store.listLoadBalancers({
+        draw: 0,
+        start,
+        length: Math.min(100, limit - start),
+        search: '',
+        orderBy: 'id',
+        orderDir: 'asc'
+      })
+      for (const item of page.data) {
+        const link = item.status === 1 ? normalizedHttpUrl(item.link) : null
+        if (link !== null) links.push(link)
+      }
+      start += page.data.length
+      if (page.data.length === 0 || start >= page.recordsTotal) break
+    }
+    const mainSite = normalizedHttpUrl(await this.loadMainSite())
+    if (mainSite !== null) links.push(mainSite)
+    return Object.freeze([...new Set(links)])
+  }
+
   public async create(input: Record<string, unknown>): Promise<LoadBalancerMutationResult> {
     const fields = this.fields(input)
     if ('error' in fields) return { status: 'invalid', message: fields.error }

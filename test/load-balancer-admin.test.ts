@@ -78,6 +78,21 @@ describe('load balancer administration service', () => {
     expect(store.writes[0]).toEqual({ id: '2', name: 'Amsterdam edge', link: 'https://edge-2.example/path/', status: 1, public: 0, created: 1_700_000_000, updated: 1_700_000_000, disallowHosts: ['youtube'], disallowContinents: ['EU'] })
   })
 
+  it('returns only normalized active links with the main site last and stable deduplication', async () => {
+    const store = new MemoryLoadBalancerStore()
+    store.records.push(
+      { ...record, id: '2', name: 'Disabled', link: 'https://disabled.example/', status: 0 },
+      { ...record, id: '3', name: 'Duplicate edge', link: 'https://EDGE.example', status: 1 },
+      { ...record, id: '4', name: 'Duplicate main', link: 'https://PLAYER.example', status: 1 }
+    )
+
+    await expect(service(store).activeLinks()).resolves.toEqual([
+      'https://edge.example/',
+      'https://player.example/'
+    ])
+    expect(store.queries[0]).toEqual(expect.objectContaining({ start: 0, length: 100, orderBy: 'id', orderDir: 'asc' }))
+  })
+
   it('rejects the main origin, duplicate origins, credentials, queries, and invalid names without writing', async () => {
     const store = new MemoryLoadBalancerStore()
     const loadBalancers = service(store)

@@ -66,6 +66,16 @@ const clearVideoCacheInputSchema = z.object({
   data: z.string().min(1).max(65_536)
 }).passthrough()
 
+const usernameLookupSchema = z.object({
+  action: z.literal('checkUsername'),
+  username: z.string().max(254).optional().default('')
+}).passthrough()
+
+const emailLookupSchema = z.object({
+  action: z.literal('checkEmail'),
+  email: z.string().max(512).optional().default('')
+}).passthrough()
+
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
 const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const MAX_SHORTLINK_TARGETS = 20
@@ -89,6 +99,9 @@ export type PlayerRouteOptions = Readonly<{
   capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
   captureView?: (input: ViewCounterCapture) => Promise<string | null>
   invalidateSource?: (identity: Readonly<{ host: string; id: string }>) => Promise<boolean>
+  usernameExists?: (username: string, request: FastifyRequest) => Promise<boolean>
+  emailExists?: (email: string, request: FastifyRequest) => Promise<boolean>
+  loadBalancerLinks?: () => Promise<readonly string[]>
   resolvePlayback?: SourceApiResolver
   providerContexts?: ProviderStreamContextRegistry
   selectDeliveryBaseUrl?: DeliveryBaseUrlSelector
@@ -244,11 +257,50 @@ export async function registerPlayerRoutes(
     }
   }
 
+  const checkUsername = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    applyPublicLookupHeaders(reply)
+    const input = usernameLookupSchema.safeParse(requestData(request))
+    if (!input.success || options.usernameExists === undefined) return publicLookupFailure('')
+    try {
+      return await options.usernameExists(input.data.username, request)
+        ? publicLookupFailure('The username is already registered')
+        : publicLookupSuccess()
+    } catch {
+      return publicLookupFailure('The username is already registered')
+    }
+  }
+
+  const checkEmail = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    applyPublicLookupHeaders(reply)
+    const input = emailLookupSchema.safeParse(requestData(request))
+    if (!input.success || options.emailExists === undefined) return publicLookupFailure('')
+    try {
+      return await options.emailExists(input.data.email, request)
+        ? publicLookupFailure('The email address is already registered')
+        : publicLookupSuccess()
+    } catch {
+      return publicLookupFailure('The email address is already registered')
+    }
+  }
+
+  const getLoadBalancerList = async (_request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    applyPublicLookupHeaders(reply)
+    try {
+      const links = await options.loadBalancerLinks?.() ?? []
+      return { status: 'ok', message: 'OK', result: [...new Set(links.filter((link) => link !== ''))] }
+    } catch {
+      return { status: 'ok', message: 'OK', result: [] }
+    }
+  }
+
   const dispatchPublicAjax = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const action = requestData(request).action
     if (action === 'gdriveBypassLimit') return await bypassDrive(request, reply)
     if (action === 'statCounter') return await statCounter(request, reply)
     if (action === 'clearVideoCache') return await clearVideoCache(request, reply)
+    if (action === 'checkUsername') return await checkUsername(request, reply)
+    if (action === 'checkEmail') return await checkEmail(request, reply)
+    if (action === 'getLoadBalancerList') return await getLoadBalancerList(request, reply)
     return await createPlayer(request, reply)
   }
 
@@ -586,6 +638,23 @@ function statCounterFailure(): Readonly<{ status: 'fail'; message: string; resul
 
 function clearVideoCacheFailure(): Readonly<{ status: 'fail'; message: string; result: readonly never[] }> {
   return Object.freeze({ status: 'fail', message: 'Failed to clear the cache of the video or the video does not exist', result: Object.freeze([]) })
+}
+
+function publicLookupSuccess(): Readonly<{ status: 'ok'; message: ''; result: null }> {
+  return Object.freeze({ status: 'ok', message: '', result: null })
+}
+
+function publicLookupFailure(message: string): Readonly<{ status: 'fail'; message: string; result: null }> {
+  return Object.freeze({ status: 'fail', message, result: null })
+}
+
+function applyPublicLookupHeaders(reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]): void {
+  reply.headers({
+    'cache-control': 'private, no-store',
+    pragma: 'no-cache',
+    'x-content-type-options': 'nosniff',
+    'x-robots-tag': 'noindex, nofollow'
+  })
 }
 
 function requestData(request: FastifyRequest): Record<string, unknown> {
