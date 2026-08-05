@@ -18,6 +18,8 @@ import { isSmartTvUserAgent } from '../security/smart-tv.js'
 const MAX_MANIFEST_BYTES = 5 * 1_024 * 1_024
 const MAX_STREAM_URL_LENGTH = 16_384
 const MAX_CACHEABLE_RESOURCE_BYTES = 128 * 1_024 * 1_024
+const MP4_RANGE_SIZE_TTL_MILLISECONDS = 10_800 * 1_000
+const DEFAULT_MP4_RANGE_MEMORY_ENTRIES = 4_096
 const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gsc', 'gd', 'gl', 'gx', 'gxr', 'gt'])
 const PROVIDER_CONTEXT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const CACHED_PROVIDER_CONTEXT_PLACEHOLDER = '__GPLAYER_PROVIDER_CONTEXT__'
@@ -98,6 +100,8 @@ export type StreamingRouteOptions = Readonly<{
   recoveryRandom?: () => number
   recoveryNow?: () => number
   recoveryMaximumAttempts?: number
+  mp4RangeMemoryNow?: () => number
+  mp4RangeMemoryMaximumEntries?: number
 }>
 
 export function createStreamingAccessToken(clientIp: string, security: Security): string | undefined {
@@ -136,6 +140,10 @@ export async function registerStreamingRoutes(
   const security = new Security(config.secureSalt)
   const remoteStream = options.remoteStream ?? new RemoteStream()
   const sourceRecovery = new StreamingSourceRecovery(options)
+  const mp4RangeMemory = new Mp4RangeMemory(
+    options.mp4RangeMemoryNow,
+    options.mp4RangeMemoryMaximumEntries
+  )
   const allowPrivateNetworks = options.allowPrivateNetworks ?? false
   const streamCache = options.cacheRoot === undefined ? undefined : new StreamCache(options.cacheRoot)
   const requestedMaximumCacheBytes = options.maximumCacheableResourceBytes ?? MAX_CACHEABLE_RESOURCE_BYTES
@@ -260,10 +268,13 @@ export async function registerStreamingRoutes(
     }
 
     try {
+      const upstreamRange = kind === 'stream-vid' && range !== ''
+        ? mp4RangeMemory.rewrite(parsed.identity.host, parsed.target, range)
+        : undefined
       const response = await remoteStream.open({
         url: parsed.target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-        headers: requestHeaders(request),
+        headers: requestHeaders(request, upstreamRange),
         ...targetHeadersOption(parsed.identity, options),
         allowPrivateNetworks
       })
@@ -285,6 +296,7 @@ export async function registerStreamingRoutes(
         }
         return streamError(reply, response.status === 404 ? 404 : 502, 'Stream resource is unavailable')
       }
+      if (kind === 'stream-vid') mp4RangeMemory.observe(parsed.target, response.headers.get('content-range'))
 
       for (const name of binaryResponseHeaders) {
         const value = response.headers.get(name)
@@ -1064,12 +1076,74 @@ class RateLimitTransform extends Transform {
   }
 }
 
-function requestHeaders(request: FastifyRequest): Headers {
+type Mp4RangeSizeEntry = Readonly<{
+  size: number
+  expiresAt: number
+}>
+
+class Mp4RangeMemory {
+  private readonly entries = new Map<string, Mp4RangeSizeEntry>()
+  private readonly maximumEntries: number
+
+  public constructor(
+    private readonly now: () => number = Date.now,
+    maximumEntries = DEFAULT_MP4_RANGE_MEMORY_ENTRIES
+  ) {
+    this.maximumEntries = Number.isFinite(maximumEntries)
+      ? Math.max(1, Math.min(65_536, Math.trunc(maximumEntries)))
+      : DEFAULT_MP4_RANGE_MEMORY_ENTRIES
+  }
+
+  public rewrite(host: string, target: URL, rawRange: string): string {
+    const key = target.toString()
+    const entry = this.entries.get(key)
+    if (entry === undefined) return rawRange
+    if (entry.expiresAt <= this.now()) {
+      this.entries.delete(key)
+      return rawRange
+    }
+
+    const chunkSize = host.toLowerCase() === 'mp4upload' ? 9_999_999 : 4_999_999
+    if (entry.size <= chunkSize) return rawRange
+    const match = rawRange.match(/^bytes=(\d*)-(\d*)$/i)
+    if (match === null) return rawRange
+    const start = Number(match[1] ?? 0)
+    if (!Number.isSafeInteger(start) || start < 0 || start >= entry.size) return rawRange
+    const end = Math.min(start + chunkSize, entry.size - 1)
+    return `bytes=${start}-${end}`
+  }
+
+  public observe(target: URL, contentRange: string | null): void {
+    const match = contentRange?.match(/^bytes\s+\d+-\d+\/(\d+)$/i)
+    if (match === undefined || match === null) return
+    const size = Number(match[1])
+    if (!Number.isSafeInteger(size) || size <= 0) return
+    const now = this.now()
+    this.prune(now)
+    const key = target.toString()
+    this.entries.delete(key)
+    while (this.entries.size >= this.maximumEntries) {
+      const oldest = this.entries.keys().next().value as string | undefined
+      if (oldest === undefined) break
+      this.entries.delete(oldest)
+    }
+    this.entries.set(key, Object.freeze({ size, expiresAt: now + MP4_RANGE_SIZE_TTL_MILLISECONDS }))
+  }
+
+  private prune(now: number): void {
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) this.entries.delete(key)
+    }
+  }
+}
+
+function requestHeaders(request: FastifyRequest, rangeOverride?: string): Headers {
   const headers = new Headers()
   for (const name of ['accept', 'accept-language', 'if-modified-since', 'if-none-match', 'if-range', 'range', 'user-agent']) {
     const value = request.headers[name]
     if (typeof value === 'string') headers.set(name, value)
   }
+  if (rangeOverride !== undefined) headers.set('range', rangeOverride)
   return headers
 }
 

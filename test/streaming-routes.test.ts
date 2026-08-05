@@ -591,10 +591,97 @@ describe('authenticated streaming routes', () => {
     const target = new URL('/video.mp4', upstreamUrl)
     const path = createStreamingProxyPath('stream-vid', target, new Security(secureSalt))
     const response = await app.inject({ method: 'GET', url: path, headers: { range: 'bytes=4-9' } })
+    const learnedSmallFile = await app.inject({ method: 'GET', url: path, headers: { range: 'bytes=10-12' } })
 
     expect(response.statusCode).toBe(206)
     expect(response.headers['content-range']).toBe(`bytes 4-9/${media.length}`)
     expect(response.rawPayload).toEqual(media.subarray(4, 10))
+    expect(learnedSmallFile.statusCode).toBe(206)
+    expect(lastUpstreamHeaders.range).toBe('bytes=10-12')
+    expect(learnedSmallFile.rawPayload).toEqual(media.subarray(10, 13))
+  })
+
+  it('reproduces the three-hour MP4 range window and the larger Mp4Upload chunk', async () => {
+    let now = 1_000
+    const ranges: string[] = []
+    const total = 20_000_000
+    const remoteStream = {
+      open: vi.fn(async (request: Readonly<{ url: string | URL; headers?: RequestInit['headers'] }>) => {
+        const range = new Headers(request.headers).get('range') ?? ''
+        ranges.push(range)
+        const match = range.match(/^bytes=(\d+)-(\d+)$/)
+        if (match === null) throw new Error(`Unexpected range: ${range}`)
+        return Object.freeze({
+          url: new URL(String(request.url)),
+          status: 206,
+          statusText: 'Partial Content',
+          headers: new Headers({
+            'accept-ranges': 'bytes',
+            'content-length': '1',
+            'content-range': `bytes ${match[1]}-${match[2]}/${total}`,
+            'content-type': 'video/mp4'
+          }),
+          body: new Response(Uint8Array.of(120)).body
+        })
+      })
+    }
+    app = await buildStreamingApp(true, undefined, {
+      remoteStream: remoteStream as never,
+      mp4RangeMemoryNow: () => now
+    })
+    const target = new URL('https://media.example/large.mp4')
+    const security = new Security(secureSalt)
+    const direct = createStreamingProxyPath('stream-vid', target, security, { host: 'direct', id: 'large' })
+    const mp4Upload = createStreamingProxyPath('stream-vid', target, security, { host: 'mp4upload', id: 'large' })
+
+    expect((await app.inject({ method: 'GET', url: direct, headers: { range: 'bytes=0-99' } })).statusCode).toBe(206)
+    expect((await app.inject({ method: 'GET', url: direct, headers: { range: 'bytes=100-199' } })).statusCode).toBe(206)
+    expect((await app.inject({ method: 'GET', url: mp4Upload, headers: { range: 'bytes=100-199' } })).statusCode).toBe(206)
+    now += 10_800_000
+    expect((await app.inject({ method: 'GET', url: direct, headers: { range: 'bytes=200-299' } })).statusCode).toBe(206)
+
+    expect(ranges).toEqual([
+      'bytes=0-99',
+      'bytes=100-5000099',
+      'bytes=100-10000099',
+      'bytes=200-299'
+    ])
+  })
+
+  it('bounds remembered MP4 sizes and evicts the oldest target', async () => {
+    const ranges: string[] = []
+    const remoteStream = {
+      open: vi.fn(async (request: Readonly<{ url: string | URL; headers?: RequestInit['headers'] }>) => {
+        const range = new Headers(request.headers).get('range') ?? ''
+        ranges.push(range)
+        const match = range.match(/^bytes=(\d+)-(\d+)$/)
+        if (match === null) throw new Error(`Unexpected range: ${range}`)
+        return Object.freeze({
+          url: new URL(String(request.url)),
+          status: 206,
+          statusText: 'Partial Content',
+          headers: new Headers({
+            'content-length': '1',
+            'content-range': `bytes ${match[1]}-${match[2]}/20000000`,
+            'content-type': 'video/mp4'
+          }),
+          body: new Response(Uint8Array.of(120)).body
+        })
+      })
+    }
+    app = await buildStreamingApp(true, undefined, {
+      remoteStream: remoteStream as never,
+      mp4RangeMemoryMaximumEntries: 1
+    })
+    const security = new Security(secureSalt)
+    const first = createStreamingProxyPath('stream-vid', new URL('https://media.example/first.mp4'), security)
+    const second = createStreamingProxyPath('stream-vid', new URL('https://media.example/second.mp4'), security)
+
+    await app.inject({ method: 'GET', url: first, headers: { range: 'bytes=0-9' } })
+    await app.inject({ method: 'GET', url: second, headers: { range: 'bytes=0-9' } })
+    await app.inject({ method: 'GET', url: first, headers: { range: 'bytes=50-59' } })
+
+    expect(ranges).toEqual(['bytes=0-9', 'bytes=0-9', 'bytes=50-59'])
   })
 
   it('streams a real ISO media fixture byte-for-byte, including a bounded range', async () => {
