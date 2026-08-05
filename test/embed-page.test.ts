@@ -46,4 +46,27 @@ describe('native embed appearance', () => {
     expect(html).toContain('The player query does not contain a source.')
     expect(html).not.toContain('data-player-loader')
   })
+
+  it('selects only the configured local player stylesheet', () => {
+    const plyr = renderEmbedPage(
+      { host: 'direct', id: 'https://media.example.test/video.mp4' },
+      publicOptions,
+      undefined,
+      { settings: playerSettings({ player: 'plyr' }, defaults), downloadUrl: '' }
+    )
+    expect(plyr).toContain('data-player-library="plyr"')
+    expect(plyr).toContain('/assets/vendor/plyr/3.6.3/plyr-custom.min.css')
+    expect(plyr).not.toContain('/assets/skin/jwplayer/')
+
+    const jwplayer = renderEmbedPage(
+      { host: 'direct', id: 'https://media.example.test/video.mp4' },
+      publicOptions,
+      undefined,
+      { settings: playerSettings({ player: 'jwplayer', player_skin: 'hotstar' }, defaults), downloadUrl: '' }
+    )
+    expect(jwplayer).toContain('data-player-library="jwplayer"')
+    expect(jwplayer).toContain('/assets/skin/jwplayer/hotstar.min.css')
+    expect(jwplayer).not.toContain('/assets/vendor/plyr/3.6.3/plyr-custom.min.css')
+    expect(jwplayer).not.toContain(' src="https://media.example.test/video.mp4"')
+  })
 })

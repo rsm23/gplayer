@@ -328,7 +328,8 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain('data-source-kind="hls"')
     expect(response.body).toMatch(/data-source="\/hls\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+"/)
     expect(response.body).not.toContain('data-source="https://cdn.example/live.m3u8"')
-    expect(response.body).toContain('/assets/vendor/hls.js/1.6.4/hls.min.js')
+    expect(response.body).toContain('data-player-library="jwplayer"')
+    expect(response.body).not.toContain('/assets/vendor/hls.js/1.6.4/hls.min.js')
     expect(response.body).toContain('<track kind="subtitles"')
     expect(response.body).toContain('label="English"')
     expect(response.body).toMatch(/poster="\/poster\/[A-Za-z0-9_,\-]+\.jpg"/)
@@ -565,7 +566,8 @@ describe('player HTTP routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.body).toContain('data-source-kind="dash"')
     expect(response.body).toMatch(/data-source="\/mpd\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+"/)
-    expect(response.body).toContain('/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js')
+    expect(response.body).toContain('data-player-library="jwplayer"')
+    expect(response.body).not.toContain('/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js')
   })
 
   it('rejects malformed embed tokens without reflecting them', async () => {

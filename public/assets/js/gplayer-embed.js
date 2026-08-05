@@ -25,8 +25,188 @@
 
   if (!enforceEmbedOnly()) return
 
-  const initializeDeferredSources = () => {
-    if (video instanceof HTMLVideoElement && video.dataset.sourceKind === 'video' && !video.hasAttribute('src')) {
+  const loadRuntimeScript = (source, key) => new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-player-runtime="${key}"]`)) {
+      resolve()
+      return
+    }
+    const script = document.createElement('script')
+    script.src = source
+    script.dataset.playerRuntime = key
+    const timeout = window.setTimeout(() => {
+      script.remove()
+      reject(new Error('Player runtime timed out'))
+    }, 10_000)
+    script.addEventListener('load', () => {
+      window.clearTimeout(timeout)
+      resolve()
+    }, { once: true })
+    script.addEventListener('error', () => {
+      window.clearTimeout(timeout)
+      script.remove()
+      reject(new Error('Player runtime failed to load'))
+    }, { once: true })
+    document.head.append(script)
+  })
+
+  const nativeController = (media, engine = 'native', instance = null) => ({
+    engine,
+    instance,
+    media,
+    play: async () => { await media.play().catch(() => {}) },
+    pause: () => media.pause(),
+    paused: () => media.paused,
+    position: () => media.currentTime,
+    duration: () => media.duration,
+    seek: (seconds) => { media.currentTime = seconds },
+    onReady: (listener) => {
+      if (media.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        window.queueMicrotask(listener)
+        return
+      }
+      media.addEventListener('loadedmetadata', listener, { once: true })
+    },
+    onTime: (listener) => media.addEventListener('timeupdate', () => listener(media.currentTime, media.duration)),
+    onEnded: (listener) => media.addEventListener('ended', listener),
+    onPlay: (listener, once = false) => media.addEventListener('play', listener, { once }),
+    bindLoading: (show, hide) => {
+      for (const event of ['loadstart', 'waiting', 'stalled', 'seeking']) media.addEventListener(event, show)
+      for (const event of ['loadeddata', 'canplay', 'playing', 'seeked', 'error']) media.addEventListener(event, hide)
+      if (media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) hide()
+    }
+  })
+
+  const jwController = (instance) => {
+    const once = (event, listener) => {
+      const wrapped = (payload) => {
+        instance.off(event, wrapped)
+        listener(payload)
+      }
+      instance.on(event, wrapped)
+    }
+    return {
+      engine: 'jwplayer',
+      instance,
+      media: null,
+      play: async () => { instance.play() },
+      pause: () => instance.pause(),
+      paused: () => instance.getState() !== 'playing',
+      position: () => Number(instance.getPosition()),
+      duration: () => Number(instance.getDuration()),
+      seek: (seconds) => instance.seek(seconds),
+      onReady: (listener) => {
+        const duration = Number(instance.getDuration())
+        if (Number.isFinite(duration) && duration > 0) {
+          window.queueMicrotask(listener)
+          return
+        }
+        once('ready', listener)
+      },
+      onTime: (listener) => instance.on('time', (event) => listener(Number(event.position), Number(event.duration))),
+      onEnded: (listener) => instance.on('complete', listener),
+      onPlay: (listener, runOnce = false) => runOnce ? once('play', listener) : instance.on('play', listener),
+      bindLoading: (show, hide) => {
+        instance.on('buffer', show)
+        instance.on('ready', hide)
+        instance.on('firstFrame', hide)
+        instance.on('play', hide)
+        instance.on('error', hide)
+        instance.on('setupError', hide)
+      }
+    }
+  }
+
+  const initializeSelectedPlayer = async () => {
+    if (!(video instanceof HTMLVideoElement)) return null
+    const fallback = nativeController(video)
+    body.dataset.activePlayer = 'native'
+    if (body.dataset.playerLibrary === 'plyr') {
+      try {
+        await loadRuntimeScript('/assets/vendor/plyr/3.6.3/plyr-custom.polyfilled.min.js', 'plyr')
+        if (typeof window.Plyr !== 'function') return fallback
+        const speedEnabled = body.dataset.playbackRate === 'true'
+        const instance = new window.Plyr(video, {
+          controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+          settings: speedEnabled ? ['captions', 'speed'] : ['captions'],
+          captions: { active: true, update: true },
+          speed: { selected: 1, options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
+          tooltips: { controls: true, seek: true }
+        })
+        instance.resumePlayback = () => instance.play()
+        window.gdPlyr = instance
+        body.dataset.activePlayer = 'plyr'
+        return nativeController(video, 'plyr', instance)
+      } catch {
+        body.dataset.activePlayer = 'native'
+        return fallback
+      }
+    }
+    if (body.dataset.playerLibrary !== 'jwplayer') return fallback
+    try {
+      window.jwpBaseUrl = '/assets/vendor/jwplayer'
+      await loadRuntimeScript('/assets/vendor/jwplayer/jwplayer.js', 'jwplayer')
+      if (typeof window.jwplayer !== 'function') return fallback
+      window.jwplayer.key = 'ITWMv7t88JGzI0xPwW8I0+LveiXX9SWbfdmt0ArUSyc='
+      const skins = new Set(['dropload', 'hotstar', 'iqiyi', 'lulustream', 'netflix'])
+      const skin = skins.has(body.dataset.playerSkin || '') ? body.dataset.playerSkin : ''
+      if (skin) await loadRuntimeScript(`/assets/skin/jwplayer/${skin}.js`, `jwplayer-skin-${skin}`)
+      const source = video.dataset.source || ''
+      if (!source) return fallback
+      const sourceKind = video.dataset.sourceKind || 'video'
+      const tracks = Array.from(video.querySelectorAll('track')).map((track) => ({
+        file: track.src,
+        label: track.label,
+        kind: 'captions',
+        default: track.default
+      }))
+      const captionOpacity = (name, fallbackValue) => {
+        const value = Number.parseInt(body.dataset[name] || '', 10)
+        return Number.isInteger(value) && value >= 0 && value <= 100 ? value : fallbackValue
+      }
+      const instance = window.jwplayer('media-player').setup({
+        width: '100%',
+        height: '100%',
+        controls: true,
+        sources: [{ file: source, type: sourceKind === 'hls' ? 'hls' : sourceKind === 'dash' ? 'dash' : 'mp4', label: 'Default', default: true }],
+        tracks,
+        title: document.querySelector('[data-player-title]')?.textContent || document.title,
+        image: video.poster,
+        autostart: video.autoplay,
+        mute: video.muted,
+        repeat: video.loop,
+        preload: video.preload,
+        stretching: video.className.replace('player-stretch-', '') || 'uniform',
+        displaytitle: false,
+        playbackRateControls: body.dataset.playbackRate === 'true',
+        playbackRates: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+        captions: {
+          color: body.dataset.captionColor,
+          backgroundOpacity: captionOpacity('captionBackgroundOpacity', 75),
+          backgroundColor: body.dataset.captionBackgroundColor,
+          fontFamily: body.dataset.captionFont,
+          edgeStyle: body.dataset.captionEdge,
+          windowOpacity: captionOpacity('captionWindowOpacity', 0),
+          windowColor: body.dataset.captionWindowColor
+        },
+        ...(skin ? { skin: { name: skin } } : {}),
+        abouttext: 'GPlayer',
+        aboutlink: 'https://github.com/rsm23/gplayer',
+        generateSEOMetadata: false
+      })
+      instance.destroy = () => instance.remove()
+      instance.resumePlayback = () => instance.play()
+      window.jwp = instance
+      body.dataset.activePlayer = 'jwplayer'
+      return jwController(instance)
+    } catch {
+      body.dataset.activePlayer = 'native'
+      if (!video.hasAttribute('src') && video.dataset.sourceKind === 'video' && video.dataset.source) video.src = video.dataset.source
+      return fallback
+    }
+  }
+
+  const initializeDeferredSources = (controller) => {
+    if (controller?.engine !== 'jwplayer' && video instanceof HTMLVideoElement && video.dataset.sourceKind === 'video' && !video.hasAttribute('src')) {
       const source = video.dataset.source
       if (source) video.src = source
     }
@@ -81,15 +261,13 @@
     })
   }
 
-  const initializeLoader = () => {
+  const initializeLoader = (controller) => {
     const loader = document.querySelector('[data-player-loader]')
     if (!(loader instanceof HTMLElement)) return
     const hide = () => { loader.hidden = true }
     const show = () => { loader.hidden = false }
-    if (video instanceof HTMLVideoElement) {
-      for (const event of ['loadstart', 'waiting', 'stalled', 'seeking']) video.addEventListener(event, show)
-      for (const event of ['loadeddata', 'canplay', 'playing', 'seeked', 'error']) video.addEventListener(event, hide)
-      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) hide()
+    if (controller !== null) {
+      controller.bindLoading(show, hide)
       return
     }
     const provider = document.querySelector('[data-provider-frame]')
@@ -101,13 +279,15 @@
     hide()
   }
 
-  const fakePlay = document.querySelector('[data-player-fake-play]')
-  fakePlay?.addEventListener('click', () => {
-    if (!(video instanceof HTMLVideoElement)) return
-    video.play().catch(() => {})
-    fakePlay.remove()
-  })
-  if (video instanceof HTMLVideoElement) video.addEventListener('play', () => fakePlay?.remove(), { once: true })
+  const initializeFakePlay = (controller) => {
+    const fakePlay = document.querySelector('[data-player-fake-play]')
+    if (controller === null) return
+    fakePlay?.addEventListener('click', () => {
+      controller.play()
+      fakePlay.remove()
+    })
+    controller.onPlay(() => fakePlay?.remove(), true)
+  }
 
   document.querySelector('[data-player-share]')?.addEventListener('click', async () => {
     try {
@@ -118,15 +298,15 @@
     }
   })
 
-  const initializeVisibilityPause = () => {
-    if (body.dataset.pauseOnLeft !== 'true' || !(video instanceof HTMLVideoElement)) return
+  const initializeVisibilityPause = (controller) => {
+    if (body.dataset.pauseOnLeft !== 'true' || controller === null) return
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && !video.paused) video.pause()
+      if (document.hidden && !controller.paused()) controller.pause()
     })
   }
 
-  const initializeContinueWatching = () => {
-    if (body.dataset.continueWatching !== 'true' || !(video instanceof HTMLVideoElement)) return
+  const initializeContinueWatching = (controller) => {
+    if (body.dataset.continueWatching !== 'true' || controller === null) return
     const prompt = document.querySelector('[data-player-resume]')
     const promptText = document.querySelector('[data-player-resume-text]')
     const yes = document.querySelector('[data-player-resume-yes]')
@@ -138,31 +318,32 @@
     const forget = () => {
       try { window.localStorage.removeItem(storageKey) } catch {}
     }
-    video.addEventListener('loadedmetadata', () => {
+    controller.onReady(() => {
       let saved = 0
       try { saved = Number.parseFloat(window.localStorage.getItem(storageKey) || '0') } catch {}
-      if (!Number.isFinite(saved) || saved < 5 || !Number.isFinite(video.duration) || saved >= video.duration - 5) return
-      video.pause()
+      const duration = controller.duration()
+      if (!Number.isFinite(saved) || saved < 5 || !Number.isFinite(duration) || saved >= duration - 5) return
+      controller.pause()
       promptText.textContent = promptText.textContent.replace('hh:mm:ss', formatTime(saved))
       prompt.hidden = false
       yes?.addEventListener('click', () => {
-        video.currentTime = saved
+        controller.seek(saved)
         hidePrompt()
-        video.play().catch(() => {})
+        controller.play()
       }, { once: true })
       no?.addEventListener('click', () => {
         forget()
-        video.currentTime = 0
+        controller.seek(0)
         hidePrompt()
       }, { once: true })
-    }, { once: true })
-    video.addEventListener('timeupdate', () => {
-      const second = Math.floor(video.currentTime)
+    })
+    controller.onTime((position) => {
+      const second = Math.floor(position)
       if (second === lastStoredSecond || second < 1) return
       lastStoredSecond = second
       try { window.localStorage.setItem(storageKey, String(second)) } catch {}
     })
-    video.addEventListener('ended', forget)
+    controller.onEnded(forget)
   }
 
   const formatTime = (seconds) => {
@@ -173,50 +354,51 @@
     return [hours, minutes, remainder].map((part) => String(part).padStart(2, '0')).join(':')
   }
 
-  const showFallback = (message) => {
-    if (!(video instanceof HTMLVideoElement)) return
+  const showFallback = (media, message) => {
+    if (!(media instanceof HTMLVideoElement)) return
     const fallback = document.createElement('p')
     fallback.className = 'player-fallback'
     fallback.textContent = message
-    video.insertAdjacentElement('afterend', fallback)
+    media.insertAdjacentElement('afterend', fallback)
   }
 
-  const initializeStreamingPlayback = () => {
-    if (!(video instanceof HTMLVideoElement)) return
-    const source = video.dataset.source
-    const kind = video.dataset.sourceKind
+  const initializeStreamingPlayback = (controller) => {
+    const media = controller?.media
+    if (!(media instanceof HTMLVideoElement) || controller.engine === 'jwplayer') return
+    const source = media.dataset.source
+    const kind = media.dataset.sourceKind
     if (!source || (kind !== 'hls' && kind !== 'dash')) return
 
     if (kind === 'dash') {
       if (typeof window.shaka !== 'object' || typeof window.shaka.Player !== 'function') {
-        showFallback('MPEG-DASH playback is not supported in this browser.')
+        showFallback(media, 'MPEG-DASH playback is not supported in this browser.')
         return
       }
       window.shaka.polyfill.installAll()
       if (!window.shaka.Player.isBrowserSupported()) {
-        showFallback('MPEG-DASH playback is not supported in this browser.')
+        showFallback(media, 'MPEG-DASH playback is not supported in this browser.')
         return
       }
       const player = new window.shaka.Player()
-      player.attach(video)
+      player.attach(media)
         .then(() => player.load(source))
-        .catch(() => showFallback('The MPEG-DASH stream could not be loaded.'))
+        .catch(() => showFallback(media, 'The MPEG-DASH stream could not be loaded.'))
       return
     }
 
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = source
+    if (media.canPlayType('application/vnd.apple.mpegurl')) {
+      media.src = source
       return
     }
 
     if (typeof window.Hls === 'function' && window.Hls.isSupported()) {
       const hls = new window.Hls({ enableWorker: true })
       hls.loadSource(source)
-      hls.attachMedia(video)
+      hls.attachMedia(media)
       return
     }
 
-    showFallback('HLS playback is not supported in this browser.')
+    showFallback(media, 'HLS playback is not supported in this browser.')
   }
 
   const mountPopupFrame = () => {
@@ -283,14 +465,13 @@
     if (panel instanceof HTMLElement) panel.hidden = true
   })
 
-  if (video instanceof HTMLVideoElement) video.addEventListener('play', visitPlayAds, { once: true })
   const providerGate = document.querySelector('[data-provider-ad-gate]')
   providerGate?.addEventListener('click', () => {
     visitPlayAds()
     providerGate.remove()
   }, { once: true })
 
-  const initializeAdblockDetection = () => {
+  const initializeAdblockDetection = (controller) => {
     if (body.dataset.blockAdblocker !== 'true') return
     const bait = document.createElement('img')
     bait.id = 'advertisement'
@@ -303,7 +484,7 @@
       if (finished) return
       finished = true
       body.classList.add('is-adblocked')
-      if (video instanceof HTMLVideoElement) video.pause()
+      controller?.pause()
       const notice = document.querySelector('[data-adblock-notice]')
       if (notice instanceof HTMLElement) notice.hidden = false
     }
@@ -317,14 +498,21 @@
     window.setTimeout(showBlocked, 3_000)
   }
 
-  initializePlayerAppearance()
-  initializeLoader()
-  initializeDeferredSources()
-  initializeStreamingPlayback()
-  initializeVisibilityPause()
-  initializeContinueWatching()
-  initializeAdblockDetection()
-  if (body.dataset.popupFrameUrl && Number.parseInt(body.dataset.popupDelaySeconds || '0', 10) === 0) {
-    mountPopupFrame()
+  const boot = async () => {
+    initializePlayerAppearance()
+    const controller = await initializeSelectedPlayer()
+    initializeLoader(controller)
+    initializeDeferredSources(controller)
+    initializeStreamingPlayback(controller)
+    initializeFakePlay(controller)
+    initializeVisibilityPause(controller)
+    initializeContinueWatching(controller)
+    initializeAdblockDetection(controller)
+    controller?.onPlay(visitPlayAds, true)
+    if (body.dataset.popupFrameUrl && Number.parseInt(body.dataset.popupDelaySeconds || '0', 10) === 0) {
+      mountPopupFrame()
+    }
   }
+
+  boot()
 })()

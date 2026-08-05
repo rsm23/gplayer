@@ -67,7 +67,7 @@ export function renderEmbedPage(
   } else if (source.kind === 'unavailable') {
     player = `<div class="player-notice"><span>Source accepted</span><h1>Provider adapter in progress</h1><p>${escapeHtml(source.message ?? 'This provider is not available in the Node player yet.')}</p></div>`
   } else {
-    const sourceAttribute = source.kind === 'hls' || playerOptions?.embedOnly === true
+    const sourceAttribute = source.kind === 'hls' || settings?.player === 'jwplayer' || playerOptions?.embedOnly === true
       ? ''
       : ` src="${escapeHtmlAttribute(source.url)}"`
     player = `<video id="media-player" class="player-stretch-${stretching}" controls playsinline preload="${preload}"${videoAttributes}${sourceAttribute}${poster ? ` poster="${escapeHtmlAttribute(poster)}"` : ''} data-source="${escapeHtmlAttribute(source.url)}" data-source-kind="${source.kind}">${tracks}<p>Your browser cannot play this media.</p></video>`
@@ -100,6 +100,7 @@ export function renderEmbedPage(
   const documentTitle = settings === undefined
     ? 'GPlayer'
     : settings.text_title.replaceAll('{title}', title).replaceAll('{siteName}', 'GPlayer')
+  const playerStyles = settings === undefined ? '' : renderPlayerStyles(settings)
 
   return `<!doctype html>
 <html lang="en">
@@ -108,14 +109,15 @@ export function renderEmbedPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>${escapeHtml(documentTitle)}</title>
+  ${playerStyles}
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
-<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-caption-color="#${escapeHtmlAttribute(settings?.subtitle_color ?? 'ffffff')}" data-caption-font="${escapeHtmlAttribute(settings?.font_family ?? 'Arial')}" data-caption-edge="${escapeHtmlAttribute(settings?.edge_style ?? 'dropShadow')}" data-caption-background-color="#${escapeHtmlAttribute(settings?.background_color ?? '000000')}" data-caption-background-opacity="${escapeHtmlAttribute(settings?.background_opacity ?? '75')}" data-caption-window-color="#${escapeHtmlAttribute(settings?.window_color ?? '000000')}" data-caption-window-opacity="${escapeHtmlAttribute(settings?.window_opacity ?? '0')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
+<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-library="${escapeHtmlAttribute(settings?.player ?? 'jwplayer')}" data-player-skin="${escapeHtmlAttribute(settings?.player_skin ?? '')}" data-playback-rate="${String(settings?.playback_rate === true)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-caption-color="#${escapeHtmlAttribute(settings?.subtitle_color ?? 'ffffff')}" data-caption-font="${escapeHtmlAttribute(settings?.font_family ?? 'Arial')}" data-caption-edge="${escapeHtmlAttribute(settings?.edge_style ?? 'dropShadow')}" data-caption-background-color="#${escapeHtmlAttribute(settings?.background_color ?? '000000')}" data-caption-background-opacity="${escapeHtmlAttribute(settings?.background_opacity ?? '75')}" data-caption-window-color="#${escapeHtmlAttribute(settings?.window_color ?? '000000')}" data-caption-window-opacity="${escapeHtmlAttribute(settings?.window_opacity ?? '0')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
   <main class="player-stage" aria-label="Video player">${player}${loader}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}</main>
   ${directFallback}
   ${adblockNotice}
   ${resumePrompt}
-  ${source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>' : ''}
+  ${settings?.player === 'jwplayer' ? '' : source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>' : ''}
   <script src="/assets/js/gplayer-embed.js"></script>
 </body>
 </html>`
@@ -215,6 +217,15 @@ function renderPlayerLoader(settings: PlayerSettings, sourceKind: RenderedSource
   const text = settings.text_loading.trim() === '' ? '' : `<span class="player-loader-text">${escapeHtml(settings.text_loading)}</span>`
   const pieces = Array.from({ length: 9 }, () => '<span></span>').join('')
   return `<div class="player-loader player-loader-${settings.loader}" data-player-loader role="status" aria-live="polite" aria-label="${escapeHtmlAttribute(label)}"><span class="player-loader-visual" aria-hidden="true">${pieces}</span>${text}</div>`
+}
+
+function renderPlayerStyles(settings: PlayerSettings): string {
+  if (settings.player === 'plyr') {
+    return '<link rel="stylesheet" href="/assets/vendor/plyr/3.6.3/plyr-custom.min.css">'
+  }
+  return !settings.player_skin
+    ? ''
+    : `<link rel="stylesheet" href="/assets/skin/jwplayer/${settings.player_skin}.min.css">`
 }
 
 function playerTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {

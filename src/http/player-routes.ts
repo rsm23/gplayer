@@ -595,7 +595,7 @@ function embedContentSecurityPolicy(ads: AdsSettings): string {
       // Settings validation normally guarantees a URL; omit invalid values defensively.
     }
   }
-  return `default-src 'none'; script-src 'self'; style-src 'self'; media-src http: https: blob:; connect-src http: https:; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
+  return `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src http: https:; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
 }
 
 function toArray(value: string | string[] | undefined): string[] {
