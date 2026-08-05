@@ -115,6 +115,20 @@ describe('legacy-compatible system routes', () => {
     }))
   })
 
+  it('triggers the Node Drive worker without waiting and coalesces active runs', async () => {
+    const trigger = vi.fn()
+      .mockReturnValueOnce({ running: true, started: true })
+      .mockReturnValueOnce({ running: true, started: false })
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      driveBackground: { trigger }
+    })
+    const first = await app.inject({ method: 'GET', url: '/ping' })
+    const second = await app.inject({ method: 'GET', url: '/ping' })
+    expect(first.json()).toMatchObject({ running: true, pid: process.pid, bg_gdrive: process.pid, background_started: true })
+    expect(second.json()).toMatchObject({ running: true, pid: process.pid, bg_gdrive: process.pid, background_started: false })
+    expect(trigger).toHaveBeenCalledTimes(2)
+  })
+
   it('clears registered Node runtime caches through the administrator-only legacy controller', async () => {
     const clearRuntimeCache = vi.fn(() => true)
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {

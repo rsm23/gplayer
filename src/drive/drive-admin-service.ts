@@ -68,9 +68,19 @@ export interface DriveAdminStore {
   deleteBackupsByMirrorId(mirrorId: string): Promise<boolean>
   listQueue(query: DriveTableQuery): Promise<DriveTableResult<DriveQueueRecord>>
   deleteQueue(id: string): Promise<boolean>
+  listPendingQueue(limit: number): Promise<readonly DriveQueueRecord[]>
+  enqueueQueue(fileId: string, delayed?: boolean): Promise<boolean>
+  deleteQueueByFileIds(fileIds: readonly string[]): Promise<number>
   duplicateExists(fingerprint: DriveFingerprint): Promise<boolean>
   saveFingerprint(fingerprint: DriveFingerprint): Promise<boolean>
 }
+
+export type DriveLocatedFile = Readonly<{ file: DriveFile; email: string }>
+export type DriveCopyOutcome = Readonly<{
+  status: 'existing' | 'copied' | 'missing' | 'failed'
+  located: DriveLocatedFile | null
+}>
+export type DriveMediaRequest = Readonly<{ target: URL; authorization: string }>
 
 export type DriveFile = Readonly<{
   id: string
@@ -235,8 +245,40 @@ export class DriveApiClient {
   }
 
   public async copyFromAny(fileId: string, encryptTitle: boolean): Promise<DriveFile | null> {
+    return (await this.copyFromAnyOutcome(fileId, encryptTitle)).located?.file ?? null
+  }
+
+  public async locateFile(fileId: string, preferredEmail = ''): Promise<DriveLocatedFile | null> {
     const id = parseGoogleDriveId(fileId)
     if (id === null) return null
+    const accounts = await this.store.listActiveAccounts(false)
+    const accountMap = new Map(accounts.map((account) => [account.email.toLowerCase(), account]))
+    const attempted = new Set<string>()
+    const preferred = accountMap.get(preferredEmail.trim().toLowerCase())
+    if (preferred !== undefined) {
+      attempted.add(preferred.email.toLowerCase())
+      const file = await this.fileInfoFor(preferred, id)
+      if (file !== null) return Object.freeze({ file, email: preferred.email })
+    }
+    for (const mirror of await this.store.listMirrors(id, 5).catch(() => Object.freeze([]) as readonly DriveMirror[])) {
+      const account = accountMap.get(mirror.mirrorEmail.toLowerCase())
+      if (account === undefined) continue
+      const candidateId = mirror.sourceId === id ? mirror.mirrorId : id
+      const existing = await this.fileInfoFor(account, candidateId)
+      attempted.add(account.email.toLowerCase())
+      if (existing !== null) return Object.freeze({ file: existing, email: account.email })
+    }
+    for (const account of accounts) {
+      if (attempted.has(account.email.toLowerCase())) continue
+      const source = await this.fileInfoFor(account, id)
+      if (source !== null) return Object.freeze({ file: source, email: account.email })
+    }
+    return null
+  }
+
+  public async copyFromAnyOutcome(fileId: string, encryptTitle: boolean): Promise<DriveCopyOutcome> {
+    const id = parseGoogleDriveId(fileId)
+    if (id === null) return copyOutcome('missing')
     const accounts = await this.store.listActiveAccounts(true)
     const accountMap = new Map(accounts.map((account) => [account.email.toLowerCase(), account]))
     for (const mirror of await this.store.listMirrors(id, 5).catch(() => Object.freeze([]) as readonly DriveMirror[])) {
@@ -244,35 +286,69 @@ export class DriveApiClient {
       if (account === undefined) continue
       const candidateId = mirror.sourceId === id ? mirror.mirrorId : id
       const existing = await this.fileInfoFor(account, candidateId)
-      if (existing !== null) return existing
+      if (existing !== null) return copyOutcome('existing', { file: existing, email: account.email })
     }
+    let found = false
     for (const account of accounts) {
       const source = await this.fileInfoFor(account, id)
       if (source === null) continue
-      const title = encryptTitle ? encryptedTitle(source.title, source.fileExtension) : source.title
-      const body = {
-        copyable: true,
-        parents: [{ id: 'root' }],
-        title,
-        description: encryptTitle ? source.title : 'Copy created by the GPlayer Drive administration tool.',
-        originalFilename: title
-      }
-      const copiedJson = await this.authorizedJson(account, 'post', `${GOOGLE_API_ROOT}/drive/v2/files/${encodeURIComponent(id)}/copy?supportsAllDrives=true&key=${encodeURIComponent(account.apiKey)}`, body)
-      const copiedId = copiedJson === null ? null : parseGoogleDriveId(boundedString(copiedJson.id, 50))
-      if (copiedId === null) continue
-      await this.setPublic(account.email, copiedId, true).catch(() => false)
-      await this.store.saveMirror(id, copiedId, account.email, this.now()).catch(() => false)
-      const copied = await this.fileInfoFor(account, copiedId)
-      if (copied !== null) return copied
+      found = true
+      const copied = await this.copyFile(account, source, id, encryptTitle)
+      if (copied !== null) return copyOutcome('copied', { file: copied, email: account.email })
     }
-    return null
+    return copyOutcome(found ? 'failed' : 'missing')
   }
 
-  private async account(email: string): Promise<DriveAccount | null> {
+  public async copyToAccount(fileId: string, email: string, encryptTitle: boolean): Promise<DriveCopyOutcome> {
+    const id = parseGoogleDriveId(fileId)
+    const account = id === null ? null : await this.account(email, true)
+    if (id === null || account === null) return copyOutcome('missing')
+    for (const mirror of await this.store.listMirrors(id, 5).catch(() => Object.freeze([]) as readonly DriveMirror[])) {
+      if (mirror.mirrorEmail.toLowerCase() !== account.email.toLowerCase()) continue
+      const existing = await this.fileInfoFor(account, mirror.sourceId === id ? mirror.mirrorId : id)
+      if (existing !== null) return copyOutcome('existing', { file: existing, email: account.email })
+    }
+    const source = await this.fileInfoFor(account, id)
+    if (source === null) return copyOutcome('missing')
+    const copied = await this.copyFile(account, source, id, encryptTitle)
+    return copied === null
+      ? copyOutcome('failed')
+      : copyOutcome('copied', { file: copied, email: account.email })
+  }
+
+  public async mediaRequest(email: string, fileId: string): Promise<DriveMediaRequest | null> {
+    const id = parseGoogleDriveId(fileId)
+    const account = id === null ? null : await this.account(email)
+    if (id === null || account === null) return null
+    const token = await this.accessToken(account)
+    if (token === null) return null
+    const target = new URL(`${GOOGLE_API_ROOT}/drive/v3/files/${encodeURIComponent(id)}`)
+    target.searchParams.set('alt', 'media')
+    if (account.apiKey !== '') target.searchParams.set('key', account.apiKey)
+    return Object.freeze({ target, authorization: `${token.type} ${token.value}` })
+  }
+
+  private async account(email: string, bypassOnly = false): Promise<DriveAccount | null> {
     const normalized = email.trim().toLowerCase()
     if (!validEmail(normalized)) return null
-    const accounts = await this.store.listActiveAccounts(false)
+    const accounts = await this.store.listActiveAccounts(bypassOnly)
     return accounts.find((account) => account.email.toLowerCase() === normalized) ?? null
+  }
+
+  private async copyFile(account: DriveAccount, source: DriveFile, sourceId: string, encryptTitle: boolean): Promise<DriveFile | null> {
+    const title = encryptTitle ? encryptedTitle(source.title, source.fileExtension) : source.title
+    const copiedJson = await this.authorizedJson(account, 'post', `${GOOGLE_API_ROOT}/drive/v2/files/${encodeURIComponent(sourceId)}/copy?supportsAllDrives=true&key=${encodeURIComponent(account.apiKey)}`, {
+      copyable: true,
+      parents: [{ id: 'root' }],
+      title,
+      description: encryptTitle ? source.title : 'Copy created by the GPlayer Drive administration tool.',
+      originalFilename: title
+    })
+    const copiedId = copiedJson === null ? null : parseGoogleDriveId(boundedString(copiedJson.id, 50))
+    if (copiedId === null) return null
+    await this.setPublic(account.email, copiedId, true).catch(() => false)
+    await this.store.saveMirror(sourceId, copiedId, account.email, this.now()).catch(() => false)
+    return await this.fileInfoFor(account, copiedId)
   }
 
   private async fileInfoFor(account: DriveAccount, fileId: string): Promise<DriveFile | null> {
@@ -656,6 +732,10 @@ function boundedString(value: unknown, maximum: number): string {
 function integerValue(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number.parseInt(boundedString(value, 24), 10)
   return Number.isSafeInteger(parsed) ? parsed : 0
+}
+
+function copyOutcome(status: DriveCopyOutcome['status'], located: DriveLocatedFile | null = null): DriveCopyOutcome {
+  return Object.freeze({ status, located: located === null ? null : Object.freeze(located) })
 }
 
 function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {

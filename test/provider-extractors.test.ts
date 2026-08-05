@@ -1,5 +1,5 @@
 import { createCipheriv, webcrypto } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AparatExtractor } from '../src/hosting/aparat.js'
 import { AmazonExtractor } from '../src/hosting/amazon.js'
 import { ArchiveExtractor } from '../src/hosting/archive.js'
@@ -1796,6 +1796,45 @@ describe('recoverable provider adapters', () => {
       '1225BQ0G3QbioqbP7H5q5u8EqklWDKnDC',
       new FixtureHttpClient([response('status=ok', new Headers(), 'https://attacker.test/get_video_info')])
     ).getSources()).resolves.toEqual([])
+  })
+
+  it('uses encrypted local Drive media for downloads and private-source fallback', async () => {
+    const id = '1225BQ0G3QbioqbP7H5q5u8EqklWDKnDC'
+    const privateSource = Object.freeze({
+      file: 'https://player.example/gdrive-media/encrypted-token',
+      type: 'video/mp4' as const,
+      label: 'Original' as const,
+      proxy: false as const,
+      title: 'Private fixture.mp4',
+      image: `https://drive.google.com/thumbnail?id=${id}`
+    })
+    const privateSources = {
+      enqueue: vi.fn(async () => {}),
+      resolve: vi.fn(async () => privateSource)
+    }
+    const downloadHttp = new FixtureHttpClient([])
+    const download = new GdriveExtractor(id, downloadHttp, {
+      privateSources,
+      loadSettings: async () => ({ copy: true, copyAll: false })
+    }).setEmail('drive@example.test').setDownloadable(true)
+
+    await expect(download.getSources()).resolves.toEqual([privateSource])
+    expect(downloadHttp.requests).toEqual([])
+    expect(privateSources.enqueue).toHaveBeenCalledWith(id)
+    expect(privateSources.resolve).toHaveBeenCalledWith(id, 'drive@example.test', false)
+    expect(download.getTitle()).toBe('Private fixture.mp4')
+
+    privateSources.enqueue.mockClear()
+    privateSources.resolve.mockClear()
+    const fallback = new GdriveExtractor(id, new FixtureHttpClient([
+      response('status=fail&reason=Permission+denied', new Headers(), `https://docs.google.com/u/0/get_video_info?docid=${id}`)
+    ]), {
+      privateSources,
+      loadSettings: async () => ({ copy: true, copyAll: true })
+    })
+    await expect(fallback.getSources()).resolves.toEqual([privateSource])
+    expect(privateSources.enqueue).toHaveBeenCalledWith(id)
+    expect(privateSources.resolve).toHaveBeenCalledWith(id, '', true)
   })
 
   it('ports short and normal WeTransfer links through the public single-file download API', async () => {

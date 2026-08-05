@@ -17,6 +17,7 @@ import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
 import { registerSubtitleAdminRoutes } from './http/subtitle-admin-routes.js'
 import { registerVideoAdminRoutes } from './http/video-admin-routes.js'
 import { registerDriveAdminRoutes } from './http/drive-admin-routes.js'
+import { registerDriveMediaRoutes } from './http/drive-media-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
@@ -42,6 +43,8 @@ import { VideoTransferService } from './videos/video-transfer-service.js'
 import { DriveSharerService, RecaptchaVerifier } from './drive/drive-sharer-service.js'
 import type { DriveAccountAdminService } from './drive/drive-account-admin-service.js'
 import { DriveAdminService, DriveApiClient } from './drive/drive-admin-service.js'
+import { DriveMediaService } from './drive/drive-media-service.js'
+import { DriveBackgroundCoordinator, DriveBackgroundWorker } from './drive/drive-background-worker.js'
 import { Security } from './security/security.js'
 import { RemoteProviderHttpClient } from './hosting/provider-http.js'
 
@@ -65,6 +68,8 @@ export type AppDependencies = Readonly<{
   driveSharer?: Pick<DriveSharerService, 'bypass'>
   driveAccounts?: DriveAccountAdminService
   driveAdmin?: DriveAdminService
+  driveMedia?: DriveMediaService
+  driveBackground?: Pick<DriveBackgroundCoordinator, 'trigger'>
   recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
   clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
@@ -107,10 +112,29 @@ export async function buildApp(
     { embedSlug: config.slugs.embed, downloadSlug: config.slugs.download }
   )
   const videoTransferRuntime = dependencies.videoTransfer ?? new VideoTransferService(videosRuntime, config.baseUrl)
+  const driveHttp = new RemoteProviderHttpClient()
+  const driveApi = new DriveApiClient(authRuntime.driveAdminStore, driveHttp)
+  const driveMediaRuntime = dependencies.driveMedia ?? new DriveMediaService(
+    authRuntime.driveAdminStore,
+    driveApi,
+    new Security(config.secureSalt),
+    config.baseUrl
+  )
+  const loadDriveSettings = async () => {
+    const settings = await settingsRuntime.general(config.baseUrl)
+    return Object.freeze({ copy: settings.gdrive_copy === true, copyAll: settings.gdrive_copy_all === true })
+  }
+  const driveBackgroundRuntime = dependencies.driveBackground ?? new DriveBackgroundCoordinator(
+    new DriveBackgroundWorker(authRuntime.driveAdminStore, driveApi),
+    loadDriveSettings
+  )
   let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
   const hostingHosts = legacyHostingHosts()
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
-  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config, { loadHostingSettings })
+  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config, {
+    loadHostingSettings,
+    gdrive: { privateSources: driveMediaRuntime, loadSettings: loadDriveSettings }
+  })
   const videoBulkRuntime = dependencies.videoBulk ?? new VideoBulkService(videosRuntime, sourceApiRuntime.resolve)
   const videoCheckerRuntime = dependencies.videoChecker ?? new VideoCheckerService(videosRuntime, sourceApiRuntime.resolve)
   supportedHosts = sourceApiRuntime.supportedHosts ?? supportedHosts
@@ -145,7 +169,11 @@ export async function buildApp(
     const user = await authenticateRequest(request)
     return user !== null && user.status === 1 && user.role === 0
   }
-  await registerSystemRoutes(app, config, authService, clearRuntimeCache, { loadPublicSettings, isAuthenticated })
+  await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
+    loadPublicSettings,
+    isAuthenticated,
+    background: driveBackgroundRuntime
+  })
   await registerAdminRoutes(
     app,
     config,
@@ -170,10 +198,9 @@ export async function buildApp(
     authService,
     subtitlesRuntime
   )
-  const driveHttp = new RemoteProviderHttpClient()
   const driveAdminRuntime = dependencies.driveAdmin ?? new DriveAdminService(
     authRuntime.driveAdminStore,
-    new DriveApiClient(authRuntime.driveAdminStore, driveHttp),
+    driveApi,
     new Security(config.secureSalt),
     videosRuntime,
     {
@@ -236,6 +263,7 @@ export async function buildApp(
     supportedHosts,
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug)
   })
+  await registerDriveMediaRoutes(app, driveMediaRuntime)
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {
     customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target)

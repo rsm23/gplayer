@@ -290,6 +290,31 @@ describe('legacy player source API routes', () => {
     )
   })
 
+  it('keeps only the signed same-origin Drive media route out of the generic proxy', async () => {
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
+    resolve.mockResolvedValueOnce({
+      ...mediaResult(),
+      sources: [
+        { file: 'https://player.example/gdrive-media/encrypted-token', type: 'video/mp4', label: 'Original', proxy: false },
+        { file: 'https://attacker.example/gdrive-media/decoy', type: 'video/mp4', label: 'Decoy', proxy: false }
+      ]
+    })
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const decoded = decryptJson(response.body, request.password)
+    expect(decoded.sources[0]).toEqual({
+      file: 'https://player.example/gdrive-media/encrypted-token',
+      type: 'video/mp4',
+      label: 'Original'
+    })
+    expect(decoded.sources[1].file).toMatch(/^https:\/\/player\.example\/stream-vid\//)
+    expect(decoded.sources[1]).not.toHaveProperty('proxy')
+  })
+
   it('keeps malformed authentication and empty results as plaintext JSON failures', async () => {
     const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
     const badSalt = await app.inject({

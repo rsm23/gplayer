@@ -162,6 +162,9 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     deleteBackupsByMirrorId: async (mirrorId) => await currentDriveAdminStore().deleteBackupsByMirrorId(mirrorId),
     listQueue: async (query) => await currentDriveAdminStore().listQueue(query),
     deleteQueue: async (id) => await currentDriveAdminStore().deleteQueue(id),
+    listPendingQueue: async (limit) => await currentDriveAdminStore().listPendingQueue(limit),
+    enqueueQueue: async (fileId, delayed) => await currentDriveAdminStore().enqueueQueue(fileId, delayed),
+    deleteQueueByFileIds: async (fileIds) => await currentDriveAdminStore().deleteQueueByFileIds(fileIds),
     duplicateExists: async (fingerprint) => await currentDriveAdminStore().duplicateExists(fingerprint),
     saveFingerprint: async (fingerprint) => await currentDriveAdminStore().saveFingerprint(fingerprint)
   }

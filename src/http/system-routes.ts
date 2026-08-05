@@ -12,6 +12,7 @@ import {
 } from '../player/public-page.js'
 import { Security } from '../security/security.js'
 import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
+import type { DriveBackgroundCoordinator } from '../drive/drive-background-worker.js'
 
 const publicPageCsp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
@@ -38,6 +39,7 @@ export async function registerSystemRoutes(
   options: Readonly<{
     loadPublicSettings?: PublicSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
+    background?: Pick<DriveBackgroundCoordinator, 'trigger'>
   }> = {}
 ): Promise<void> {
   const security = new Security(config.secureSalt)
@@ -52,7 +54,12 @@ export async function registerSystemRoutes(
 
   app.get('/ping', async (_request, reply) => {
     reply.header('cache-control', 'no-cache')
-    return { running: true, pid: process.pid }
+    const background = options.background?.trigger()
+    return {
+      running: true,
+      pid: process.pid,
+      ...(background === undefined ? {} : { bg_gdrive: background.running ? process.pid : false, background_started: background.started })
+    }
   })
 
   app.get('/health-check', async (_request, reply) => {

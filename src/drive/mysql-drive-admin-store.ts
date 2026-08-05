@@ -129,6 +129,34 @@ export class MySqlDriveAdminStore implements DriveAdminStore {
     return result.affectedRows > 0
   }
 
+  public async listPendingQueue(limit: number): Promise<readonly DriveQueueRecord[]> {
+    const boundedLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
+    const rows = await this.database.read<QueueRow[]>(
+      'SELECT `id`, `gdrive_id` FROM `tb_gdrive_queue` ORDER BY `id` ASC LIMIT ?',
+      [boundedLimit]
+    )
+    return Object.freeze(rows.map(queueRow))
+  }
+
+  public async enqueueQueue(fileId: string, delayed = false): Promise<boolean> {
+    const result = await this.database.write<ResultSetHeader>(
+      'INSERT IGNORE INTO `tb_gdrive_queue` (`gdrive_id`, `delayed`) VALUES (?, ?)',
+      [fileId, delayed ? 1 : 0]
+    )
+    return result.affectedRows > 0
+  }
+
+  public async deleteQueueByFileIds(fileIds: readonly string[]): Promise<number> {
+    const ids = [...new Set(fileIds)].slice(0, 500)
+    if (ids.length === 0) return 0
+    const placeholders = ids.map(() => '?').join(', ')
+    const result = await this.database.write<ResultSetHeader>(
+      `DELETE FROM \`tb_gdrive_queue\` WHERE \`gdrive_id\` IN (${placeholders})`,
+      ids
+    )
+    return result.affectedRows
+  }
+
   public async duplicateExists(fingerprint: DriveFingerprint): Promise<boolean> {
     const rows = await this.database.read<CountRow[]>(
       'SELECT COUNT(*) AS `total` FROM `tb_gdrive_duplicate` WHERE (`gdrive_id` <> ? OR `gdrive_email` <> ?) AND `fileSize` = ? AND `md5Checksum` = ? AND `sha1Checksum` = ? AND `sha256Checksum` = ? AND (`title` = ? OR `description` = ? OR `title` = ? OR `description` = ?)',

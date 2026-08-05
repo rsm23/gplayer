@@ -7,6 +7,7 @@ import { ExtractorFactory } from '../hosting/extractor-factory.js'
 import { RemoteProviderHttpClient } from '../hosting/provider-http.js'
 import { ProviderCookieHttpClient, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 import type { SourceApiRouteOptions } from './source-api-routes.js'
+import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
 const DEFAULT_LANGUAGE = 'en;q=0.9'
@@ -14,7 +15,13 @@ const DEFAULT_LANGUAGE = 'en;q=0.9'
 export function createSourceApiRuntime(
   app: FastifyInstance,
   config: AppConfig,
-  options: Readonly<{ loadHostingSettings?: HostingSettingsLoader }> = {}
+  options: Readonly<{
+    loadHostingSettings?: HostingSettingsLoader
+    gdrive?: Readonly<{
+      privateSources?: DrivePrivateSourceResolver
+      loadSettings?: DriveRuntimeSettingsLoader
+    }>
+  }> = {}
 ): SourceApiRouteOptions {
   const providerHttpClient = new RemoteProviderHttpClient()
   const extractors = new ExtractorFactory({
@@ -22,7 +29,8 @@ export function createSourceApiRuntime(
     ...(options.loadHostingSettings === undefined ? {} : {
       providerHttpClientForHost: (host: string) => new ProviderCookieHttpClient(host, providerHttpClient, options.loadHostingSettings as HostingSettingsLoader),
       youtubeCookie: async () => (await (options.loadHostingSettings as HostingSettingsLoader)()).cookies.youtube ?? ''
-    })
+    }),
+    ...(options.gdrive === undefined ? {} : { gdrive: options.gdrive })
   })
   const supportedHosts = new Set(extractors.supportedHosts())
   let database: Database | undefined

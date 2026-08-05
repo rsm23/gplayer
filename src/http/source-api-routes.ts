@@ -388,17 +388,21 @@ function proxySource(
 ): readonly MediaSource[] {
   const file = typeof source.file === 'string' ? source.file : ''
   if (file.length === 0) return []
+  const { proxy: _proxy, ...publicSource } = source
   let target: URL
   try {
     target = new URL(file)
   } catch {
-    return [source]
+    return [publicSource]
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') return []
+  if (source.proxy === false && target.origin === baseUrl.origin && target.pathname.startsWith('/gdrive-media/')) {
+    return [publicSource]
+  }
 
   const route = streamingRoute(source, target)
   const proxyPath = createStreamingProxyPath(route, target, security, identity)
-  return [{ ...source, file: new URL(proxyPath, baseUrl).toString() }]
+  return [{ ...publicSource, file: new URL(proxyPath, baseUrl).toString() }]
 }
 
 function proxyTrack(track: MediaTrack, security: Security, baseUrl: URL): readonly MediaTrack[] {

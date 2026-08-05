@@ -15,6 +15,7 @@ import { FilemailExtractor } from './filemail.js'
 import { FilemoonExtractor, type FilemoonExtractorOptions } from './filemoon.js'
 import { FireloadExtractor } from './fireload.js'
 import { GdriveExtractor } from './gdrive.js'
+import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
 import { GofileExtractor } from './gofile.js'
 import { GooglePhotosExtractor } from './googlephotos.js'
 import { HxFileExtractor } from './hxfile.js'
@@ -60,6 +61,10 @@ export class ExtractorFactory implements HostingExtractorFactory {
     filemoon?: FilemoonExtractorOptions
     youtube?: YoutubeClient
     youtubeCookie?: () => Promise<string>
+    gdrive?: Readonly<{
+      privateSources?: DrivePrivateSourceResolver
+      loadSettings?: DriveRuntimeSettingsLoader
+    }>
   }> = {}) {
     const providerHttpClient = options.providerHttpClient ?? new RemoteProviderHttpClient()
     const clientFor = (host: string): ProviderHttpClient => options.providerHttpClientForHost?.(host) ?? providerHttpClient
@@ -86,7 +91,7 @@ export class ExtractorFactory implements HostingExtractorFactory {
     this.register('filemail', (id) => new FilemailExtractor(id, clientFor('filemail')))
     this.register('filemoon', (id) => new FilemoonExtractor(id, clientFor('filemoon'), options.filemoon ?? {}))
     this.register('fireload', (id) => new FireloadExtractor(id, clientFor('fireload')))
-    this.register('gdrive', (id) => new GdriveExtractor(id, clientFor('gdrive')))
+    this.register('gdrive', (id) => new GdriveExtractor(id, clientFor('gdrive'), options.gdrive ?? {}))
     this.register('gofile', (id) => new GofileExtractor(id, clientFor('gofile')))
     this.register('googlephotos', (id) => new GooglePhotosExtractor(id, clientFor('googlephotos')))
     this.register('hxfile', (id) => new HxFileExtractor(id, clientFor('hxfile')))

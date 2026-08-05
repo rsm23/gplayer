@@ -65,6 +65,19 @@ class MemoryDriveAdminStore implements DriveAdminStore {
     this.queueItems = this.queueItems.filter((item) => item.id !== id)
     return before !== this.queueItems.length
   }
+  public async listPendingQueue(limit: number): Promise<readonly DriveQueueRecord[]> {
+    return this.queueItems.slice(0, limit)
+  }
+  public async enqueueQueue(fileId: string): Promise<boolean> {
+    if (this.queueItems.some((item) => item.gdrive_id === fileId)) return false
+    this.queueItems.push({ id: String(this.queueItems.length + 1), gdrive_id: fileId })
+    return true
+  }
+  public async deleteQueueByFileIds(fileIds: readonly string[]): Promise<number> {
+    const before = this.queueItems.length
+    this.queueItems = this.queueItems.filter((item) => !fileIds.includes(item.gdrive_id))
+    return before - this.queueItems.length
+  }
   public async duplicateExists(fingerprint: DriveFingerprint): Promise<boolean> {
     return this.fingerprints.some((item) => item.gdriveId !== fingerprint.gdriveId && item.fileSize === fingerprint.fileSize && item.md5Checksum === fingerprint.md5Checksum)
   }
@@ -194,6 +207,21 @@ describe('Google Drive v2 administration client and service', () => {
     expect(store.mirrors).toEqual([{ sourceId, mirrorId, mirrorEmail: account.email }])
   })
 
+  it('builds the fixed Drive v3 media request with refreshed credentials only on the server', async () => {
+    const store = new MemoryDriveAdminStore()
+    const http = new FixtureDriveHttp([
+      json({ access_token: 'access-token-value', token_type: 'Bearer', expires_in: 3600 })
+    ])
+    const { api } = driveService(store, http)
+    const media = await api.mediaRequest(account.email, sourceId)
+    expect(media?.target.toString()).toBe(`https://www.googleapis.com/drive/v3/files/${sourceId}?alt=media&key=api-key`)
+    expect(media?.authorization).toBe('Bearer access-token-value')
+    expect(http.requests).toHaveLength(1)
+    expect(JSON.stringify({ publicSource: `/gdrive-media/encrypted` })).not.toContain(media?.authorization ?? '')
+    await expect(api.mediaRequest('unknown@example.test', sourceId)).resolves.toBeNull()
+    await expect(api.mediaRequest(account.email, '../unsafe')).resolves.toBeNull()
+  })
+
   it('maintains backup, queue, and duplicate contracts with exact messages', async () => {
     const store = new MemoryDriveAdminStore()
     store.fingerprints.push({ gdriveId: 'olderFileABC', email: 'other@example.test', title: 'Movie.mp4', description: '', fileSize: '1024', md5Checksum: 'a'.repeat(32), sha1Checksum: 'b'.repeat(40), sha256Checksum: 'c'.repeat(64) })
@@ -234,6 +262,9 @@ describe('MySqlDriveAdminStore', () => {
     await expect(store.listActiveAccounts(true)).resolves.toEqual([account])
     await expect(store.listBackups({ draw: 0, start: 4, length: 10, search: "x' OR 1=1", orderBy: 'created', orderDir: 'desc' })).resolves.toEqual(expect.objectContaining({ recordsTotal: 1, recordsFiltered: 1 }))
     await expect(store.listQueue({ draw: 0, start: 0, length: 10, search: '', orderBy: 'id', orderDir: 'asc' })).resolves.toEqual(expect.objectContaining({ data: [{ id: '1', gdrive_id: sourceId }] }))
+    await expect(store.listPendingQueue(1_000)).resolves.toEqual([{ id: '1', gdrive_id: sourceId }])
+    await expect(store.enqueueQueue(sourceId, true)).resolves.toBe(true)
+    await expect(store.deleteQueueByFileIds([sourceId, mirrorId, sourceId])).resolves.toBe(1)
     const fingerprint = { gdriveId: sourceId, email: account.email, title: 'Movie', description: '', fileSize: '1', md5Checksum: 'a'.repeat(32), sha1Checksum: 'b'.repeat(40), sha256Checksum: 'c'.repeat(64) }
     await expect(store.duplicateExists(fingerprint)).resolves.toBe(true)
     await expect(store.saveFingerprint(fingerprint)).resolves.toBe(true)
@@ -243,6 +274,9 @@ describe('MySqlDriveAdminStore', () => {
     expect(writes.at(-1)?.[0]).toContain('WHERE NOT EXISTS')
     const duplicateSql = reads.find(([sql]) => sql.includes('tb_gdrive_duplicate'))?.[0] ?? ''
     expect(duplicateSql).toContain('(`gdrive_id` <> ? OR `gdrive_email` <> ?)')
+    expect(reads.find(([sql]) => sql.includes('ORDER BY `id` ASC LIMIT ?') && !sql.includes('OFFSET'))?.[1]).toEqual([500])
+    expect(writes.find(([sql]) => sql.includes('INSERT IGNORE INTO `tb_gdrive_queue`'))?.[1]).toEqual([sourceId, 1])
+    expect(writes.find(([sql]) => sql.includes('DELETE FROM `tb_gdrive_queue` WHERE `gdrive_id` IN'))?.[1]).toEqual([sourceId, mirrorId])
   })
 })
 

@@ -1,5 +1,6 @@
 import { BaseExtractor } from './base-extractor.js'
 import type { ProviderHttpClient } from './provider-http.js'
+import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
 
 const GDRIVE_INFO_ORIGIN = 'https://docs.google.com'
 const GDRIVE_REFERER = 'https://youtube.googleapis.com/'
@@ -14,7 +15,14 @@ export type GdriveVideoInfo = Readonly<{
 export class GdriveExtractor extends BaseExtractor {
   #loaded = false
 
-  public constructor(id: string, private readonly http: ProviderHttpClient) {
+  public constructor(
+    id: string,
+    private readonly http: ProviderHttpClient,
+    private readonly options: Readonly<{
+      privateSources?: DrivePrivateSourceResolver
+      loadSettings?: DriveRuntimeSettingsLoader
+    }> = {}
+  ) {
     super(normalizeGdriveId(id))
     this.referer = GDRIVE_REFERER
   }
@@ -27,25 +35,52 @@ export class GdriveExtractor extends BaseExtractor {
   private async load(): Promise<void> {
     if (this.#loaded || !isSafeGdriveId(this.id)) return
     this.#loaded = true
+    const settings = await this.loadSettings()
+    if (settings.copy) await this.options.privateSources?.enqueue(this.id).catch(() => undefined)
+
+    if (this.downloadable && this.options.privateSources !== undefined) {
+      await this.loadPrivate(false)
+      if (this.sources.length > 0) return
+    }
+
     const url = new URL('/u/0/get_video_info', GDRIVE_INFO_ORIGIN)
     url.searchParams.set('docid', this.id)
     try {
       const response = await this.http.get({ url, headers: { referer: GDRIVE_REFERER } })
-      if (response.status < 200 || response.status >= 300 || response.url.hostname !== 'docs.google.com') return
-      const info = parseGdriveVideoInfo(response.body)
-      if (info === null || info.sources.length === 0) return
-
-      this.sources.push(...info.sources)
-      if (!this.downloadable) {
-        const first = info.sources[0]
-        const last = info.sources.at(-1)
-        if (first !== undefined) this.sources.push({ ...first, label: 'Default' })
-        if (last !== undefined) this.sources.push({ ...last, label: 'Original' })
+      if (response.status >= 200 && response.status < 300 && response.url.hostname === 'docs.google.com') {
+        const info = parseGdriveVideoInfo(response.body)
+        if (info !== null && info.sources.length > 0) {
+          this.sources.push(...info.sources)
+          if (!this.downloadable) {
+            const first = info.sources[0]
+            const last = info.sources.at(-1)
+            if (first !== undefined) this.sources.push({ ...first, label: 'Default' })
+            if (last !== undefined) this.sources.push({ ...last, label: 'Original' })
+          }
+          this.image = info.image
+          this.title = info.title
+          return
+        }
       }
-      this.image = info.image
-      this.title = info.title
     } catch {
       // Permission errors, invalid identities, and unavailable public files produce an empty result.
+    }
+    await this.loadPrivate(settings.copy)
+  }
+
+  private async loadPrivate(allowCopy: boolean): Promise<void> {
+    const source = await this.options.privateSources?.resolve(this.id, this.email, allowCopy).catch(() => null)
+    if (source === undefined || source === null) return
+    this.sources.push(source)
+    this.title = source.title
+    this.image = source.image
+  }
+
+  private async loadSettings(): Promise<Readonly<{ copy: boolean; copyAll: boolean }>> {
+    try {
+      return await this.options.loadSettings?.() ?? { copy: false, copyAll: false }
+    } catch {
+      return { copy: false, copyAll: false }
     }
   }
 }
