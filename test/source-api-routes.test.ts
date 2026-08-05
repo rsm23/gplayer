@@ -295,13 +295,46 @@ describe('legacy player source API routes', () => {
     expect(decoded.sources[0].file).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
     expect(JSON.stringify(decoded)).not.toContain('provider-secret')
     expect(JSON.stringify(decoded)).not.toContain('https://origin.example.test/')
+    expect(decoded.poster).not.toContain('gsc=')
+    expect(decoded.filmstrip).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
     expect(decoded.tracks).toEqual([
       expect.objectContaining({ file: expect.stringMatching(/^https:\/\/player\.example\/subtitle\//), kind: 'captions', label: 'English' })
     ])
+    expect(decoded.tracks[0].file).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
     expect(resolve).toHaveBeenCalledWith(
       expect.objectContaining({ host: 'direct', download: '1' }),
       expect.objectContaining({ userAgent: 'Test Browser', language: 'fr-FR', downloadable: true })
     )
+  })
+
+  it('attaches provider context to extractor-owned posters but not caller-supplied poster origins', async () => {
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/master.m3u8' })
+    resolve.mockResolvedValueOnce({ ...mediaResult(), cookies: ['session=poster-secret'] })
+    const providerPosterResponse = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const providerPoster = decryptJson(providerPosterResponse.body, request.password).poster as string
+    expect(providerPoster).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
+    expect(providerPoster).not.toContain('poster-secret')
+
+    const callerRequest = authenticatedRequest({
+      host: 'direct',
+      id: 'https://cdn.example.test/master.m3u8',
+      poster: 'https://caller.example/poster.jpg'
+    })
+    resolve.mockResolvedValueOnce({ ...mediaResult(), cookies: ['session=poster-secret'] })
+    const callerPosterResponse = await app.inject({
+      method: 'POST',
+      url: `/api?p=${callerRequest.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: callerRequest.body
+    })
+    const callerPoster = decryptJson(callerPosterResponse.body, callerRequest.password).poster as string
+    expect(callerPoster).not.toContain('gsc=')
+    expect(callerPoster).not.toContain('poster-secret')
   })
 
   it('captures successfully played public media under the configured account', async () => {

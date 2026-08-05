@@ -1,24 +1,41 @@
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import {
   createSpriteFilmstripWebVtt,
+  createMediaProxyPath,
   normalizeWebVtt,
   registerMediaRoutes,
-  repairFilmstripWebVtt
+  repairFilmstripWebVtt,
+  type MediaRouteOptions
 } from '../src/http/media-routes.js'
 import { Security } from '../src/security/security.js'
+import { legacyXxh32 } from '../src/background/media-cache-path.js'
+import { ProviderStreamContextRegistry } from '../src/stream/provider-stream-context.js'
 
 const secureSalt = '1234567890123456'
+const mediaConfig = loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt, BASE_URL: 'https://player.example/' })
 const posterBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 let upstream: Server
 let upstreamUrl: URL
 let app: FastifyInstance | undefined
+let publicRoot = ''
+let upstreamHits = new Map<string, number>()
+let lastUpstreamHeaders: import('node:http').IncomingHttpHeaders = {}
 
 beforeEach(async () => {
+  publicRoot = await mkdtemp(path.join(tmpdir(), 'gplayer-public-media-'))
+  upstreamHits = new Map()
+  lastUpstreamHeaders = {}
   upstream = createServer((request, response) => {
+    upstreamHits.set(request.url ?? '', (upstreamHits.get(request.url ?? '') ?? 0) + 1)
+    lastUpstreamHeaders = request.headers
     if (request.url === '/poster.png') {
       response.writeHead(200, {
         'content-type': 'image/png',
@@ -57,15 +74,25 @@ afterEach(async () => {
   app = undefined
   upstream.close()
   await once(upstream, 'close')
+  await rm(publicRoot, { recursive: true, force: true })
 })
 
-async function buildMediaApp(allowPrivateNetworks: boolean): Promise<FastifyInstance> {
+async function buildMediaApp(
+  allowPrivateNetworks: boolean,
+  options: Omit<MediaRouteOptions, 'allowPrivateNetworks' | 'publicRoot'> = {}
+): Promise<FastifyInstance> {
   const instance = Fastify()
   await registerMediaRoutes(
     instance,
-    loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }),
-    { allowPrivateNetworks }
+    mediaConfig,
+    { ...options, allowPrivateNetworks, publicRoot }
   )
+  await instance.register(fastifyStatic, {
+    root: path.join(publicRoot, 'uploads'),
+    prefix: '/uploads/',
+    decorateReply: false,
+    wildcard: true
+  })
   return instance
 }
 
@@ -93,6 +120,38 @@ describe('poster, subtitle, and filmstrip routes', () => {
     expect(response.rawPayload).toEqual(posterBytes)
   })
 
+  it('redirects configured-host posters without proxying the application back into itself', async () => {
+    app = await buildMediaApp(false)
+    const target = new URL('/uploads/images/local.jpg', mediaConfig.baseUrl)
+    const proxy = createMediaProxyPath('poster', target.toString(), new Security(secureSalt)) ?? ''
+    const response = await app.inject({ method: 'GET', url: proxy })
+
+    expect(response.statusCode).toBe(302)
+    expect(response.headers.location).toBe(target.toString())
+    expect(upstreamHits.size).toBe(0)
+  })
+
+  it('atomically caches poster bytes under the legacy xxh32 path and redirects later requests', async () => {
+    app = await buildMediaApp(true)
+    const target = new URL('/poster.png', upstreamUrl)
+    const proxy = createMediaProxyPath('poster', target.toString(), new Security(secureSalt)) ?? ''
+
+    const first = await app.inject({ method: 'GET', url: proxy })
+    const second = await app.inject({ method: 'GET', url: proxy })
+    const expected = path.join(publicRoot, 'uploads/images/tmp', `${legacyXxh32(target.toString())}.cache`)
+
+    expect(first.statusCode).toBe(200)
+    expect(first.rawPayload).toEqual(posterBytes)
+    expect(second.statusCode).toBe(302)
+    expect(second.headers.location).toContain(`/uploads/images/tmp/${legacyXxh32(target.toString())}.cache`)
+    expect(second.headers.location).not.toContain('gsc=')
+    await expect(readFile(expected)).resolves.toEqual(posterBytes)
+    const publicResponse = await app.inject({ method: 'GET', url: new URL(second.headers.location ?? '').pathname })
+    expect(publicResponse.statusCode).toBe(200)
+    expect(publicResponse.rawPayload).toEqual(posterBytes)
+    expect(upstreamHits.get('/poster.png')).toBe(1)
+  })
+
   it('normalizes SRT subtitles to WebVTT and removes inline override tags', async () => {
     app = await buildMediaApp(true)
     const target = new URL('/caption.srt', upstreamUrl)
@@ -112,6 +171,25 @@ describe('poster, subtitle, and filmstrip routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.body).toContain('00:00:02.100 --> 00:00:04.250')
     expect(response.body).toContain('First\nsecond')
+  })
+
+  it('persists normalized subtitle output and redirects cache hits without another fetch', async () => {
+    app = await buildMediaApp(true)
+    const target = new URL('/caption.srt', upstreamUrl)
+    const proxy = createMediaProxyPath('subtitle', target.toString(), new Security(secureSalt)) ?? ''
+
+    const first = await app.inject({ method: 'GET', url: proxy })
+    const second = await app.inject({ method: 'GET', url: proxy })
+    const expected = path.join(publicRoot, 'uploads/subtitles/tmp', `${legacyXxh32(target.toString())}.cache`)
+
+    expect(first.body).toContain('WEBVTT')
+    expect(second.statusCode).toBe(302)
+    expect(second.headers.location).toContain(`/uploads/subtitles/tmp/${legacyXxh32(target.toString())}.cache`)
+    await expect(readFile(expected, 'utf8')).resolves.toBe(first.body)
+    const publicResponse = await app.inject({ method: 'GET', url: new URL(second.headers.location ?? '').pathname })
+    expect(publicResponse.statusCode).toBe(200)
+    expect(publicResponse.body).toBe(first.body)
+    expect(upstreamHits.get('/caption.srt')).toBe(1)
   })
 
   it('rejects malformed authenticated paths without reflecting token material', async () => {
@@ -144,6 +222,88 @@ describe('poster, subtitle, and filmstrip routes', () => {
     expect(response.headers['content-type']).toBe('text/vtt; charset=utf-8')
     expect(response.body).toContain('WEBVTT\n\n00:00:00.000 --> 00:00:05.000')
     expect(response.body).toContain(`${upstreamUrl.origin}/previews/sprites/sheet.jpg#xywh=0,0,160,90`)
+  })
+
+  it('reuses the downloaded custom filmstrip sprite while regenerating VTT per request', async () => {
+    const sprite = Buffer.alloc(24)
+    posterBytes.copy(sprite)
+    sprite.writeUInt32BE(80, 16)
+    sprite.writeUInt32BE(88, 20)
+    const open = vi.fn(async (request: Readonly<{ url: string | URL }>) => ({
+      url: request.url instanceof URL ? request.url : new URL(request.url),
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'image/png' }),
+      body: new Response(sprite).body
+    }))
+    app = await buildMediaApp(false, { remoteStream: { open } as never })
+    const target = new URL('https://cdn.mycdn.me/videoPreview.jpg#count=2&frequency=5')
+    const proxy = createMediaProxyPath('filmstrip', target.toString(), new Security(secureSalt)) ?? ''
+
+    const first = await app.inject({ method: 'GET', url: proxy })
+    const second = await app.inject({ method: 'GET', url: proxy })
+    const alternateTarget = new URL(target)
+    alternateTarget.hash = 'count=1&frequency=10'
+    const alternateProxy = createMediaProxyPath('filmstrip', alternateTarget.toString(), new Security(secureSalt)) ?? ''
+    const alternate = await app.inject({ method: 'GET', url: alternateProxy })
+    const imageTarget = new URL(target)
+    imageTarget.hash = ''
+    const expected = path.join(publicRoot, 'uploads/images/cache', `${legacyXxh32(imageTarget.toString())}.jpg`)
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(second.body).toBe(first.body)
+    expect(second.body).toContain('videoPreview.jpg#xywh=0,44,80,44')
+    expect(alternate.body).toContain('00:00:00.000 --> 00:00:10.000')
+    expect(alternate.body).not.toContain('00:00:10.000 -->')
+    await expect(readFile(expected)).resolves.toEqual(sprite)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies server-only provider headers to provider-owned media without leaking them into redirects', async () => {
+    const providerContexts = new ProviderStreamContextRegistry()
+    const targets = [
+      new URL('/poster.png', upstreamUrl),
+      new URL('/caption.srt', upstreamUrl),
+      new URL('/previews/strip.vtt', upstreamUrl)
+    ]
+    const contextToken = providerContexts.register({
+      host: 'streamhg',
+      targets,
+      referer: 'https://embed.example/e/fixture',
+      cookies: ['session=media-secret'],
+      userAgent: 'Provider Browser',
+      language: 'fr-FR'
+    }) ?? ''
+    app = await buildMediaApp(true, { providerContexts })
+
+    for (const [route, target] of [
+      ['poster', targets[0]],
+      ['subtitle', targets[1]],
+      ['filmstrip', targets[2]]
+    ] as const) {
+      const proxy = createMediaProxyPath(route, target?.toString() ?? '', new Security(secureSalt), contextToken) ?? ''
+      const response = await app.inject({ method: 'GET', url: proxy })
+      expect(response.statusCode).toBe(200)
+      expect(lastUpstreamHeaders).toMatchObject({
+        cookie: 'session=media-secret',
+        origin: 'https://embed.example',
+        referer: 'https://embed.example/e/fixture',
+        'user-agent': 'Provider Browser',
+        'accept-language': 'fr-FR'
+      })
+      expect(response.body).not.toContain('media-secret')
+
+      const cached = await app.inject({ method: 'GET', url: proxy })
+      if (route === 'filmstrip') {
+        expect(cached.statusCode).toBe(200)
+        expect(cached.body).not.toContain('media-secret')
+      } else {
+        expect(cached.statusCode).toBe(302)
+        expect(cached.headers.location).not.toContain(contextToken)
+        expect(cached.headers.location).not.toContain('media-secret')
+      }
+    }
   })
 
   it('rejects malformed filmstrip tokens without performing a fetch', async () => {

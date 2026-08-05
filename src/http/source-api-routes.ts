@@ -375,9 +375,19 @@ function createSourceResponse(
     userAgent: requestContext.userAgent,
     language: requestContext.language
   })
+  const title = result.title.length > 0 ? result.title : titleFromMedia(media)
+  const configuredPoster = playerSettings.poster
+  const posterSource = playerSettings.force_default_poster && configuredPoster.length > 0
+    ? configuredPoster
+    : media.poster || result.image || configuredPoster
   const contextToken = providerContexts?.register({
     host: upstream.host,
-    targets: result.sources.flatMap(sourceTargets),
+    targets: [
+      ...result.sources.flatMap(sourceTargets),
+      ...result.tracks.flatMap(sourceTargets),
+      ...sourceTargets({ file: result.image }),
+      ...sourceTargets({ file: result.filmstrip })
+    ],
     referer: result.referer,
     cookies: result.cookies,
     userAgent: upstream.userAgent,
@@ -388,12 +398,12 @@ function createSourceResponse(
     id: upstream.id,
     ...(contextToken === undefined ? {} : { contextToken })
   }
-  const title = result.title.length > 0 ? result.title : titleFromMedia(media)
-  const configuredPoster = playerSettings.poster
-  const posterSource = playerSettings.force_default_poster && configuredPoster.length > 0
-    ? configuredPoster
-    : media.poster || result.image || configuredPoster
-  const poster = proxyPoster(posterSource, security, config.baseUrl)
+  const poster = proxyPoster(
+    posterSource,
+    security,
+    config.baseUrl,
+    posterSource !== '' && posterSource === result.image ? contextToken : undefined
+  )
 
   return {
     query: {
@@ -409,9 +419,9 @@ function createSourceResponse(
     download_url: absolutePlayerUrl(config, playerSettings.slug_download, canonicalToken),
     title,
     poster,
-    filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, config.baseUrl),
+    filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, config.baseUrl, contextToken),
     sources: result.sources.flatMap((source) => proxySource(source, security, identity, config.baseUrl)),
-    tracks: result.tracks.flatMap((track) => proxyTrack(track, security, config.baseUrl))
+    tracks: result.tracks.flatMap((track) => proxyTrack(track, security, config.baseUrl, contextToken))
   }
 }
 
@@ -451,22 +461,22 @@ function proxySource(
   return [{ ...publicSource, file: new URL(proxyPath, baseUrl).toString() }]
 }
 
-function proxyTrack(track: MediaTrack, security: Security, baseUrl: URL): readonly MediaTrack[] {
+function proxyTrack(track: MediaTrack, security: Security, baseUrl: URL, contextToken?: string): readonly MediaTrack[] {
   const file = typeof track.file === 'string' ? track.file : ''
   if (file.length === 0) return []
-  const proxied = createMediaProxyPath('subtitle', file, security)
+  const proxied = createMediaProxyPath('subtitle', file, security, contextToken)
   return proxied === null ? [track] : [{ ...track, file: new URL(proxied, baseUrl).toString() }]
 }
 
-function proxyPoster(value: string, security: Security, baseUrl: URL): string {
+function proxyPoster(value: string, security: Security, baseUrl: URL, contextToken?: string): string {
   if (value.length === 0) return ''
-  const proxied = createMediaProxyPath('poster', value, security)
+  const proxied = createMediaProxyPath('poster', value, security, contextToken)
   return proxied === null ? value : new URL(proxied, baseUrl).toString()
 }
 
-function proxyFilmstrip(value: string, security: Security, baseUrl: URL): string {
+function proxyFilmstrip(value: string, security: Security, baseUrl: URL, contextToken?: string): string {
   if (value.length === 0) return ''
-  const proxied = createMediaProxyPath('filmstrip', value, security)
+  const proxied = createMediaProxyPath('filmstrip', value, security, contextToken)
   return proxied === null ? value : new URL(proxied, baseUrl).toString()
 }
 

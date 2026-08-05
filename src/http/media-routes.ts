@@ -1,12 +1,17 @@
+import { readFile } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AppConfig } from '../config.js'
 import { Security } from '../security/security.js'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
+import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
+import { PublicMediaCache, type PublicMediaCacheKind } from '../stream/public-media-cache.js'
 
 const MAX_MEDIA_URL_LENGTH = 8_192
+const MAX_POSTER_BYTES = 20 * 1_024 * 1_024
 const MAX_SUBTITLE_BYTES = 5 * 1_024 * 1_024
 const MAX_FILMSTRIP_BYTES = 20 * 1_024 * 1_024
+const PROVIDER_CONTEXT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const forwardedResponseHeaders = [
   'accept-ranges',
   'cache-control',
@@ -23,12 +28,15 @@ export type MediaRouteOptions = Readonly<{
   remoteStream?: RemoteStream
   /** Integration-test escape hatch. Public deployments must keep this false. */
   allowPrivateNetworks?: boolean
+  publicRoot?: string
+  providerContexts?: ProviderStreamContextRegistry
 }>
 
 export function createMediaProxyPath(
   route: 'filmstrip' | 'poster' | 'subtitle',
   value: string,
-  security: Security
+  security: Security,
+  contextToken?: string
 ): string | null {
   let target: URL
   try {
@@ -38,7 +46,10 @@ export function createMediaProxyPath(
   }
   if ((target.protocol !== 'http:' && target.protocol !== 'https:') || target.username || target.password) return null
   const extension = route === 'poster' ? posterExtension(target) : 'vtt'
-  return `/${route}/${security.encryptURL(target.toString())}.${extension}`
+  const path = `/${route}/${security.encryptURL(target.toString())}.${extension}`
+  return contextToken !== undefined && PROVIDER_CONTEXT_TOKEN_PATTERN.test(contextToken)
+    ? `${path}?gsc=${contextToken}`
+    : path
 }
 
 export async function registerMediaRoutes(
@@ -49,16 +60,23 @@ export async function registerMediaRoutes(
   const security = new Security(config.secureSalt)
   const remoteStream = options.remoteStream ?? new RemoteStream()
   const allowPrivateNetworks = options.allowPrivateNetworks ?? false
+  const publicMediaCache = options.publicRoot === undefined
+    ? undefined
+    : new PublicMediaCache(options.publicRoot, config.baseUrl)
 
   const poster = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const target = mediaTarget(request.url, 'poster', security)
     if (target === null) return mediaError(reply, 400, 'Invalid poster link')
+    if (target.hostname === config.baseUrl.hostname) return cachedMediaRedirect(reply, target)
+    const cached = await readCachedMedia(publicMediaCache, 'poster', target)
+    if (cached !== null) return cachedMediaRedirect(reply, cached.url)
 
     try {
       const response = await remoteStream.open({
         url: target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
+        ...providerHeadersOption(request.url, options.providerContexts),
         allowPrivateNetworks
       })
       if (!successfulMediaResponse(response)) {
@@ -74,6 +92,11 @@ export async function registerMediaRoutes(
         .header('x-content-type-options', 'nosniff')
         .header('referrer-policy', 'no-referrer')
         .code(response.status)
+      if (request.method !== 'HEAD' && response.status === 200 && response.body !== null && publicMediaCache !== undefined) {
+        const branches = response.body.tee()
+        publicMediaCache.capture('poster', target, branches[1], MAX_POSTER_BYTES)
+        return sendWebBody(reply, branches[0])
+      }
       return sendRemoteBody(reply, response)
     } catch {
       return mediaError(reply, 502, 'Poster is unavailable')
@@ -83,12 +106,15 @@ export async function registerMediaRoutes(
   const subtitle = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const target = mediaTarget(request.url, 'subtitle', security)
     if (target === null) return mediaError(reply, 400, 'Invalid subtitle link')
+    const cached = await readCachedMedia(publicMediaCache, 'subtitle', target)
+    if (cached !== null) return cachedMediaRedirect(reply, cached.url)
 
     try {
       const response = await remoteStream.open({
         url: target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
+        ...providerHeadersOption(request.url, options.providerContexts),
         allowPrivateNetworks
       })
       if (!successfulMediaResponse(response)) {
@@ -107,6 +133,7 @@ export async function registerMediaRoutes(
 
       const source = await readLimitedText(response.body, MAX_SUBTITLE_BYTES)
       const output = normalizeWebVtt(source, target)
+      await publicMediaCache?.write('subtitle', target, Buffer.from(output), MAX_SUBTITLE_BYTES).catch(() => undefined)
       return reply
         .header('content-type', 'text/vtt; charset=utf-8')
         .header('content-length', Buffer.byteLength(output))
@@ -125,10 +152,18 @@ export async function registerMediaRoutes(
     const target = mediaTarget(request.url, 'filmstrip', security)
     if (target === null) return mediaError(reply, 400, 'Invalid filmstrip link')
 
-    if (target.origin === config.baseUrl.origin) {
+    if (target.hostname === config.baseUrl.hostname) {
       return reply
         .header('cache-control', 'public, max-age=300')
         .redirect(target.toString(), 302)
+    }
+    const customSize = customFilmstripSize(target)
+    if (customSize !== null) {
+      const cachedImage = await readCachedMedia(publicMediaCache, 'filmstrip-image', target)
+      if (cachedImage !== null && cachedImage.size <= MAX_FILMSTRIP_BYTES) {
+        const source = await readFile(cachedImage.file).catch(() => null)
+        if (source !== null) return sendFilmstripOutput(reply, createSpriteFilmstripWebVtt(source, target, customSize.width, customSize.height))
+      }
     }
 
     try {
@@ -136,6 +171,7 @@ export async function registerMediaRoutes(
         url: target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
+        ...providerHeadersOption(request.url, options.providerContexts),
         allowPrivateNetworks
       })
       if (!successfulMediaResponse(response)) {
@@ -153,19 +189,13 @@ export async function registerMediaRoutes(
       }
 
       const source = await readLimitedBytes(response.body, MAX_FILMSTRIP_BYTES, 'Filmstrip')
-      const customSize = customFilmstripSize(target)
+      if (customSize !== null) {
+        await publicMediaCache?.write('filmstrip-image', target, source, MAX_FILMSTRIP_BYTES).catch(() => undefined)
+      }
       const output = customSize === null
         ? repairFilmstripWebVtt(new TextDecoder().decode(source), target)
         : createSpriteFilmstripWebVtt(source, target, customSize.width, customSize.height)
-      return reply
-        .header('content-type', 'text/vtt; charset=utf-8')
-        .header('content-length', Buffer.byteLength(output))
-        .header('cache-control', 'public, max-age=300')
-        .header('content-disposition', 'inline')
-        .header('x-content-type-options', 'nosniff')
-        .header('referrer-policy', 'no-referrer')
-        .code(200)
-        .send(output)
+      return sendFilmstripOutput(reply, output)
     } catch {
       return mediaError(reply, 502, 'Filmstrip is unavailable')
     }
@@ -234,7 +264,50 @@ function applyProxyHeaders(reply: FastifyReply, response: RemoteStreamResponse):
 
 function sendRemoteBody(reply: FastifyReply, response: RemoteStreamResponse): unknown {
   if (response.body === null) return reply.send()
-  return reply.send(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>))
+  return sendWebBody(reply, response.body)
+}
+
+function sendWebBody(reply: FastifyReply, body: ReadableStream<Uint8Array>): unknown {
+  return reply.send(Readable.fromWeb(body as import('node:stream/web').ReadableStream<Uint8Array>))
+}
+
+async function readCachedMedia(
+  cache: PublicMediaCache | undefined,
+  kind: PublicMediaCacheKind,
+  target: URL
+): Promise<Awaited<ReturnType<PublicMediaCache['read']>>> {
+  return cache === undefined ? null : await cache.read(kind, target).catch(() => null)
+}
+
+function cachedMediaRedirect(reply: FastifyReply, target: URL): unknown {
+  return reply
+    .header('cache-control', 'public, max-age=300')
+    .header('referrer-policy', 'no-referrer')
+    .header('x-content-type-options', 'nosniff')
+    .redirect(target.toString(), 302)
+}
+
+function sendFilmstripOutput(reply: FastifyReply, output: string): unknown {
+  return reply
+    .header('content-type', 'text/vtt; charset=utf-8')
+    .header('content-length', Buffer.byteLength(output))
+    .header('cache-control', 'public, max-age=300')
+    .header('content-disposition', 'inline')
+    .header('x-content-type-options', 'nosniff')
+    .header('referrer-policy', 'no-referrer')
+    .code(200)
+    .send(output)
+}
+
+function providerHeadersOption(
+  requestUrl: string,
+  registry: ProviderStreamContextRegistry | undefined
+): Readonly<{ headersForTarget?: (target: URL) => Headers }> {
+  if (registry === undefined) return {}
+  const request = new URL(requestUrl, 'http://gplayer.invalid')
+  const token = request.searchParams.get('gsc') ?? ''
+  if (!PROVIDER_CONTEXT_TOKEN_PATTERN.test(token)) return {}
+  return { headersForTarget: (target) => registry.headersForTarget(token, target) }
 }
 
 async function readLimitedText(body: ReadableStream<Uint8Array> | null, limit: number): Promise<string> {

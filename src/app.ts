@@ -461,7 +461,7 @@ export async function buildApp(
     }
   })
   await registerDriveMediaRoutes(app, driveMediaRuntime)
-  await registerMediaRoutes(app, config)
+  await registerMediaRoutes(app, config, { publicRoot, providerContexts: providerStreamContexts })
   await registerStreamingRoutes(app, config, {
     providerContexts: providerStreamContexts,
     customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target),
