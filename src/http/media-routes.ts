@@ -6,6 +6,7 @@ import { Security } from '../security/security.js'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
 import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
 import { PublicMediaCache, type PublicMediaCacheKind } from '../stream/public-media-cache.js'
+import { convertSubtitleToWebVtt } from '../subtitles/subtitle-converter.js'
 
 const MAX_MEDIA_URL_LENGTH = 8_192
 const MAX_POSTER_BYTES = 20 * 1_024 * 1_024
@@ -134,8 +135,8 @@ export async function registerMediaRoutes(
           .send()
       }
 
-      const source = await readLimitedText(response.body, MAX_SUBTITLE_BYTES)
-      const output = normalizeWebVtt(source, target)
+      const source = await readLimitedBytes(response.body, MAX_SUBTITLE_BYTES, 'Subtitle')
+      const output = convertSubtitleToWebVtt(source, target)
       await publicMediaCache?.write('subtitle', target, Buffer.from(output), MAX_SUBTITLE_BYTES).catch(() => undefined)
       return reply
         .header('content-type', 'text/vtt; charset=utf-8')
@@ -313,10 +314,6 @@ function providerHeadersOption(
   return { headersForTarget: (target) => registry.headersForTarget(token, target) }
 }
 
-async function readLimitedText(body: ReadableStream<Uint8Array> | null, limit: number): Promise<string> {
-  return new TextDecoder().decode(await readLimitedBytes(body, limit, 'Subtitle'))
-}
-
 async function readLimitedBytes(
   body: ReadableStream<Uint8Array> | null,
   limit: number,
@@ -466,94 +463,7 @@ function nonnegativeInteger(value: string | null): number {
 }
 
 export function normalizeWebVtt(input: string, sourceUrl: URL): string {
-  let content = input
-    .replace(/^\uFEFF/, '')
-    .replace(/\\x[0-9A-Fa-f]{2}/g, '')
-    .replace(/\{.*?\}/g, '')
-    .trim()
-  if (content.startsWith('WEBVTT')) return content
-
-  const extension = sourceUrl.pathname.split('.').at(-1)?.toLowerCase() ?? ''
-  if (sourceUrl.hostname.toLowerCase().includes('youtube.com') && extension !== 'vtt') {
-    content = youtubeTimedTextToVtt(content)
-  } else if (extension === 'ass' || content.includes('[Script Info]') || content.includes('[Events]')) {
-    content = assToVtt(content)
-  } else if (extension === 'dfxp' || extension === 'ttml' || /<tt(?:\s|>)/i.test(content)) {
-    content = timedTextMarkupToVtt(content)
-  } else {
-    content = srtLikeToVtt(content)
-  }
-
-  return content.startsWith('WEBVTT') ? content : `WEBVTT\n\n${content}`
-}
-
-function srtLikeToVtt(content: string): string {
-  return content
-    .replace(/\r\n?/g, '\n')
-    .replace(/(\d{1,2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
-    .replace(/^(\d{1,2}:\d{2}:\d{2}\.\d+)\s*,\s*(\d{1,2}:\d{2}:\d{2}\.\d+)$/gm, '$1 --> $2')
-    .trim()
-}
-
-function assToVtt(content: string): string {
-  const cues: string[] = []
-  for (const line of content.replace(/\r\n?/g, '\n').split('\n')) {
-    if (!/^Dialogue:/i.test(line)) continue
-    const parts = line.slice(line.indexOf(':') + 1).split(',')
-    if (parts.length < 10) continue
-    const start = assTimestamp(parts[1] ?? '')
-    const end = assTimestamp(parts[2] ?? '')
-    const text = decodeEntities(parts.slice(9).join(',').replaceAll('\\N', '\n').replaceAll('\\n', '\n'))
-    if (start !== null && end !== null && text.trim().length > 0) cues.push(`${start} --> ${end}\n${text.trim()}`)
-  }
-  return `WEBVTT\n\n${cues.join('\n\n')}`
-}
-
-function assTimestamp(value: string): string | null {
-  const match = value.trim().match(/^(\d+):(\d{2}):(\d{2})[.](\d{1,3})$/)
-  if (match === null) return null
-  const [, hours = '0', minutes = '00', seconds = '00', fraction = '0'] = match
-  return `${hours.padStart(2, '0')}:${minutes}:${seconds}.${fraction.padEnd(3, '0').slice(0, 3)}`
-}
-
-function timedTextMarkupToVtt(content: string): string {
-  const cues: string[] = []
-  for (const match of content.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)) {
-    const attributes = match[1] ?? ''
-    const begin = attributes.match(/\bbegin=["']([^"']+)["']/i)?.[1]
-    const end = attributes.match(/\bend=["']([^"']+)["']/i)?.[1]
-    const duration = attributes.match(/\bdur=["']([^"']+)["']/i)?.[1]
-    const startSeconds = parseTime(begin ?? '')
-    const endSeconds = end === undefined ? startSeconds + parseTime(duration ?? '') : parseTime(end)
-    const text = decodeEntities((match[2] ?? '').replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]+>/g, '')).trim()
-    if (Number.isFinite(startSeconds) && Number.isFinite(endSeconds) && endSeconds > startSeconds && text.length > 0) {
-      cues.push(`${formatTime(startSeconds)} --> ${formatTime(endSeconds)}\n${text}`)
-    }
-  }
-  return `WEBVTT\n\n${cues.join('\n\n')}`
-}
-
-function youtubeTimedTextToVtt(content: string): string {
-  const cues: string[] = []
-  for (const match of content.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/gi)) {
-    const attributes = match[1] ?? ''
-    const start = Number(attributes.match(/\bstart=["']([^"']+)["']/i)?.[1] ?? Number.NaN)
-    const duration = Number(attributes.match(/\bdur=["']([^"']+)["']/i)?.[1] ?? Number.NaN)
-    const text = decodeEntities((match[2] ?? '').replace(/<[^>]+>/g, '')).trim()
-    if (Number.isFinite(start) && Number.isFinite(duration) && duration > 0 && text.length > 0) {
-      cues.push(`${formatTime(start)} --> ${formatTime(start + duration)}\n${text}`)
-    }
-  }
-  return `WEBVTT\n\n${cues.join('\n\n')}`
-}
-
-function parseTime(value: string): number {
-  const trimmed = value.trim()
-  if (/^\d+(?:\.\d+)?s$/.test(trimmed)) return Number(trimmed.slice(0, -1))
-  const match = trimmed.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})(?:[.,](\d+))?$/)
-  if (match === null) return Number.NaN
-  const [, hours = '0', minutes = '0', seconds = '0', fraction = '0'] = match
-  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds) + Number(`0.${fraction}`)
+  return convertSubtitleToWebVtt(input, sourceUrl)
 }
 
 function formatTime(value: number): string {
@@ -563,16 +473,6 @@ function formatTime(value: number): string {
   const seconds = Math.floor(milliseconds % 60_000 / 1_000)
   const remainder = milliseconds % 1_000
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(remainder).padStart(3, '0')}`
-}
-
-function decodeEntities(value: string): string {
-  return value
-    .replaceAll('&amp;', '&')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'")
-    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
 }
 
 function mediaError(reply: FastifyReply, status: number, message: string): unknown {

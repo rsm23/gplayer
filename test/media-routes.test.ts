@@ -173,6 +173,29 @@ describe('poster, subtitle, and filmstrip routes', () => {
     expect(response.body).toContain('First\nsecond')
   })
 
+  it('converts and caches binary EBU STL through the authenticated subtitle route', async () => {
+    const binary = ebuStlFixture()
+    const target = new URL('https://media.provider.example/caption.stl')
+    const open = vi.fn(async () => ({
+      url: target,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/octet-stream' }),
+      body: new Response(binary).body
+    }))
+    app = await buildMediaApp(false, { remoteStream: { open } as never })
+    const proxy = createMediaProxyPath('subtitle', target.toString(), new Security(secureSalt)) ?? ''
+
+    const first = await app.inject({ method: 'GET', url: proxy })
+    const second = await app.inject({ method: 'GET', url: proxy })
+
+    expect(first.statusCode).toBe(200)
+    expect(first.body).toBe('WEBVTT\n\n01:00:02.500 --> 01:00:05.000\nCafé\nline two')
+    expect(second.statusCode).toBe(302)
+    expect(second.headers.location).toContain(`/uploads/subtitles/tmp/${legacyXxh32(target.toString())}.cache`)
+    expect(open).toHaveBeenCalledOnce()
+  })
+
   it('persists normalized subtitle output and redirects cache hits without another fetch', async () => {
     app = await buildMediaApp(true)
     const target = new URL('/caption.srt', upstreamUrl)
@@ -364,3 +387,15 @@ describe('filmstrip format compatibility', () => {
     expect(output).toContain('videoPreview.jpg#xywh=0,44,80,44')
   })
 })
+
+function ebuStlFixture(): Buffer {
+  const result = Buffer.alloc(1_024 + 128, 0x20)
+  result.write('850STL30', 0, 'ascii')
+  const offset = 1_024
+  result[offset + 3] = 0xff
+  result.set([1, 0, 2, 15], offset + 5)
+  result.set([1, 0, 5, 0], offset + 9)
+  result.fill(0x8f, offset + 16, offset + 128)
+  result.set(Buffer.from([0x43, 0x61, 0x66, 0xc2, 0x65, 0x8a, 0x6c, 0x69, 0x6e, 0x65, 0x20, 0x74, 0x77, 0x6f]), offset + 16)
+  return result
+}
