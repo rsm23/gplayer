@@ -712,6 +712,8 @@ h1 {
 
 .product-shot:not(.product-shot-wide) img {
   aspect-ratio: 4 / 5;
+  object-fit: contain;
+  background: #111713;
 }
 
 .product-shot figcaption {
