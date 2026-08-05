@@ -1,9 +1,9 @@
-import { createHmac } from 'node:crypto'
+import { createHmac, randomInt } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { AppConfig } from '../config.js'
 import type { HostingData } from '../core/hosting-data.js'
-import { buildPlayerQuery, parsePlayerQuery, type PlayerMediaQuery } from '../core/player-query.js'
+import { buildPlayerQuery, parsePlayerQuery, playerMediaCandidates, type PlayerMediaQuery } from '../core/player-query.js'
 import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath } from './streaming-routes.js'
 import { loadRuntimeAdsSettings, runtimeVastConfiguration, type AdsSettingsLoader } from '../settings/ads-runtime.js'
@@ -16,7 +16,7 @@ import { P2P_CORE_IMPORT_MAP_CSP_HASH, renderEmbedError, renderEmbedPage, type E
 import { PlayerLinkGenerator } from '../player/link-generator.js'
 import { Security } from '../security/security.js'
 import type { CountryCodeLookup } from '../security/geoip-country.js'
-import { accessPolicyFromMisc, accessPolicyRejects, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
+import { accessPolicyFromMisc, accessPolicyRejects, filterSourcesByResolution, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
 import { loadRuntimeHostingSettings, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
 import type { DriveBypassResult } from '../drive/drive-sharer-service.js'
@@ -25,6 +25,16 @@ import { applyPublicPageHeaders } from './system-routes.js'
 import { publicErrors, renderPublicError } from '../player/public-page.js'
 import { loadRuntimeGeneralSettings, visitCounterLimit, visitCounterRuntime, type GeneralSettingsLoader } from '../settings/general-runtime.js'
 import type { ViewCounterCapture } from '../stats/view-counter-service.js'
+import {
+  createSourceResponse,
+  selectedDeliveryBaseUrl,
+  type PublicSourceResponse,
+  type SourceApiRequestContext,
+  type SourceApiResolver
+} from './source-api-routes.js'
+import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
+import type { DeliveryBaseUrlSelector } from '../load-balancers/load-balancer-selector.js'
+import type { MediaResult } from '../core/source-resolver.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -72,6 +82,9 @@ export type PlayerRouteOptions = Readonly<{
   loadRecaptchaSiteKey?: () => Promise<string>
   capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
   captureView?: (input: ViewCounterCapture) => Promise<string | null>
+  resolvePlayback?: SourceApiResolver
+  providerContexts?: ProviderStreamContextRegistry
+  selectDeliveryBaseUrl?: DeliveryBaseUrlSelector
 }>
 
 export async function registerPlayerRoutes(
@@ -327,8 +340,44 @@ export async function registerPlayerRoutes(
       reply.code(403)
       return renderEmbedError('You are not allowed to access this player.')
     }
-    const media = proxyPlayerMedia(withDefaultPoster(resolvedMedia, player), security)
-    const p2pMode = playerP2pMode(player, media)
+    const configuredMedia = withoutDisabledAlternatives(resolvedMedia, misc.disable_host)
+    const playableMedia = general.load_balancer_rand ? randomizedPlaybackMedia(configuredMedia) : configuredMedia
+    const requestContext: SourceApiRequestContext = Object.freeze({
+      clientIp: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+      language: request.headers['accept-language'] ?? '',
+      downloadable: false
+    })
+    const extracted = await resolveEmbedPlayback(playableMedia, requestContext, options.resolvePlayback, misc.disable_resolution)
+    if (extracted !== null && accessPolicyFromMisc(misc).isTitleBlacklisted(extracted.result.title || playerMediaTitle(playableMedia))) {
+      applyEmbedHeaders(reply, ads)
+      reply.code(403)
+      return renderEmbedError('You are not allowed to access this player.')
+    }
+    const deliveryBaseUrl = extracted === null
+      ? new URL(config.baseUrl)
+      : await selectedDeliveryBaseUrl(config, options.selectDeliveryBaseUrl, {
+          clientIp: request.ip,
+          host: extracted.result.upstream?.host ?? playableMedia.host ?? '',
+          leastConnections: general.select_active_connections === true
+        })
+    const sourceResponse = extracted === null
+      ? null
+      : createSourceResponse(
+          config,
+          security,
+          parsed.token,
+          playableMedia,
+          extracted.result,
+          player,
+          requestContext,
+          options.providerContexts,
+          deliveryBaseUrl
+        )
+    const media = sourceResponse === null
+      ? proxyPlayerMedia(withDefaultPoster(playableMedia, player), security)
+      : playableMedia
+    const p2pMode = playerP2pMode(player, media, sourceResponse)
     applyEmbedHeaders(reply, ads, p2pMode, player)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
@@ -337,7 +386,19 @@ export async function registerPlayerRoutes(
       embedOnly: publicSettings.embed_only,
       viewCounter: Object.freeze({ token: parsed.token, runtime: visitCounterRuntime(general) }),
       hostingData: hosting.data,
-      customNames: hosting.customNames
+      customNames: hosting.customNames,
+      ...(sourceResponse === null ? {} : {
+        resolvedPlayback: {
+          title: sourceResponse.title,
+          poster: sourceResponse.poster,
+          sources: sourceResponse.sources,
+          tracks: sourceResponse.tracks
+        }
+      }),
+      ...fallbackPlayerUrl(playableMedia, extracted?.result ?? null, player.slug_embed, security),
+      ...(general.load_balancer_rand ? {} : {
+        servers: playerServerOptions(playableMedia, extracted?.result ?? null, player.slug_embed, security, hosting.customNames)
+      })
     })
   }
 
@@ -668,8 +729,26 @@ function embedContentSecurityPolicy(ads: AdsSettings, p2pMode: 'hls' | 'dash' | 
   return `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src ${connections.join(' ')}; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
 }
 
-function playerP2pMode(player: PlayerSettings, media: PlayerMediaQuery): 'hls' | 'dash' | null {
-  if (player.player !== 'plyr' || !player.p2p || media.host !== 'direct' || media.id === undefined) return null
+function playerP2pMode(
+  player: PlayerSettings,
+  media: PlayerMediaQuery,
+  response: PublicSourceResponse | null = null
+): 'hls' | 'dash' | null {
+  if (player.player !== 'plyr' || !player.p2p) return null
+  const resolved = response?.sources[0]
+  if (resolved !== undefined) {
+    const file = typeof resolved.file === 'string' ? resolved.file : ''
+    const type = typeof resolved.type === 'string' ? resolved.type.toLowerCase() : ''
+    try {
+      const pathname = new URL(file).pathname.toLowerCase()
+      if (type === 'hls' || type.includes('mpegurl') || pathname.startsWith('/hls/') || pathname.endsWith('.m3u8')) return 'hls'
+      if (type === 'dash' || type === 'mpd' || type.includes('dash') || pathname.startsWith('/mpd/') || pathname.endsWith('.mpd')) return 'dash'
+    } catch {
+      return null
+    }
+    return null
+  }
+  if (media.host !== 'direct' || media.id === undefined) return null
   if (media.id.startsWith('/hls/')) return 'hls'
   if (media.id.startsWith('/mpd/')) return 'dash'
   try {
@@ -680,6 +759,97 @@ function playerP2pMode(player: PlayerSettings, media: PlayerMediaQuery): 'hls' |
     // Invalid direct URLs are handled by the renderer.
   }
   return null
+}
+
+async function resolveEmbedPlayback(
+  media: PlayerMediaQuery,
+  context: SourceApiRequestContext,
+  resolve: SourceApiResolver | undefined,
+  disabledResolutions: readonly string[]
+): Promise<Readonly<{ result: MediaResult }> | null> {
+  if (resolve === undefined) return null
+  try {
+    const result = await resolve(media, context)
+    if (result.sources.length === 0) return null
+    return Object.freeze({
+      result: Object.freeze({ ...result, sources: filterSourcesByResolution(result.sources, disabledResolutions) })
+    })
+  } catch {
+    return null
+  }
+}
+
+function withoutDisabledAlternatives(media: PlayerMediaQuery, disabledHosts: readonly string[]): PlayerMediaQuery {
+  if (disabledHosts.length === 0) return media
+  const alternatives = (media.alternatives ?? []).filter((candidate) => !disabledHosts.includes(candidate.host))
+  const hasLegacyAlternative = media.ahost !== undefined && media.aid !== undefined && !disabledHosts.includes(media.ahost)
+  const { ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
+  return Object.freeze({
+    ...shared,
+    ...(hasLegacyAlternative ? { ahost: media.ahost, aid: media.aid } : {}),
+    ...(alternatives.length === 0 ? {} : { alternatives: Object.freeze(alternatives) })
+  })
+}
+
+function fallbackPlayerUrl(
+  media: PlayerMediaQuery,
+  result: MediaResult | null,
+  embedSlug: string,
+  security: Security
+): Readonly<{ fallbackUrl?: string }> {
+  const candidates = playerMediaCandidates(media)
+  if (candidates.length < 2) return Object.freeze({})
+  const resolvedHost = result?.upstream?.host ?? media.host ?? ''
+  const resolvedId = result?.upstream?.id ?? media.id ?? ''
+  const resolvedIndex = candidates.findIndex((candidate) => candidate.host === resolvedHost && candidate.id === resolvedId)
+  const nextIndex = resolvedIndex < 0 ? 1 : resolvedIndex + 1
+  const next = candidates[nextIndex]
+  if (next === undefined) return Object.freeze({})
+  const after = candidates[nextIndex + 1]
+  const { host: _host, id: _id, ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
+  const fallbackMedia: PlayerMediaQuery = Object.freeze({
+    ...shared,
+    host: next.host,
+    id: next.id,
+    ...(after === undefined ? {} : { ahost: after.host, aid: after.id })
+  })
+  return Object.freeze({ fallbackUrl: routePath(embedSlug, security.encryptURL(buildPlayerQuery(fallbackMedia))) })
+}
+
+function randomizedPlaybackMedia(media: PlayerMediaQuery): PlayerMediaQuery {
+  const candidates = playerMediaCandidates(media)
+  if (candidates.length < 2) return media
+  const offset = randomInt(candidates.length)
+  const ordered = [...candidates.slice(offset), ...candidates.slice(0, offset)]
+  const selected = ordered[0]
+  if (selected === undefined) return media
+  const { host: _host, id: _id, ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
+  return Object.freeze({
+    ...shared,
+    host: selected.host,
+    id: selected.id,
+    ...(ordered[1] === undefined ? {} : { ahost: ordered[1].host, aid: ordered[1].id }),
+    ...(ordered.length < 3 ? {} : { alternatives: Object.freeze(ordered.slice(2)) })
+  })
+}
+
+function playerServerOptions(
+  media: PlayerMediaQuery,
+  result: MediaResult | null,
+  embedSlug: string,
+  security: Security,
+  customNames: Readonly<Record<string, string>> | undefined
+): readonly Readonly<{ label: string; url: string; active: boolean }>[] {
+  const candidates = playerMediaCandidates(media)
+  if (candidates.length < 2) return Object.freeze([])
+  const activeHost = result?.upstream?.host ?? media.host ?? ''
+  const activeId = result?.upstream?.id ?? media.id ?? ''
+  const { host: _host, id: _id, ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
+  return Object.freeze(candidates.map((candidate, index) => Object.freeze({
+    label: customNames?.[candidate.host]?.trim() || candidate.host.replaceAll(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) || `Server ${index + 1}`,
+    url: routePath(embedSlug, security.encryptURL(buildPlayerQuery({ ...shared, host: candidate.host, id: candidate.id }))),
+    active: candidate.host === activeHost && candidate.id === activeId
+  })))
 }
 
 function playerP2pSwarmId(config: AppConfig, media: PlayerMediaQuery): string {

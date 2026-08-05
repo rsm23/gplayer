@@ -378,7 +378,26 @@ function createDownloadConfiguration(
   }
 }
 
-function createSourceResponse(
+export type PublicSourceResponse = Readonly<{
+  query: Readonly<{
+    host: string
+    id: string
+    poster: string
+    download: string
+    alt: string
+  }>
+  status: 'ok'
+  message: 'Success'
+  embed_url: string
+  download_url: string
+  title: string
+  poster: string
+  filmstrip: string
+  sources: readonly MediaSource[]
+  tracks: readonly MediaTrack[]
+}>
+
+export function createSourceResponse(
   config: AppConfig,
   security: Security,
   queryToken: string,
@@ -388,7 +407,7 @@ function createSourceResponse(
   requestContext: SourceApiRequestContext,
   providerContexts: ProviderStreamContextRegistry | undefined,
   deliveryBaseUrl: URL
-): Readonly<Record<string, unknown>> {
+): PublicSourceResponse {
   const canonicalToken = queryToken.length > 0
     ? queryToken
     : security.encryptURL(buildPlayerQuery(media))
@@ -458,7 +477,7 @@ function sourceTargets(source: MediaSource): URL[] {
   }
 }
 
-async function selectedDeliveryBaseUrl(
+export async function selectedDeliveryBaseUrl(
   config: AppConfig,
   selector: DeliveryBaseUrlSelector | undefined,
   input: Parameters<DeliveryBaseUrlSelector>[0]

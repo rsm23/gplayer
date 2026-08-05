@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildPlayerQuery,
   normalizeLegacyHost,
-  parsePlayerQuery
+  parsePlayerQuery,
+  playerMediaCandidates
 } from '../src/core/player-query.js'
 import { Security } from '../src/security/security.js'
 import { securitySalt } from './fixtures/security-cases.js'
@@ -110,6 +111,24 @@ describe('player query contract', () => {
     })).toBe(
       'host=direct&id=https%3A%2F%2Fcdn.example%2Fa+b.mp4&sub[]=one+file.vtt&sub[]=deux.vtt&lang[]=English&lang[]=Fran%C3%A7ais'
     )
+  })
+
+  it('orders and deduplicates primary, legacy alternative, and persisted playback candidates', () => {
+    expect(playerMediaCandidates({
+      host: 'streamhg',
+      id: 'primary',
+      ahost: 'direct',
+      aid: 'https://cdn.example/backup.mp4',
+      alternatives: [
+        { host: 'direct', id: 'https://cdn.example/backup.mp4' },
+        { host: 'vimeo', id: 'last' },
+        { host: '', id: 'ignored' }
+      ]
+    })).toEqual([
+      { host: 'streamhg', id: 'primary' },
+      { host: 'direct', id: 'https://cdn.example/backup.mp4' },
+      { host: 'vimeo', id: 'last' }
+    ])
   })
 
   it.each([

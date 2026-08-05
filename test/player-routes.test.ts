@@ -642,6 +642,120 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain('sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"')
   })
 
+  it('renders extracted providers through signed proxies and publishes an ordered fatal-error fallback', async () => {
+    const resolve = vi.fn(async () => ({
+      sources: [
+        { file: 'https://media.provider.example/master.m3u8', type: 'hls', label: 'Auto' },
+        { file: 'https://media.provider.example/1080.mp4', type: 'video/mp4', label: '1080p' }
+      ],
+      tracks: [{ file: 'https://media.provider.example/en.vtt', label: 'English', language: 'en', default: true }],
+      referer: 'https://provider.example/embed/primary-id',
+      title: 'Resolved provider title',
+      email: '',
+      image: 'https://media.provider.example/poster.jpg',
+      cookies: [{ name: 'private_session', value: 'must-not-leak' }],
+      filmstrip: '',
+      clientip: '127.0.0.1',
+      upstream: {
+        host: 'streamhg',
+        id: 'primary-id',
+        userAgent: 'Provider Runtime',
+        language: 'en;q=0.9'
+      }
+    }))
+    app = await buildApp(loadConfig({
+      NODE_ENV: 'test',
+      BASE_URL: 'https://player.example/',
+      SECURE_SALT: secureSalt
+    }), {
+      sourceApi: { resolve, supportedHosts: new Set(['streamhg', 'direct']) }
+    })
+    const security = new Security(secureSalt)
+    const token = security.encryptURL('host=streamhg&id=primary-id&ahost=direct&aid=https%3A%2F%2Fbackup.example%2Ffallback.mp4&poster=')
+    const response = await app.inject({
+      method: 'GET',
+      url: `/e/?${token}`,
+      headers: { 'user-agent': 'Playback Browser', 'accept-language': 'fr-FR,fr;q=0.9' }
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ host: 'streamhg', id: 'primary-id', ahost: 'direct' }), {
+      clientIp: '127.0.0.1',
+      userAgent: 'Playback Browser',
+      language: 'fr-FR,fr;q=0.9',
+      downloadable: false
+    })
+    expect(response.body).toContain('data-source-kind="hls"')
+    expect(response.body).toMatch(/data-source="https:\/\/player\.example\/hls\//)
+    expect(response.body).toContain('Resolved provider title')
+    expect(response.body).toMatch(/poster="https:\/\/player\.example\/poster\//)
+    expect(response.body).toMatch(/src="https:\/\/player\.example\/subtitle\//)
+    expect(response.body).toContain('data-player-servers')
+    expect(response.body).toContain('<span>StreamHG</span>')
+    expect(response.body).toContain('>Direct URL</a>')
+    expect(response.body).not.toContain('private_session')
+    expect(response.body).not.toContain('must-not-leak')
+
+    const serialized = response.body.match(/<script type="application\/json" data-playback-sources>([\s\S]*?)<\/script>/)?.[1] ?? ''
+    expect(JSON.parse(serialized)).toEqual([
+      expect.objectContaining({ type: 'hls', label: 'Auto', default: true }),
+      expect.objectContaining({ type: 'mp4', label: '1080p', default: false })
+    ])
+    const fallbackUrl = response.body.match(/data-player-fallback-url="([^"]+)"/)?.[1] ?? ''
+    expect(fallbackUrl).toMatch(/^\/e\/\?/)
+    expect(parsePlayerQuery(new URL(fallbackUrl, 'https://player.example/').search.slice(1), security, { secureSalt }).media).toEqual({
+      host: 'direct',
+      id: 'https://backup.example/fallback.mp4',
+      poster: ''
+    })
+
+    const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-embed.js' })
+    expect(runtime.body).toContain("instance.on('error', switchToFallback)")
+    expect(runtime.body).toContain("video.addEventListener('error', switchToFallback)")
+    expect(runtime.body).toContain('window.location.replace(fallbackUrl)')
+  })
+
+  it('randomly rotates the bounded alternative set without rendering the manual server picker', async () => {
+    const resolve = vi.fn(async (query: { host?: string; id?: string }) => ({
+      sources: [{ file: 'https://media.provider.example/video.mp4', type: 'video/mp4', label: '720p' }],
+      tracks: [],
+      referer: '',
+      title: 'Randomized source',
+      email: '',
+      image: '',
+      cookies: [],
+      filmstrip: '',
+      clientip: '127.0.0.1',
+      upstream: {
+        host: query.host ?? '',
+        id: query.id ?? '',
+        userAgent: 'Provider Runtime',
+        language: 'en'
+      }
+    }))
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => ({ load_balancer_rand: 'true' }),
+        upsertMany: async () => {}
+      }),
+      sourceApi: { resolve, supportedHosts: new Set(['streamhg', 'direct']) }
+    })
+    const security = new Security(secureSalt)
+    const token = security.encryptURL('host=streamhg&id=primary-id&ahost=direct&aid=https%3A%2F%2Fbackup.example%2Ffallback.mp4&poster=')
+    const response = await app.inject({ method: 'GET', url: `/e/?${token}` })
+
+    expect(response.statusCode).toBe(200)
+    const selected = resolve.mock.calls[0]?.[0]
+    expect([
+      ['streamhg', 'primary-id'],
+      ['direct', 'https://backup.example/fallback.mp4']
+    ]).toContainEqual([selected?.host, selected?.id])
+    expect(response.body).not.toContain('data-player-servers')
+    const fallbackUrl = response.body.match(/data-player-fallback-url="([^"]+)"/)?.[1] ?? ''
+    const fallback = parsePlayerQuery(new URL(fallbackUrl, 'https://player.example/').search.slice(1), security, { secureSalt }).media
+    expect(fallback?.host).not.toBe(selected?.host)
+  })
+
   it('enforces misc host and embed-origin policies while retaining direct no-referer compatibility', async () => {
     const values = {
       disable_host: '["youtube"]',

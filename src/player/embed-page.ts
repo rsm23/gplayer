@@ -1,6 +1,7 @@
 import { Hosting } from '../core/hosting.js'
 import type { HostingData } from '../core/hosting-data.js'
 import type { PlayerMediaQuery, PlayerPublicOptions } from '../core/player-query.js'
+import type { MediaSource, MediaTrack } from '../core/source-resolver.js'
 import type { RuntimeVastConfiguration } from '../settings/ads-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 
@@ -28,6 +29,18 @@ export type EmbedPlayerOptions = Readonly<{
   viewCounter?: Readonly<{ token: string; runtime: number }>
   hostingData?: HostingData
   customNames?: Readonly<Record<string, string>>
+  resolvedPlayback?: Readonly<{
+    title: string
+    poster: string
+    sources: readonly MediaSource[]
+    tracks: readonly MediaTrack[]
+  }>
+  fallbackUrl?: string
+  servers?: readonly Readonly<{
+    label: string
+    url: string
+    active: boolean
+  }>[]
 }>
 
 type RuntimeP2pConfiguration = Readonly<{
@@ -55,13 +68,17 @@ export function renderEmbedPage(
   playerOptions?: EmbedPlayerOptions
 ): string {
   const settings = playerOptions?.settings
-  const source = resolveRenderedSource(media, playerOptions?.hostingData)
-  const poster = safePlayerResource(media.poster ?? '', '/poster/')
-  const tracks = renderTracks(
-    [...(media.sub ?? []), ...(media.subs === undefined ? [] : [media.subs])],
-    media.lang ?? [],
-    settings?.default_subtitle ?? ''
-  )
+  const resolvedPlayback = playerOptions?.resolvedPlayback
+  const resolvedSources = resolvedPlayback?.sources.flatMap(normalizeResolvedSource) ?? []
+  const source = resolvedSources[0] ?? resolveRenderedSource(media, playerOptions?.hostingData)
+  const poster = safePlayerResource(resolvedPlayback?.poster || media.poster || '', '/poster/')
+  const tracks = resolvedPlayback === undefined
+    ? renderTracks(
+        [...(media.sub ?? []), ...(media.subs === undefined ? [] : [media.subs])],
+        media.lang ?? [],
+        settings?.default_subtitle ?? ''
+      )
+    : renderResolvedTracks(resolvedPlayback.tracks, settings?.default_subtitle ?? '')
   const videoAttributes = [
     options.autoplay ? ' autoplay' : '',
     options.mute ? ' muted' : '',
@@ -69,7 +86,7 @@ export function renderEmbedPage(
   ].join('')
   const preload = settings?.preload ?? 'metadata'
   const stretching = settings?.stretching ?? 'uniform'
-  const title = playerTitle(media, playerOptions?.customNames)
+  const title = resolvedPlayback?.title.trim() || playerTitle(media, playerOptions?.customNames)
 
   let player: string
   if (source.kind === 'provider') {
@@ -119,6 +136,8 @@ export function renderEmbedPage(
     ? 'GPlayer'
     : settings.text_title.replaceAll('{title}', title).replaceAll('{siteName}', 'GPlayer')
   const playerStyles = settings === undefined ? '' : renderPlayerStyles(settings)
+  const playbackSources = resolvedSources.length === 0 ? '' : renderPlaybackSources(resolvedSources)
+  const servers = renderPlayerServers(playerOptions?.servers ?? [])
 
   return `<!doctype html>
 <html lang="en">
@@ -130,17 +149,70 @@ export function renderEmbedPage(
   ${playerStyles}
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
-<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-view-counter-token="${escapeHtmlAttribute(playerOptions?.viewCounter?.token ?? '')}" data-view-counter-runtime="${String(playerOptions?.viewCounter?.runtime ?? 10)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-library="${escapeHtmlAttribute(settings?.player ?? 'jwplayer')}" data-player-skin="${escapeHtmlAttribute(settings?.player_skin ?? '')}" data-playback-rate="${String(settings?.playback_rate === true)}" data-default-resolution="${escapeHtmlAttribute(settings?.default_resolution ?? 'Auto')}" data-default-audio="${escapeHtmlAttribute(defaultAudio.value)}" data-default-audio-key="${escapeHtmlAttribute(defaultAudio.key)}" data-default-subtitle="${escapeHtmlAttribute(defaultSubtitle.value)}" data-default-subtitle-key="${escapeHtmlAttribute(defaultSubtitle.key)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-caption-color="#${escapeHtmlAttribute(settings?.subtitle_color ?? 'ffffff')}" data-caption-font="${escapeHtmlAttribute(settings?.font_family ?? 'Arial')}" data-caption-edge="${escapeHtmlAttribute(settings?.edge_style ?? 'dropShadow')}" data-caption-background-color="#${escapeHtmlAttribute(settings?.background_color ?? '000000')}" data-caption-background-opacity="${escapeHtmlAttribute(settings?.background_opacity ?? '75')}" data-caption-window-color="#${escapeHtmlAttribute(settings?.window_color ?? '000000')}" data-caption-window-opacity="${escapeHtmlAttribute(settings?.window_opacity ?? '0')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
-  <main class="player-stage" aria-label="Video player">${player}${loader}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}</main>
+<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-player-fallback-url="${escapeHtmlAttribute(playerOptions?.fallbackUrl ?? '')}" data-view-counter-token="${escapeHtmlAttribute(playerOptions?.viewCounter?.token ?? '')}" data-view-counter-runtime="${String(playerOptions?.viewCounter?.runtime ?? 10)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-library="${escapeHtmlAttribute(settings?.player ?? 'jwplayer')}" data-player-skin="${escapeHtmlAttribute(settings?.player_skin ?? '')}" data-playback-rate="${String(settings?.playback_rate === true)}" data-default-resolution="${escapeHtmlAttribute(settings?.default_resolution ?? 'Auto')}" data-default-audio="${escapeHtmlAttribute(defaultAudio.value)}" data-default-audio-key="${escapeHtmlAttribute(defaultAudio.key)}" data-default-subtitle="${escapeHtmlAttribute(defaultSubtitle.value)}" data-default-subtitle-key="${escapeHtmlAttribute(defaultSubtitle.key)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-caption-color="#${escapeHtmlAttribute(settings?.subtitle_color ?? 'ffffff')}" data-caption-font="${escapeHtmlAttribute(settings?.font_family ?? 'Arial')}" data-caption-edge="${escapeHtmlAttribute(settings?.edge_style ?? 'dropShadow')}" data-caption-background-color="#${escapeHtmlAttribute(settings?.background_color ?? '000000')}" data-caption-background-opacity="${escapeHtmlAttribute(settings?.background_opacity ?? '75')}" data-caption-window-color="#${escapeHtmlAttribute(settings?.window_color ?? '000000')}" data-caption-window-opacity="${escapeHtmlAttribute(settings?.window_opacity ?? '0')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
+  <main class="player-stage" aria-label="Video player">${player}${loader}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}${servers}</main>
   ${directFallback}
   ${adblockNotice}
   ${resumePrompt}
+  ${playbackSources}
   ${vastConfiguration}
   ${p2pConfigurationScript}
   ${renderPlayerRuntimeScripts(settings, source.kind, p2pConfiguration)}
   <script src="/assets/js/gplayer-embed.js"></script>
 </body>
 </html>`
+}
+
+function normalizeResolvedSource(source: MediaSource): readonly RenderedSource[] {
+  const file = typeof source.file === 'string' ? safeHttpUrl(source.file) : ''
+  if (file.length === 0) return []
+  const type = typeof source.type === 'string' ? source.type.trim().toLowerCase() : ''
+  const pathname = new URL(file).pathname.toLowerCase()
+  const kind: RenderedSource['kind'] = type === 'hls' || type.includes('mpegurl') || pathname.startsWith('/hls/') || pathname.endsWith('.m3u8')
+    ? 'hls'
+    : type === 'dash' || type === 'mpd' || type.includes('dash') || pathname.startsWith('/mpd/') || pathname.endsWith('.mpd')
+      ? 'dash'
+      : 'video'
+  return [{
+    kind,
+    url: file,
+    ...(typeof source.label === 'string' && source.label.trim() !== '' ? { message: source.label.trim() } : {})
+  }]
+}
+
+function renderPlaybackSources(sources: readonly RenderedSource[]): string {
+  return `<script type="application/json" data-playback-sources>${safeJsonScript(sources.map((source, index) => ({
+    file: source.url,
+    type: source.kind === 'hls' ? 'hls' : source.kind === 'dash' ? 'dash' : 'mp4',
+    label: source.message || (index === 0 ? 'Default' : `Source ${index + 1}`),
+    default: index === 0
+  })))}</script>`
+}
+
+function renderResolvedTracks(tracks: readonly MediaTrack[], defaultLanguage: string): string {
+  const safeTracks = tracks.flatMap((track, index) => {
+    const file = typeof track.file === 'string' ? safePlayerResource(track.file, '/subtitle/') : ''
+    if (file.length === 0) return []
+    const label = typeof track.label === 'string' && track.label.trim() !== '' ? track.label.trim() : `Subtitle ${index + 1}`
+    const language = typeof track.language === 'string' ? track.language.trim() : ''
+    return [{ file, label, language, requestedDefault: track.default === true }]
+  })
+  const preferredLanguage = languageEntry(defaultLanguage)
+  const preferred = safeTracks.findIndex((track) => {
+    const values = [track.label, track.language].map((value) => value.toLowerCase())
+    return values.includes(preferredLanguage.key.toLowerCase()) || values.includes(preferredLanguage.value.toLowerCase())
+  })
+  const explicit = safeTracks.findIndex((track) => track.requestedDefault)
+  const selected = preferred >= 0 ? preferred : explicit >= 0 ? explicit : 0
+  return safeTracks.map((track, index) => `<track kind="subtitles" src="${escapeHtmlAttribute(track.file)}" label="${escapeHtmlAttribute(track.label)}"${track.language === '' ? '' : ` srclang="${escapeHtmlAttribute(track.language)}"`}${index === selected ? ' default' : ''}>`).join('')
+}
+
+function renderPlayerServers(servers: readonly Readonly<{ label: string; url: string; active: boolean }>[]): string {
+  if (servers.length < 2) return ''
+  const items = servers.map((server) => `<li${server.active ? ' class="is-active" aria-current="true"' : ''}>${server.active
+    ? `<span>${escapeHtml(server.label)}</span>`
+    : `<a href="${escapeHtmlAttribute(server.url)}">${escapeHtml(server.label)}</a>`}</li>`).join('')
+  return `<nav class="player-servers" data-player-servers aria-label="Playback servers"><ol>${items}</ol></nav>`
 }
 
 export function renderEmbedError(message: string): string {

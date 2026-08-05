@@ -424,9 +424,50 @@ video::cue-region {
 .player-logo,
 .player-small-logo,
 .player-toolbar,
+.player-servers,
 .player-fake-play {
   position: absolute;
   z-index: 6;
+}
+
+.player-servers {
+  right: 1rem;
+  bottom: 4rem;
+  max-width: min(80vw, 36rem);
+}
+
+.player-servers ol {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player-servers :is(a, span) {
+  display: block;
+  min-height: 2rem;
+  padding: 0.42rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(5, 5, 7, 0.82);
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 750;
+  line-height: 1rem;
+  text-decoration: none;
+}
+
+.player-servers .is-active span {
+  border-color: color-mix(in srgb, var(--brand) 82%, white);
+  background: color-mix(in srgb, var(--brand) 76%, #050507);
+}
+
+.player-servers a:focus-visible {
+  outline: 3px solid white;
+  outline-offset: 3px;
 }
 
 .player-title {

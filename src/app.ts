@@ -428,6 +428,9 @@ export async function buildApp(
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const driveSharer = dependencies.driveSharer ?? new DriveSharerService(authRuntime.driveStore, driveHttp)
+  const selectDeliveryBaseUrl = sourceApiRuntime.selectDeliveryBaseUrl ?? (defaultLoadBalancerSelector === undefined
+    ? undefined
+    : async (input: Parameters<NonNullable<SourceApiRouteOptions['selectDeliveryBaseUrl']>>[0]) => await defaultLoadBalancerSelector.select(input))
   await registerPlayerRoutes(app, config, {
     loadAdsSettings,
     loadPlayerSettings,
@@ -451,7 +454,10 @@ export async function buildApp(
       return String(general.recaptcha_site_key)
     },
     capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId),
-    captureView: async (input) => await viewCounterRuntime.capture(input)
+    captureView: async (input) => await viewCounterRuntime.capture(input),
+    resolvePlayback: sourceApiRuntime.resolve,
+    providerContexts: providerStreamContexts,
+    ...(selectDeliveryBaseUrl === undefined ? {} : { selectDeliveryBaseUrl })
   })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
@@ -462,11 +468,7 @@ export async function buildApp(
     loadGeneralSettings,
     countryCodeLookup,
     supportedHosts,
-    ...(sourceApiRuntime.selectDeliveryBaseUrl !== undefined
-      ? { selectDeliveryBaseUrl: sourceApiRuntime.selectDeliveryBaseUrl }
-      : defaultLoadBalancerSelector === undefined
-        ? {}
-        : { selectDeliveryBaseUrl: async (input) => await defaultLoadBalancerSelector.select(input) }),
+    ...(selectDeliveryBaseUrl === undefined ? {} : { selectDeliveryBaseUrl }),
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
     capturePublicVideo: async (media, result) => {
       const settings = await loadPublicSettings()

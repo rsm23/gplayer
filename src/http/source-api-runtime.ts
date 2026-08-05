@@ -9,6 +9,7 @@ import { ProviderCookieHttpClient, type HostingSettingsLoader } from '../setting
 import type { SourceApiRouteOptions } from './source-api-routes.js'
 import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
 import { MySqlMediaDownloadStore } from '../background/mysql-media-download-store.js'
+import { playerMediaCandidates } from '../core/player-query.js'
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
 const DEFAULT_LANGUAGE = 'en;q=0.9'
@@ -46,10 +47,7 @@ export function createSourceApiRuntime(
   return {
     supportedHosts,
     resolve: async (query, context) => {
-      const candidates = [
-        { host: query.host ?? '', id: query.id ?? '' },
-        ...(query.alternatives ?? [])
-      ].filter((candidate) => supportedHosts.has(candidate.host) && candidate.id.length > 0)
+      const candidates = playerMediaCandidates(query).filter((candidate) => supportedHosts.has(candidate.host))
       if (candidates.length === 0) return emptyMediaResult()
 
       database ??= new Database(config.database)

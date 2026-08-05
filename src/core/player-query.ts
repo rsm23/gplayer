@@ -147,6 +147,21 @@ export function buildPlayerQuery(query: PlayerMediaQuery): string {
   return parts.join('&')
 }
 
+export function playerMediaCandidates(query: PlayerMediaQuery): readonly Readonly<{ host: string; id: string }>[] {
+  const candidates = [
+    ...(query.host !== undefined && query.id !== undefined ? [{ host: query.host, id: query.id }] : []),
+    ...(query.ahost !== undefined && query.aid !== undefined ? [{ host: query.ahost, id: query.aid }] : []),
+    ...(query.alternatives ?? [])
+  ]
+  const seen = new Set<string>()
+  return Object.freeze(candidates.filter((candidate) => {
+    const key = `${candidate.host}\0${candidate.id}`
+    if (candidate.host.length === 0 || candidate.id.length === 0 || seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).map((candidate) => Object.freeze(candidate)))
+}
+
 export function normalizeLegacyHost(host: string): string {
   const normalized = host.trim().toLowerCase()
   return HOST_ALIASES[normalized] ?? normalized

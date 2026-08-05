@@ -3,6 +3,29 @@
 
   const body = document.body
   const video = document.querySelector('#media-player')
+  let fallbackStarted = false
+
+  const fallbackUrl = (() => {
+    const value = body.dataset.playerFallbackUrl || ''
+    if (!value) return ''
+    try {
+      const url = new URL(value, window.location.href)
+      return url.origin === window.location.origin && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+        ? url.toString()
+        : ''
+    } catch {
+      return ''
+    }
+  })()
+
+  const switchToFallback = () => {
+    if (fallbackStarted || !fallbackUrl) return false
+    fallbackStarted = true
+    window.location.replace(fallbackUrl)
+    return true
+  }
+
+  if (video instanceof HTMLVideoElement) video.addEventListener('error', switchToFallback)
 
   const enforceEmbedOnly = () => {
     if (body.dataset.embedOnly !== 'true' || window.self !== window.top) return true
@@ -85,6 +108,63 @@
     } catch {
       return null
     }
+  }
+
+  const readPlaybackSources = () => {
+    const element = document.querySelector('[data-playback-sources]')
+    if (!(element instanceof HTMLScriptElement)) return []
+    try {
+      const parsed = JSON.parse(element.textContent || '')
+      if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 100) return []
+      const sources = parsed.flatMap((source, index) => {
+        if (source === null || typeof source !== 'object' || typeof source.file !== 'string') return []
+        if (!['hls', 'dash', 'mp4'].includes(source.type)) return []
+        try {
+          const url = new URL(source.file, window.location.href)
+          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return []
+          return [{
+            file: url.toString(),
+            type: source.type,
+            label: typeof source.label === 'string' && source.label.trim() ? source.label.trim().slice(0, 100) : `Source ${index + 1}`,
+            default: source.default === true || index === 0
+          }]
+        } catch {
+          return []
+        }
+      })
+      return sources.length === parsed.length ? sources : []
+    } catch {
+      return []
+    }
+  }
+
+  const mp4QualityConfiguration = (media) => {
+    const sources = readPlaybackSources()
+    if (sources.length < 2 || sources.some((source) => source.type !== 'mp4')) return null
+    const choices = sources.flatMap((source) => {
+      const match = source.label.match(/(?:^|\D)(\d{3,4})(?:p|\D|$)/i)
+      const quality = Number.parseInt(match?.[1] || '', 10)
+      return Number.isInteger(quality) && quality > 0 ? [{ ...source, quality }] : []
+    })
+    if (choices.length !== sources.length || new Set(choices.map((choice) => choice.quality)).size !== choices.length) return null
+    const options = choices.map((choice) => choice.quality).sort((left, right) => left - right)
+    const selected = selectedDefaultQuality(options) || options.at(-1)
+    const initial = choices.find((choice) => choice.quality === selected)
+    if (initial !== undefined && media.src !== initial.file) media.src = initial.file
+    const onChange = (value) => {
+      const quality = Number(value)
+      const choice = choices.find((candidate) => candidate.quality === quality)
+      if (choice === undefined || media.src === choice.file || media.currentSrc === choice.file) return
+      const position = Number.isFinite(media.currentTime) ? media.currentTime : 0
+      const resume = !media.paused
+      media.src = choice.file
+      media.load()
+      media.addEventListener('loadedmetadata', () => {
+        if (position > 0 && Number.isFinite(media.duration)) media.currentTime = Math.min(position, Math.max(0, media.duration - 0.25))
+        if (resume) void media.play().catch(() => {})
+      }, { once: true })
+    }
+    return { default: selected, options, forced: true, onChange }
   }
 
   const hlsRuntimeConfiguration = (p2p) => ({
@@ -254,7 +334,10 @@
         body.dataset.mediaTransport = 'hls.js'
         if (p2pActive) body.dataset.p2pTransport = 'hls'
         window.addEventListener('pagehide', () => hls.destroy(), { once: true })
-        await manifest
+        await manifest.catch((error) => {
+          switchToFallback()
+          throw error
+        })
         const levels = supportedHlsLevels(hls)
         const qualities = uniqueQualities(levels)
         let selectedQuality = selectedDefaultQuality(qualities)
@@ -321,7 +404,10 @@
           p2pEngine = null
         }
       }
-      await shakaPlayer.load(source)
+      await shakaPlayer.load(source).catch((error) => {
+        switchToFallback()
+        throw error
+      })
       const shakaCaptions = shakaPlayer.getTextTracks().map((track, index) => {
         const kind = track.kind === 'caption' ? 'captions' : 'subtitles'
         const nativeTrack = media.addTextTrack(kind, languageLabel(track, index), track.language || '')
@@ -654,17 +740,20 @@
     if (body.dataset.playerLibrary === 'plyr') {
       try {
         const mediaTransport = await initializePlyrTransport(video)
+        const mp4Quality = mediaTransport === null ? mp4QualityConfiguration(video) : null
         await loadRuntimeScript('/assets/vendor/plyr/3.6.3/plyr-custom.polyfilled.min.js', 'plyr')
         if (typeof window.Plyr !== 'function') return fallback
         const speedEnabled = body.dataset.playbackRate === 'true'
         const settings = ['captions']
-        if (mediaTransport?.quality !== null && mediaTransport?.quality !== undefined) settings.push('quality')
+        if ((mediaTransport?.quality !== null && mediaTransport?.quality !== undefined) || mp4Quality !== null) settings.push('quality')
         if (speedEnabled) settings.push('speed')
         const instance = new window.Plyr(video, {
           controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
           settings,
           captions: { active: true, update: true },
-          ...(mediaTransport?.quality === null || mediaTransport?.quality === undefined ? {} : { quality: mediaTransport.quality }),
+          ...((mediaTransport?.quality === null || mediaTransport?.quality === undefined) && mp4Quality === null
+            ? {}
+            : { quality: mediaTransport?.quality || mp4Quality }),
           ...(vastConfig?.schedule.length ? { ads: { enabled: true, tagUrl: vastConfig.schedule[0].tag } } : {}),
           speed: { selected: 1, options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
           storage: { enabled: false, key: 'plyr' },
@@ -674,7 +763,7 @@
         instance.resumePlayback = () => instance.play()
         const installAdaptiveMenus = () => {
           labelPlayerSettings(instance)
-          installAdaptiveQualityMenu(instance, mediaTransport?.quality || null)
+          installAdaptiveQualityMenu(instance, mediaTransport?.quality || mp4Quality)
           installAdaptiveAudioMenu(instance, mediaTransport?.audio || null)
         }
         const installAdaptiveRuntime = () => {
@@ -704,6 +793,7 @@
       const source = video.dataset.source || ''
       if (!source) return fallback
       const sourceKind = video.dataset.sourceKind || 'video'
+      const resolvedSources = readPlaybackSources()
       const tracks = Array.from(video.querySelectorAll('track')).map((track) => ({
         file: track.src,
         label: track.label,
@@ -718,7 +808,9 @@
         width: '100%',
         height: '100%',
         controls: true,
-        sources: [{ file: source, type: sourceKind === 'hls' ? 'hls' : sourceKind === 'dash' ? 'dash' : 'mp4', label: 'Default', default: true }],
+        sources: resolvedSources.length > 0
+          ? resolvedSources
+          : [{ file: source, type: sourceKind === 'hls' ? 'hls' : sourceKind === 'dash' ? 'dash' : 'mp4', label: 'Default', default: true }],
         tracks,
         title: document.querySelector('[data-player-title]')?.textContent || document.title,
         image: video.poster,
@@ -748,6 +840,8 @@
       instance.destroy = () => instance.remove()
       instance.resumePlayback = () => instance.play()
       window.jwp = instance
+      instance.on('error', switchToFallback)
+      instance.on('setupError', switchToFallback)
       body.dataset.activePlayer = 'jwplayer'
       return jwController(instance)
     } catch {
@@ -959,7 +1053,9 @@
       const player = new window.shaka.Player()
       player.attach(media)
         .then(() => player.load(source))
-        .catch(() => showFallback(media, 'The MPEG-DASH stream could not be loaded.'))
+        .catch(() => {
+          if (!switchToFallback()) showFallback(media, 'The MPEG-DASH stream could not be loaded.')
+        })
       return
     }
 
@@ -970,6 +1066,9 @@
 
     if (typeof window.Hls === 'function' && window.Hls.isSupported()) {
       const hls = new window.Hls({ enableWorker: true })
+      hls.on(window.Hls.Events.ERROR, (_event, data) => {
+        if (data?.fatal) switchToFallback()
+      })
       hls.loadSource(source)
       hls.attachMedia(media)
       return
