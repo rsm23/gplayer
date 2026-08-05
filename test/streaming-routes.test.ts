@@ -44,6 +44,14 @@ beforeEach(async () => {
       )
       return
     }
+    if (request.url === '/expired-master.m3u8' || request.url === '/unavailable.m3u8') {
+      response.writeHead(500, { 'content-type': 'text/plain' }).end('expired')
+      return
+    }
+    if (request.url === '/expired.mp4') {
+      response.writeHead(429, { 'retry-after': '1' }).end()
+      return
+    }
     if (request.url === '/cross-origin-master.m3u8') {
       const child = new URL('/variant.m3u8', upstreamUrl)
       child.hostname = 'localhost'
@@ -266,6 +274,145 @@ describe('authenticated streaming routes', () => {
     expect(variant.body).toContain('#EXT-X-ENDLIST')
     expect(variant.body).toMatch(/URI="\/stream-ts\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+"/)
     expect(variant.body).toMatch(/\/stream-ts\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+/)
+  })
+
+  it('refreshes a retryable top-level manifest and redirects with renewed provider context', async () => {
+    const refreshSource = vi.fn(async () => ({
+      sources: [{ file: new URL('/master.m3u8', upstreamUrl).toString(), type: 'hls', label: 'Original' }],
+      tracks: [],
+      referer: 'https://provider.example/embed/fresh',
+      title: 'Fresh source',
+      email: '',
+      image: '',
+      cookies: ['session=fresh-secret'],
+      filmstrip: '',
+      clientip: '127.0.0.1',
+      upstream: { host: 'direct', id: 'refresh-manifest', userAgent: 'Provider UA', language: 'fr-FR' }
+    }))
+    const recoveryDelay = vi.fn(async (_milliseconds: number) => undefined)
+    const providerContexts = new ProviderStreamContextRegistry()
+    app = await buildStreamingApp(true, undefined, {
+      providerContexts,
+      refreshSource,
+      recoveryDelay,
+      recoveryRandom: () => 0
+    })
+    const stale = createStreamingProxyPath(
+      'hls',
+      new URL('/expired-master.m3u8', upstreamUrl),
+      new Security(secureSalt),
+      { host: 'direct', id: 'refresh-manifest', label: 'Original', recoverable: true }
+    )
+
+    const redirect = await app.inject({
+      method: 'GET',
+      url: stale,
+      headers: { 'user-agent': 'Viewer UA', 'accept-language': 'en-US' }
+    })
+    expect(redirect.statusCode).toBe(307)
+    expect(redirect.headers['cache-control']).toBe('no-store')
+    expect(redirect.headers.location).toContain('/hls/')
+    expect(redirect.headers.location).toContain('gxr=1')
+    expect(recoveryDelay).toHaveBeenCalledWith(1_000)
+    expect(refreshSource).toHaveBeenCalledWith(
+      { host: 'direct', id: 'refresh-manifest' },
+      { clientIp: '127.0.0.1', userAgent: 'Viewer UA', language: 'en-US', downloadable: false }
+    )
+
+    const fresh = await app.inject({ method: 'GET', url: String(redirect.headers.location) })
+    expect(fresh.statusCode).toBe(200)
+    expect(lastUpstreamUrl).toBe('/master.m3u8')
+    expect(lastUpstreamHeaders).toMatchObject({
+      cookie: 'session=fresh-secret',
+      referer: 'https://provider.example/embed/fresh',
+      'user-agent': 'Provider UA',
+      'accept-language': 'fr-FR'
+    })
+    const child = fresh.body.split('\n').find((line) => line.startsWith('/hls/')) ?? ''
+    expect(child).not.toContain('gxr=1')
+  })
+
+  it('refreshes a failed MP4 rendition while preserving range, label, and download state', async () => {
+    const refreshSource = vi.fn(async () => ({
+      sources: [
+        { file: new URL('/real.mp4', upstreamUrl).toString(), type: 'video/mp4', label: '360p' },
+        { file: new URL('/video.mp4', upstreamUrl).toString(), type: 'video/mp4', label: '720p' }
+      ],
+      tracks: [], referer: '', title: '', email: '', image: '', cookies: [], filmstrip: '', clientip: '127.0.0.1'
+    }))
+    app = await buildStreamingApp(true, undefined, {
+      refreshSource,
+      recoveryDelay: async () => undefined,
+      recoveryRandom: () => 0
+    })
+    const stale = createStreamingProxyPath(
+      'stream-vid',
+      new URL('/expired.mp4', upstreamUrl),
+      new Security(secureSalt),
+      { host: 'direct', id: 'refresh-video', label: '720p', downloadable: true, recoverable: true }
+    )
+
+    const redirect = await app.inject({ method: 'GET', url: stale, headers: { range: 'bytes=4-9' } })
+    expect(redirect.statusCode).toBe(307)
+    expect(redirect.headers.location).toContain('/stream-vid/')
+    expect(redirect.headers.location).toContain('dl=1')
+    expect(redirect.headers.location).toContain('gxr=1')
+
+    const fresh = await app.inject({ method: 'GET', url: String(redirect.headers.location), headers: { range: 'bytes=4-9' } })
+    expect(fresh.statusCode).toBe(206)
+    expect(fresh.rawPayload).toEqual(media.subarray(4, 10))
+    expect(lastUpstreamUrl).toBe('/video.mp4')
+  })
+
+  it('caps repeated playback refreshes at three attempts per source and viewer', async () => {
+    const refreshSource = vi.fn(async () => ({
+      sources: [{ file: new URL('/unavailable.m3u8', upstreamUrl).toString(), type: 'hls', label: 'Original' }],
+      tracks: [], referer: '', title: '', email: '', image: '', cookies: [], filmstrip: '', clientip: '127.0.0.1'
+    }))
+    const delays: number[] = []
+    app = await buildStreamingApp(true, undefined, {
+      refreshSource,
+      recoveryDelay: async (milliseconds) => { delays.push(milliseconds) },
+      recoveryRandom: () => 0
+    })
+    let requestPath = createStreamingProxyPath(
+      'hls',
+      new URL('/unavailable.m3u8', upstreamUrl),
+      new Security(secureSalt),
+      { host: 'direct', id: 'retry-budget', recoverable: true }
+    )
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await app.inject({ method: 'GET', url: requestPath })
+      expect(response.statusCode).toBe(307)
+      requestPath = String(response.headers.location)
+    }
+    const exhausted = await app.inject({ method: 'GET', url: requestPath })
+    expect(exhausted.statusCode).toBe(502)
+    expect(refreshSource).toHaveBeenCalledTimes(3)
+    expect(delays).toEqual([1_000, 2_000, 4_000])
+  })
+
+  it('contains a failed recovery delay without leaking an internal route error', async () => {
+    const refreshSource = vi.fn(async () => ({
+      sources: [{ file: new URL('/master.m3u8', upstreamUrl).toString(), type: 'hls', label: 'Original' }],
+      tracks: [], referer: '', title: '', email: '', image: '', cookies: [], filmstrip: '', clientip: '127.0.0.1'
+    }))
+    app = await buildStreamingApp(true, undefined, {
+      refreshSource,
+      recoveryDelay: async () => { throw new Error('timer unavailable') }
+    })
+    const stale = createStreamingProxyPath(
+      'hls',
+      new URL('/expired-master.m3u8', upstreamUrl),
+      new Security(secureSalt),
+      { host: 'direct', id: 'failed-delay', recoverable: true }
+    )
+
+    const response = await app.inject({ method: 'GET', url: stale })
+    expect(response.statusCode).toBe(502)
+    expect(response.body).toBe('Stream manifest is unavailable')
+    expect(refreshSource).not.toHaveBeenCalled()
   })
 
   it('serves rewritten HLS segments through the binary proxy', async () => {

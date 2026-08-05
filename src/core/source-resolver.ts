@@ -144,6 +144,20 @@ export class SourceResolver {
       await this.options.cache.delete(criteria)
     }
 
+    return await this.extractAndCache()
+  }
+
+  /**
+   * Invalidates the current browser-scoped cache row and resolves the provider
+   * again. Streaming routes use this after the supplied retryable upstream
+   * failures instead of accepting the stale target embedded in the player URL.
+   */
+  public async refreshResult(): Promise<MediaResult> {
+    await this.options.cache.delete(this.criteria())
+    return await this.extractAndCache()
+  }
+
+  private async extractAndCache(): Promise<MediaResult> {
     const extracted = await this.extractOriginalSources()
     if (extracted.sources.length > 0) {
       const now = this.now()

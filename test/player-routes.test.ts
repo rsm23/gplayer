@@ -675,7 +675,7 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain('<video id="media-player"')
     expect(response.body).toContain(' autoplay muted loop')
     expect(response.body).toContain('data-source-kind="hls"')
-    expect(response.body).toMatch(/data-source="\/hls\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+\?gt=[A-Za-z0-9_%\-]+"/)
+    expect(response.body).toMatch(/data-source="\/hls\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+\?gxr=1&amp;gt=[A-Za-z0-9_%\-]+"/)
     expect(response.body).not.toContain('data-source="https://cdn.example/live.m3u8"')
     expect(response.body).toContain('data-player-library="jwplayer"')
     expect(response.body).not.toContain('/assets/vendor/hls.js/1.6.4/hls.min.js')
@@ -1213,7 +1213,7 @@ describe('player HTTP routes', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.body).toContain('data-source-kind="dash"')
-    expect(response.body).toMatch(/data-source="\/mpd\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+\?gt=[A-Za-z0-9_%\-]+"/)
+    expect(response.body).toMatch(/data-source="\/mpd\/[A-Za-z0-9_,\-]+\/[A-Za-z0-9_,\-]+\?gxr=1&amp;gt=[A-Za-z0-9_%\-]+"/)
     expect(response.body).toContain('data-player-library="jwplayer"')
     expect(response.body).not.toContain('/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js')
   })

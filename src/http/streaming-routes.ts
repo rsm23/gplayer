@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Readable, Transform, type TransformCallback } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AppConfig } from '../config.js'
+import type { MediaResult, MediaSource } from '../core/source-resolver.js'
 import { Security } from '../security/security.js'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
 import { StreamCache, type StreamCacheEntry, type StreamCacheMode, type StreamCacheSettings } from '../stream/stream-cache.js'
@@ -46,7 +47,13 @@ export type StreamingIdentity = Readonly<{
   contextToken?: string
   accessToken?: string
   downloadable?: boolean
+  recoverable?: boolean
 }>
+
+export type StreamingSourceRefresh = (
+  identity: Readonly<{ host: string; id: string }>,
+  context: Readonly<{ clientIp: string; userAgent: string; language: string; downloadable: boolean }>
+) => Promise<MediaResult>
 
 export type StreamingAccessSettings = Readonly<{
   disableValidation: boolean
@@ -68,6 +75,11 @@ export type StreamingRouteOptions = Readonly<{
   loadAccessSettings?: () => StreamingAccessSettings | Promise<StreamingAccessSettings>
   geoIpDetailsLookup?: GeoIpDetailsLookup
   validateAdminToken?: (token: string, userAgent: string) => boolean | Promise<boolean>
+  refreshSource?: StreamingSourceRefresh
+  recoveryDelay?: (milliseconds: number) => Promise<void>
+  recoveryRandom?: () => number
+  recoveryNow?: () => number
+  recoveryMaximumAttempts?: number
 }>
 
 export function createStreamingAccessToken(clientIp: string, security: Security): string | undefined {
@@ -99,6 +111,7 @@ export async function registerStreamingRoutes(
 ): Promise<void> {
   const security = new Security(config.secureSalt)
   const remoteStream = options.remoteStream ?? new RemoteStream()
+  const sourceRecovery = new StreamingSourceRecovery(options)
   const allowPrivateNetworks = options.allowPrivateNetworks ?? false
   const streamCache = options.cacheRoot === undefined ? undefined : new StreamCache(options.cacheRoot)
   const requestedMaximumCacheBytes = options.maximumCacheableResourceBytes ?? MAX_CACHEABLE_RESOURCE_BYTES
@@ -133,6 +146,7 @@ export async function registerStreamingRoutes(
         const rebound = bindCachedManifestTokens(cached, parsed.identity.contextToken, parsed.identity.accessToken)
         if (rebound !== null) {
           authorizeCachedManifestResources(rebound, parsed.target, security, parsed.identity, options.providerContexts)
+          sourceRecovery.succeed(parsed.identity, request.ip)
           return sendManifest(reply, kind, rebound, false, cacheSettings.maxAgeSeconds, true, request.method === 'HEAD')
         }
       }
@@ -146,13 +160,21 @@ export async function registerStreamingRoutes(
         ...targetHeadersOption(parsed.identity, options),
         allowPrivateNetworks
       })
-      if (response.status === 304) return reply.code(304).send()
+      if (response.status === 304) {
+        sourceRecovery.succeed(parsed.identity, request.ip)
+        return reply.code(304).send()
+      }
       if (response.status < 200 || response.status >= 300) {
         await response.body?.cancel()
+        if (retryableManifestStatus(response.status)) {
+          const replacement = await sourceRecovery.replacement(kind, parsed.identity, request, options.providerContexts)
+          if (replacement !== null) return recoveryRedirect(reply, replacement, security)
+        }
         return streamError(reply, response.status === 404 ? 404 : 502, 'Stream manifest is unavailable')
       }
       if (request.method === 'HEAD') {
         await response.body?.cancel()
+        sourceRecovery.succeed(parsed.identity, request.ip)
         return reply
           .header('content-type', manifestContentType(kind))
           .header('cache-control', 'no-cache')
@@ -175,8 +197,11 @@ export async function registerStreamingRoutes(
         await streamCache.writeText(parsed.identity, parsed.target, cacheableManifest(content, identity.contextToken, identity.accessToken)).catch(() => undefined)
       }
 
+      sourceRecovery.succeed(parsed.identity, request.ip)
       return sendManifest(reply, kind, content, live, cacheSettings.maxAgeSeconds, false, false)
     } catch {
+      const replacement = await sourceRecovery.replacement(kind, parsed.identity, request, options.providerContexts)
+      if (replacement !== null) return recoveryRedirect(reply, replacement, security)
       return streamError(reply, 502, 'Stream manifest is unavailable')
     }
   }
@@ -190,14 +215,20 @@ export async function registerStreamingRoutes(
     const cacheSettings = await loadCacheSettings()
 
     if (kind === 'stream-vid' && options.cacheRoot !== undefined && parsed.identity.label !== undefined) {
-      if (cacheSettings.enabled && await sendCachedMedia(request, reply, options.cacheRoot, parsed.identity, cacheSettings.mode)) return reply
+      if (cacheSettings.enabled && await sendCachedMedia(request, reply, options.cacheRoot, parsed.identity, cacheSettings.mode)) {
+        sourceRecovery.succeed(parsed.identity, request.ip)
+        return reply
+      }
     }
 
     const range = typeof request.headers.range === 'string' ? request.headers.range : ''
     const persistentCacheEligible = kind !== 'stream-vid' && range === '' && streamCache !== undefined && cacheSettings.enabled && cacheSettings.maxAgeSeconds > 0
     if (persistentCacheEligible) {
       const cached = await streamCache.read(parsed.identity, parsed.target, cacheSettings.maxAgeSeconds).catch(() => null)
-      if (cached !== null) return sendCachedStreamResource(request, reply, streamCache, cached, kind, cacheSettings, parsed.identity.live === true)
+      if (cached !== null) {
+        sourceRecovery.succeed(parsed.identity, request.ip)
+        return sendCachedStreamResource(request, reply, streamCache, cached, kind, cacheSettings, parsed.identity.live === true)
+      }
     }
 
     try {
@@ -208,7 +239,10 @@ export async function registerStreamingRoutes(
         ...targetHeadersOption(parsed.identity, options),
         allowPrivateNetworks
       })
-      if (response.status === 304) return reply.code(304).send()
+      if (response.status === 304) {
+        sourceRecovery.succeed(parsed.identity, request.ip)
+        return reply.code(304).send()
+      }
       if (response.status === 416) {
         const contentRange = response.headers.get('content-range')
         if (contentRange !== null) reply.header('content-range', contentRange)
@@ -217,6 +251,10 @@ export async function registerStreamingRoutes(
       }
       if (response.status < 200 || response.status >= 300) {
         await response.body?.cancel()
+        if (kind === 'stream-vid' && retryableVideoStatus(response.status)) {
+          const replacement = await sourceRecovery.replacement(kind, parsed.identity, request, options.providerContexts)
+          if (replacement !== null) return recoveryRedirect(reply, replacement, security)
+        }
         return streamError(reply, response.status === 404 ? 404 : 502, 'Stream resource is unavailable')
       }
 
@@ -234,6 +272,7 @@ export async function registerStreamingRoutes(
         .header('x-content-type-options', 'nosniff')
         .header('referrer-policy', 'no-referrer')
         .code(response.status)
+      sourceRecovery.succeed(parsed.identity, request.ip)
       if (response.body === null) return reply.send()
       let clientBody = response.body
       if (persistentCacheEligible && response.status === 200 && streamCache !== undefined) {
@@ -243,6 +282,10 @@ export async function registerStreamingRoutes(
       }
       return reply.send(remoteReadable(clientBody, maximumBytesPerSecond))
     } catch {
+      if (kind === 'stream-vid') {
+        const replacement = await sourceRecovery.replacement(kind, parsed.identity, request, options.providerContexts)
+        if (replacement !== null) return recoveryRedirect(reply, replacement, security)
+      }
       return streamError(reply, 502, 'Stream resource is unavailable')
     }
   }
@@ -252,6 +295,183 @@ export async function registerStreamingRoutes(
   app.get('/stream-ts/*', binaryHandler('stream-ts'))
   app.get('/stream-seg/*', binaryHandler('stream-seg'))
   app.get('/stream-vid/*', binaryHandler('stream-vid'))
+}
+
+type StreamingRecoveryReplacement = Readonly<{
+  route: 'hls' | 'mpd' | 'stream-vid'
+  target: URL
+  identity: StreamingIdentity
+}>
+
+class StreamingSourceRecovery {
+  readonly #attempts = new Map<string, Readonly<{ count: number; expiresAt: number }>>()
+  readonly #delay: (milliseconds: number) => Promise<void>
+  readonly #random: () => number
+  readonly #now: () => number
+  readonly #maximumAttempts: number
+
+  public constructor(private readonly options: StreamingRouteOptions) {
+    this.#delay = options.recoveryDelay ?? (async (milliseconds) => await new Promise((resolve) => setTimeout(resolve, milliseconds)))
+    this.#random = options.recoveryRandom ?? Math.random
+    this.#now = options.recoveryNow ?? Date.now
+    const requestedMaximum = options.recoveryMaximumAttempts ?? 3
+    this.#maximumAttempts = Number.isFinite(requestedMaximum)
+      ? Math.max(1, Math.min(10, Math.trunc(requestedMaximum)))
+      : 3
+  }
+
+  public succeed(identity: StreamingIdentity, clientIp: string): void {
+    if (identity.recoverable === true) this.#attempts.delete(this.key(identity, clientIp))
+  }
+
+  public async replacement(
+    route: 'hls' | 'mpd' | 'stream-vid',
+    identity: StreamingIdentity,
+    request: FastifyRequest,
+    providerContexts: ProviderStreamContextRegistry | undefined
+  ): Promise<StreamingRecoveryReplacement | null> {
+    if (identity.recoverable !== true || this.options.refreshSource === undefined) return null
+    const now = this.#now()
+    this.prune(now)
+    const key = this.key(identity, request.ip)
+    const previous = this.#attempts.get(key)
+    const attempt = previous?.count ?? 0
+    if (attempt >= this.#maximumAttempts) return null
+    this.#attempts.set(key, Object.freeze({ count: attempt + 1, expiresAt: now + 300_000 }))
+
+    const sample = this.#random()
+    const normalizedSample = Number.isFinite(sample) ? Math.max(0, Math.min(0.999999999, sample)) : 0
+    const milliseconds = Math.min(64_000, 2 ** attempt * 1_000 + Math.floor(normalizedSample * 1_001))
+    try {
+      await this.#delay(milliseconds)
+    } catch {
+      return null
+    }
+
+    let result: MediaResult
+    try {
+      result = await this.options.refreshSource(
+        { host: identity.host, id: identity.id },
+        {
+          clientIp: request.ip,
+          userAgent: request.headers['user-agent'] ?? '',
+          language: request.headers['accept-language'] ?? '',
+          downloadable: identity.downloadable === true
+        }
+      )
+    } catch {
+      return null
+    }
+    const selected = selectRecoverySource(result.sources, route, identity.label)
+    if (selected === null) return null
+
+    const upstream = result.upstream
+    const contextToken = providerContexts?.register({
+      host: upstream?.host ?? identity.host,
+      targets: mediaResultTargets(result),
+      referer: result.referer,
+      cookies: result.cookies,
+      userAgent: upstream?.userAgent ?? request.headers['user-agent'] ?? '',
+      language: upstream?.language ?? request.headers['accept-language'] ?? ''
+    }) ?? undefined
+    const { contextToken: _oldContext, label: _oldLabel, live: _oldLive, ...preserved } = identity
+    return Object.freeze({
+      route: selected.route,
+      target: selected.target,
+      identity: Object.freeze({
+        ...preserved,
+        label: selected.label,
+        recoverable: true,
+        ...(contextToken === undefined ? {} : { contextToken })
+      })
+    })
+  }
+
+  private key(identity: StreamingIdentity, clientIp: string): string {
+    return `${identity.host}\u0000${identity.id}\u0000${normalizeIp(clientIp) ?? 'unknown'}`
+  }
+
+  private prune(now: number): void {
+    for (const [key, value] of this.#attempts) if (value.expiresAt <= now) this.#attempts.delete(key)
+  }
+}
+
+function selectRecoverySource(
+  sources: readonly MediaSource[],
+  requestedRoute: 'hls' | 'mpd' | 'stream-vid',
+  requestedLabel: string | undefined
+): Readonly<{ route: 'hls' | 'mpd' | 'stream-vid'; target: URL; label: string }> | null {
+  const candidates = sources.flatMap((source) => {
+    const target = mediaSourceTarget(source)
+    if (target === null) return []
+    const route = streamingRouteForSource(source, target)
+    const label = typeof source.label === 'string' && source.label.trim() !== '' ? source.label.trim() : 'Original'
+    return [{ route, target, label }]
+  })
+  const sameKind = candidates.filter((candidate) => candidate.route === requestedRoute)
+  const compatible = requestedRoute === 'stream-vid'
+    ? candidates.filter((candidate) => candidate.route === 'stream-vid')
+    : candidates.filter((candidate) => candidate.route !== 'stream-vid')
+  const pool = sameKind.length > 0 ? sameKind : compatible
+  const normalizedLabel = requestedLabel?.trim().toLowerCase() ?? ''
+  return pool.find((candidate) => normalizedLabel !== '' && candidate.label.toLowerCase() === normalizedLabel)
+    ?? pool[0]
+    ?? null
+}
+
+function streamingRouteForSource(source: MediaSource, target: URL): 'hls' | 'mpd' | 'stream-vid' {
+  const type = typeof source.type === 'string' ? source.type.toLowerCase() : ''
+  const pathname = target.pathname.toLowerCase()
+  if (type.includes('hls') || type.includes('mpegurl') || pathname.endsWith('.m3u8')) return 'hls'
+  if (type.includes('mpd') || type.includes('dash') || pathname.endsWith('.mpd')) return 'mpd'
+  return 'stream-vid'
+}
+
+function mediaSourceTarget(source: MediaSource): URL | null {
+  if (typeof source.file !== 'string' || source.file.length === 0) return null
+  try {
+    const target = new URL(source.file)
+    return (target.protocol === 'http:' || target.protocol === 'https:') && !target.username && !target.password ? target : null
+  } catch {
+    return null
+  }
+}
+
+function mediaResultTargets(result: MediaResult): URL[] {
+  const values: unknown[] = [
+    ...result.sources.map((source) => source.file),
+    ...result.tracks.map((track) => track.file),
+    result.image,
+    result.filmstrip
+  ]
+  const targets: URL[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    try {
+      const target = new URL(value)
+      if ((target.protocol === 'http:' || target.protocol === 'https:') && !target.username && !target.password) targets.push(target)
+    } catch {
+      // Non-URL metadata is excluded from the server-side provider context.
+    }
+  }
+  return targets
+}
+
+function retryableManifestStatus(status: number): boolean {
+  return status === 400 || status === 410 || status === 429 || status >= 500
+}
+
+function retryableVideoStatus(status: number): boolean {
+  return status >= 400 && status !== 410 && status !== 416
+}
+
+function recoveryRedirect(reply: FastifyReply, replacement: StreamingRecoveryReplacement, security: Security): unknown {
+  const location = createStreamingProxyPath(replacement.route, replacement.target, security, replacement.identity)
+  return reply
+    .header('cache-control', 'no-store')
+    .header('location', location)
+    .code(307)
+    .send()
 }
 
 type ParsedStreamingTarget = Readonly<{
@@ -338,6 +558,7 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
     const contextToken = providerContextToken(request)
     const accessToken = streamingAccessToken(request)
     const downloadable = legacyNonEmpty(request.searchParams.get('dl'))
+    const recoverable = request.searchParams.get('gxr') === '1'
     return {
       identity: {
         host: identityValue.slice(0, separator),
@@ -346,7 +567,8 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
         ...(live ? { live: true } : {}),
         ...(contextToken === null ? {} : { contextToken }),
         ...(accessToken === null ? {} : { accessToken }),
-        ...(downloadable ? { downloadable: true } : {})
+        ...(downloadable ? { downloadable: true } : {}),
+        ...(recoverable ? { recoverable: true } : {})
       },
       target
     }
@@ -374,6 +596,7 @@ export function rewriteHlsPlaylist(
   identity: StreamingIdentity,
   observeResource?: (target: URL) => void
 ): string {
+  const nestedIdentity = withoutSourceRecovery(identity)
   const lines = input.replace(/\r\n?/g, '\n').split('\n')
   let nextUriIsPlaylist = false
   const output = lines.map((rawLine) => {
@@ -384,14 +607,14 @@ export function rewriteHlsPlaylist(
         const target = resolveHttpResource(value, manifestUrl)
         if (target === null || bypassHlsTransport(target)) return line
         observeResource?.(target)
-        return `#EXT-X-PREFETCH:${createStreamingProxyPath('stream-ts', target, security, identity)}`
+        return `#EXT-X-PREFETCH:${createStreamingProxyPath('stream-ts', target, security, nestedIdentity)}`
       }
       const rewritten = line.replace(/URI=(["'])(.*?)\1/g, (match, quote: string, value: string) => {
         const target = resolveHttpResource(decodeXml(value), manifestUrl)
         if (target === null || bypassHlsTransport(target)) return match
         observeResource?.(target)
         const playlist = line.startsWith('#EXT-X-MEDIA') || target.pathname.toLowerCase().endsWith('.m3u8')
-        const path = createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, identity)
+        const path = createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, nestedIdentity)
         return `URI=${quote}${path}${quote}`
       })
       nextUriIsPlaylist = line.startsWith('#EXT-X-STREAM-INF')
@@ -403,7 +626,7 @@ export function rewriteHlsPlaylist(
     observeResource?.(target)
     const playlist = nextUriIsPlaylist || target.pathname.toLowerCase().endsWith('.m3u8')
     nextUriIsPlaylist = false
-    return createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, identity)
+    return createStreamingProxyPath(playlist ? 'hls' : 'stream-ts', target, security, nestedIdentity)
   })
   return `${output.join('\n').trimEnd()}\n`
 }
@@ -415,6 +638,7 @@ export function rewriteMpdManifest(
   identity: StreamingIdentity,
   observeResource?: (target: URL) => void
 ): string {
+  const nestedIdentity = withoutSourceRecovery(identity)
   input = repairMpdManifest(input)
   const firstBase = input.match(/<BaseURL\b[^>]*>([\s\S]*?)<\/BaseURL>/i)?.[1]
   const effectiveBase = firstBase === undefined
@@ -425,7 +649,7 @@ export function rewriteMpdManifest(
     const target = resolveHttpResource(decodeXml(value.trim()), manifestUrl)
     if (target === null) return `${open}${value}${close}`
     observeResource?.(target)
-    const path = createStreamingBasePath(target, security, identity)
+    const path = createStreamingBasePath(target, security, nestedIdentity)
     return `${open}${escapeXml(path)}${close}`
   })
 
@@ -438,21 +662,21 @@ export function rewriteMpdManifest(
     const route: StreamingRoute = attribute.toLowerCase() === 'xlink:href'
       ? 'mpd'
       : 'stream-seg'
-    const path = createStreamingProxyPath(route, target, security, identity, true)
+    const path = createStreamingProxyPath(route, target, security, nestedIdentity, true)
     return `${attribute}=${quote}${escapeXml(path)}${quote}`
   })
 
   output = output.replace(/\bmoreInformationURL=(["'])(.*?)\1/gi, (match, quote: string, value: string) => {
     const target = resolveHttpResource(decodeXml(value), effectiveBase)
     if (target === null) return match
-    return `moreInformationURL=${quote}${escapeXml(createRedirectProxyPath(target, security, identity))}${quote}`
+    return `moreInformationURL=${quote}${escapeXml(createRedirectProxyPath(target, security, nestedIdentity))}${quote}`
   })
 
   output = output.replace(/(<UTCTiming\b[^>]*\bvalue=)(["'])(.*?)\2/gi, (match, prefix: string, quote: string, value: string) => {
     const target = resolveHttpResource(decodeXml(value), effectiveBase)
     if (target === null) return match
     observeResource?.(target)
-    const rewritten = createStreamingProxyPath('stream-seg', target, security, identity, true)
+    const rewritten = createStreamingProxyPath('stream-seg', target, security, nestedIdentity, true)
     return `${prefix}${quote}${escapeXml(rewritten)}${quote}`
   })
   return output
@@ -482,11 +706,17 @@ function withInternalQuery(value: string, identity: StreamingIdentity, security:
   const internal = new URLSearchParams()
   if (identity.live === true) internal.set('gl', '1')
   if (identity.downloadable === true) internal.set('dl', '1')
+  if (identity.recoverable === true) internal.set('gxr', '1')
   if (identity.label !== undefined && identity.label.trim() !== '') internal.set('gcl', security.encryptURL(identity.label))
   if (identity.contextToken !== undefined && PROVIDER_CONTEXT_TOKEN_PATTERN.test(identity.contextToken)) internal.set('gsc', identity.contextToken)
   if (identity.accessToken !== undefined && validAccessToken(identity.accessToken)) internal.set('gt', identity.accessToken)
   const query = internal.toString()
   return query === '' ? value : `${value}${value.includes('?') ? '&' : '?'}${query}`
+}
+
+function withoutSourceRecovery(identity: StreamingIdentity): StreamingIdentity {
+  const { recoverable: _recoverable, ...nested } = identity
+  return nested
 }
 
 function cacheLabel(request: URL, security: Security): string | null {

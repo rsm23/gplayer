@@ -6,7 +6,7 @@ import { MySqlSourceCacheRepository } from '../database/source-cache-repository.
 import { ExtractorFactory } from '../hosting/extractor-factory.js'
 import { RemoteProviderHttpClient, RuntimeProxyProviderHttpClient } from '../hosting/provider-http.js'
 import { ProviderCookieHttpClient, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
-import type { SourceApiRouteOptions } from './source-api-routes.js'
+import type { SourceApiResolver, SourceApiRouteOptions } from './source-api-routes.js'
 import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
 import { MySqlMediaDownloadStore } from '../background/mysql-media-download-store.js'
 import { playerMediaCandidates } from '../core/player-query.js'
@@ -63,6 +63,46 @@ export function createSourceApiRuntime(
     await database?.close()
   })
 
+  const resolveSources = async (
+    query: Parameters<SourceApiResolver>[0],
+    context: Parameters<SourceApiResolver>[1],
+    refresh: boolean
+  ) => {
+    const candidates = playerMediaCandidates(query).filter((candidate) => supportedHosts.has(candidate.host))
+    if (candidates.length === 0) return emptyMediaResult()
+
+    const general = await loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
+    const googleHlsHosts = googleHlsHostsForRequest(general, context.downloadable)
+
+    database ??= new Database(config.database)
+    cache ??= new MySqlSourceCacheRepository(database)
+    serverStore ??= new MySqlMediaDownloadStore(database)
+    if (serverId === undefined) {
+      const value = Number(await serverStore.currentServerId(config.baseUrl.toString()) ?? 0)
+      serverId = Number.isSafeInteger(value) && value > 0 ? value : null
+    }
+    for (const candidate of candidates) {
+      const resolver = new SourceResolver({
+        cache,
+        extractors,
+        clientIp: context.clientIp,
+        serverId,
+        defaultUserAgent: DEFAULT_USER_AGENT,
+        defaultLanguage: DEFAULT_LANGUAGE,
+        requestUserAgent: context.userAgent,
+        requestLanguage: context.language,
+        directHosts: new Set(['direct']),
+        downloadableHosts: supportedHosts,
+        googleHlsHosts
+      })
+        .setQuery({ host: candidate.host, id: candidate.id, ...(query.email === undefined ? {} : { email: query.email }) })
+        .setDownload(context.downloadable)
+      const result = refresh ? await resolver.refreshResult() : await resolver.getResult()
+      if (result.sources.length > 0) return result
+    }
+    return emptyMediaResult()
+  }
+
   return {
     supportedHosts,
     invalidateSource: async (identity) => {
@@ -70,41 +110,8 @@ export function createSourceApiRuntime(
       cache ??= new MySqlSourceCacheRepository(database)
       return await cache.deleteIdentity(identity)
     },
-    resolve: async (query, context) => {
-      const candidates = playerMediaCandidates(query).filter((candidate) => supportedHosts.has(candidate.host))
-      if (candidates.length === 0) return emptyMediaResult()
-
-      const general = await loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
-      const googleHlsHosts = googleHlsHostsForRequest(general, context.downloadable)
-
-      database ??= new Database(config.database)
-      cache ??= new MySqlSourceCacheRepository(database)
-      serverStore ??= new MySqlMediaDownloadStore(database)
-      if (serverId === undefined) {
-        const value = Number(await serverStore.currentServerId(config.baseUrl.toString()) ?? 0)
-        serverId = Number.isSafeInteger(value) && value > 0 ? value : null
-      }
-      for (const candidate of candidates) {
-        const result = await new SourceResolver({
-          cache,
-          extractors,
-          clientIp: context.clientIp,
-          serverId,
-          defaultUserAgent: DEFAULT_USER_AGENT,
-          defaultLanguage: DEFAULT_LANGUAGE,
-          requestUserAgent: context.userAgent,
-          requestLanguage: context.language,
-          directHosts: new Set(['direct']),
-          downloadableHosts: supportedHosts,
-          googleHlsHosts
-        })
-          .setQuery({ host: candidate.host, id: candidate.id, ...(query.email === undefined ? {} : { email: query.email }) })
-          .setDownload(context.downloadable)
-          .getResult()
-        if (result.sources.length > 0) return result
-      }
-      return emptyMediaResult()
-    }
+    resolve: async (query, context) => await resolveSources(query, context, false),
+    refresh: async (query, context) => await resolveSources(query, context, true)
   }
 }
 

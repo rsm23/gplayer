@@ -1287,12 +1287,14 @@ function proxyPlayerMedia(media: PlayerMediaQuery, security: Security, clientIp:
         id = createStreamingProxyPath('hls', target, security, {
           host: 'direct',
           id: media.id,
+          recoverable: true,
           ...(accessToken === undefined ? {} : { accessToken })
         })
       } else if (pathname.endsWith('.mpd')) {
         id = createStreamingProxyPath('mpd', target, security, {
           host: 'direct',
           id: media.id,
+          recoverable: true,
           ...(accessToken === undefined ? {} : { accessToken })
         })
       }

@@ -114,6 +114,33 @@ describe('Core source resolver parity', () => {
     }))
   })
 
+  it('forces a browser-scoped refresh before extracting a replacement source', async () => {
+    const cache = new MemorySourceCache()
+    cache.record = record(result({ file: 'https://cdn.example/stale.mp4', type: 'video/mp4' }))
+    const extractor = new FakeExtractor()
+    const resolver = createResolver(cache, extractor)
+      .setQuery({ host: 'filelions', id: 'refresh-id' })
+      .setDownload(true)
+
+    await expect(resolver.refreshResult()).resolves.toMatchObject({
+      sources: [{ file: 'https://cdn.example/video.mp4', type: 'mp4' }]
+    })
+
+    expect(cache.finds).toHaveLength(0)
+    expect(cache.deletes).toEqual([{
+      host: 'earnvids',
+      hostId: 'refresh-id',
+      expiresAfter: 1_700_000_000,
+      downloadable: true,
+      userAgent: 'Browser UA',
+      language: 'fr-FR',
+      serverId: 7,
+      clientIp: '198.51.100.4'
+    }])
+    expect(extractor.sourceCalls).toBe(1)
+    expect(cache.inserts).toHaveLength(1)
+  })
+
   it('refreshes a cached Google MP4 after HLS mode is enabled', async () => {
     const cache = new MemorySourceCache()
     cache.record = record(result({ file: 'cached.mp4', type: 'video/mp4' }))

@@ -48,6 +48,7 @@ export type SourceApiResolver = (
 
 export type SourceApiRouteOptions = Readonly<{
   resolve: SourceApiResolver
+  refresh?: SourceApiResolver
   invalidateSource?: (identity: Readonly<{ host: string; id: string }>) => Promise<boolean>
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
   supportedHosts?: ReadonlySet<string>
@@ -447,6 +448,7 @@ export function createSourceResponse(
   const identity: StreamingIdentity = {
     host: upstream.host,
     id: upstream.id,
+    recoverable: true,
     ...(contextToken === undefined ? {} : { contextToken }),
     ...(accessToken === undefined ? {} : { accessToken }),
     ...(requestContext.downloadable ? { downloadable: true } : {})

@@ -578,6 +578,7 @@ export async function buildApp(
   await registerMediaRoutes(app, config, { publicRoot, providerContexts: providerStreamContexts })
   await registerStreamingRoutes(app, config, {
     providerContexts: providerStreamContexts,
+    ...(sourceApiRuntime.refresh === undefined ? {} : { refreshSource: sourceApiRuntime.refresh }),
     customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target),
     cacheRoot,
     loadCacheSettings: async () => {
