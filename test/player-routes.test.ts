@@ -449,10 +449,18 @@ describe('player HTTP routes', () => {
     const download = await app.inject({ method: 'GET', url: `/d/?${token}` })
     expect(download.statusCode).toBe(200)
     expect(download.headers['content-security-policy']).toContain("frame-src 'self'")
+    expect(download.headers['content-security-policy']).toContain("script-src 'self'")
     expect(download.body).toContain('src="/ads/frame/download-top"')
     expect(download.body).toContain('src="/ads/frame/download-bottom"')
     expect(download.body).toContain('src="/ads/frame/popup"')
+    expect(download.body).toContain('href="https://campaign.example/visit" data-download-target="https://cdn.example/movie.mp4"')
+    expect(download.body).toContain('src="/assets/js/gplayer-download.js"')
+    expect(download.body).not.toContain('onclick=')
     expect(download.body).not.toContain('Top sponsor')
+
+    const downloadRuntime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-download.js' })
+    expect(downloadRuntime.statusCode).toBe(200)
+    expect(downloadRuntime.body).toContain("window.open(target.toString(), '_blank', 'noopener,noreferrer')")
 
     const top = await app.inject({ method: 'GET', url: '/ads/frame/download-top' })
     expect(top.statusCode).toBe(200)
@@ -654,7 +662,7 @@ describe('player HTTP routes', () => {
       email: '',
       image: 'https://media.provider.example/poster.jpg',
       cookies: [{ name: 'private_session', value: 'must-not-leak' }],
-      filmstrip: '',
+      filmstrip: 'https://media.provider.example/thumbnails.vtt',
       clientip: '127.0.0.1',
       upstream: {
         host: 'streamhg',
@@ -696,6 +704,9 @@ describe('player HTTP routes', () => {
     expect(response.body).not.toContain('private_session')
     expect(response.body).not.toContain('must-not-leak')
 
+    const filmstrip = response.body.match(/<script type="application\/json" data-filmstrip-config>([\s\S]*?)<\/script>/)?.[1] ?? ''
+    expect(JSON.parse(filmstrip)).toEqual({ file: expect.stringMatching(/^https:\/\/player\.example\/filmstrip\//) })
+
     const serialized = response.body.match(/<script type="application\/json" data-playback-sources>([\s\S]*?)<\/script>/)?.[1] ?? ''
     expect(JSON.parse(serialized)).toEqual([
       expect.objectContaining({ type: 'hls', label: 'Auto', default: true }),
@@ -713,6 +724,8 @@ describe('player HTTP routes', () => {
     expect(runtime.body).toContain("instance.on('error', switchToFallback)")
     expect(runtime.body).toContain("video.addEventListener('error', switchToFallback)")
     expect(runtime.body).toContain('window.location.replace(fallbackUrl)')
+    expect(runtime.body).toContain("kind: 'thumbnails'")
+    expect(runtime.body).toContain('previewThumbnails: { enabled: true')
   })
 
   it('randomly rotates the bounded alternative set without rendering the manual server picker', async () => {

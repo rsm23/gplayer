@@ -16,6 +16,7 @@ export type DownloadPageOptions = Readonly<{
   shortenedLinks?: ReadonlyMap<string, string>
   showSubtitleDownloads?: boolean
   showWatchButton?: boolean
+  directAdUrl?: string
   resolvedPlayback?: Readonly<{
     title: string
     sources: readonly MediaSource[]
@@ -78,7 +79,7 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
       ${servers}
       ${availableItems.length === 0
         ? '<div class="notice notice-error"><strong>No downloadable source is available.</strong><span>The link is valid, but this source cannot be opened safely.</span></div>'
-        : `<ul class="download-list">${availableItems.map(renderDownloadItem).join('')}</ul>`}
+        : `<ul class="download-list">${availableItems.map((item) => renderDownloadItem(item, options.directAdUrl ?? '')).join('')}</ul>`}
       ${adapterPending
         ? `<div class="notice"><strong>${escapeHtml(providerName(media.host ?? 'provider', options.customNames))} source recognized</strong><span>The source page is available now. Direct-file extraction will be enabled when this provider adapter reaches parity.</span></div>`
         : ''}
@@ -86,6 +87,7 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
     </section>
   </main>
   ${renderAdFrame(options.popupFrameUrl, 'Advertisement', 'popup')}
+  ${safeHttpUrl(options.directAdUrl ?? '') === '' || availableItems.length === 0 ? '' : '<script src="/assets/js/gplayer-download.js"></script>'}
 </body>
 </html>`
 }
@@ -210,9 +212,12 @@ function transformedDownloadHref(href: string, shortenedLinks?: ReadonlyMap<stri
   return safeHttpUrl(transformed) || href
 }
 
-function renderDownloadItem(item: DownloadItem): string {
+function renderDownloadItem(item: DownloadItem, directAdUrl = ''): string {
   const icon = item.kind === 'subtitle' ? 'CC' : item.kind === 'source' ? '↗' : '↓'
-  return `<li><span class="file-icon" aria-hidden="true">${icon}</span><span class="file-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span><a class="button button-download" href="${escapeHtmlAttribute(item.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtmlAttribute(item.label)}">${item.kind === 'source' ? 'Open' : 'Download'}</a></li>`
+  const advertisement = safeHttpUrl(directAdUrl)
+  const href = advertisement || item.href
+  const target = advertisement === '' ? '' : ` data-download-target="${escapeHtmlAttribute(item.href)}"`
+  return `<li><span class="file-icon" aria-hidden="true">${icon}</span><span class="file-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span><a class="button button-download" href="${escapeHtmlAttribute(href)}"${target} target="_blank" rel="noopener noreferrer" aria-label="${escapeHtmlAttribute(item.label)}">${item.kind === 'source' ? 'Open' : 'Download'}</a></li>`
 }
 
 function renderAdFrame(url: string | undefined, title: string, kind: 'banner' | 'popup'): string {

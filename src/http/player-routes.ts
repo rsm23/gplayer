@@ -391,6 +391,7 @@ export async function registerPlayerRoutes(
         resolvedPlayback: {
           title: sourceResponse.title,
           poster: sourceResponse.poster,
+          filmstrip: sourceResponse.filmstrip,
           sources: sourceResponse.sources,
           tracks: sourceResponse.tracks
         }
@@ -485,6 +486,7 @@ export async function registerPlayerRoutes(
       hostingData: hosting.data,
       customNames: hosting.customNames,
       shortenedLinks,
+      directAdUrl: ads.disable_direct_ads ? '' : ads.direct_ads_link,
       showSubtitleDownloads: publicSettings.show_sub_download,
       showWatchButton: publicSettings.show_watch_button,
       ...(sourceResponse === null ? {} : {
@@ -977,7 +979,7 @@ function routePath(slug: string, query: string): string {
 function applyDownloadHeaders(reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]): void {
   reply
     .header('cache-control', 'private, no-store')
-    .header('content-security-policy', "default-src 'none'; style-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; object-src 'none'")
+    .header('content-security-policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; object-src 'none'")
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'no-referrer')
     .header('x-robots-tag', 'noindex, nofollow')

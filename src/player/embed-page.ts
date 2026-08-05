@@ -32,6 +32,7 @@ export type EmbedPlayerOptions = Readonly<{
   resolvedPlayback?: Readonly<{
     title: string
     poster: string
+    filmstrip: string
     sources: readonly MediaSource[]
     tracks: readonly MediaTrack[]
   }>
@@ -137,6 +138,7 @@ export function renderEmbedPage(
     : settings.text_title.replaceAll('{title}', title).replaceAll('{siteName}', 'GPlayer')
   const playerStyles = settings === undefined ? '' : renderPlayerStyles(settings)
   const playbackSources = resolvedSources.length === 0 ? '' : renderPlaybackSources(resolvedSources)
+  const filmstrip = renderFilmstripConfiguration(resolvedPlayback?.filmstrip ?? '')
   const servers = renderPlayerServers(playerOptions?.servers ?? [])
 
   return `<!doctype html>
@@ -155,6 +157,7 @@ export function renderEmbedPage(
   ${adblockNotice}
   ${resumePrompt}
   ${playbackSources}
+  ${filmstrip}
   ${vastConfiguration}
   ${p2pConfigurationScript}
   ${renderPlayerRuntimeScripts(settings, source.kind, p2pConfiguration)}
@@ -187,6 +190,11 @@ function renderPlaybackSources(sources: readonly RenderedSource[]): string {
     label: source.message || (index === 0 ? 'Default' : `Source ${index + 1}`),
     default: index === 0
   })))}</script>`
+}
+
+function renderFilmstripConfiguration(value: string): string {
+  const file = safeHttpUrl(value)
+  return file === '' ? '' : `<script type="application/json" data-filmstrip-config>${safeJsonScript({ file })}</script>`
 }
 
 function renderResolvedTracks(tracks: readonly MediaTrack[], defaultLanguage: string): string {

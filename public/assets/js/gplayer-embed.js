@@ -138,6 +138,19 @@
     }
   }
 
+  const readFilmstrip = () => {
+    const element = document.querySelector('[data-filmstrip-config]')
+    if (!(element instanceof HTMLScriptElement)) return ''
+    try {
+      const parsed = JSON.parse(element.textContent || '')
+      if (parsed === null || typeof parsed !== 'object' || typeof parsed.file !== 'string') return ''
+      const url = new URL(parsed.file, window.location.href)
+      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.toString() : ''
+    } catch {
+      return ''
+    }
+  }
+
   const mp4QualityConfiguration = (media) => {
     const sources = readPlaybackSources()
     if (sources.length < 2 || sources.some((source) => source.type !== 'mp4')) return null
@@ -751,6 +764,7 @@
           controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
           settings,
           captions: { active: true, update: true },
+          ...(readFilmstrip() === '' ? {} : { previewThumbnails: { enabled: true, src: readFilmstrip() } }),
           ...((mediaTransport?.quality === null || mediaTransport?.quality === undefined) && mp4Quality === null
             ? {}
             : { quality: mediaTransport?.quality || mp4Quality }),
@@ -800,6 +814,8 @@
         kind: 'captions',
         default: track.default
       }))
+      const filmstrip = readFilmstrip()
+      if (filmstrip !== '') tracks.push({ file: filmstrip, label: 'Thumbnails', kind: 'thumbnails', default: false })
       const captionOpacity = (name, fallbackValue) => {
         const value = Number.parseInt(body.dataset[name] || '', 10)
         return Number.isInteger(value) && value >= 0 && value <= 100 ? value : fallbackValue
