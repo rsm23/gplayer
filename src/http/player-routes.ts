@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { AppConfig } from '../config.js'
@@ -11,7 +12,7 @@ import type { PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 import { renderAdFrameDocument, type AdFrameContent } from '../player/ad-frame.js'
 import { downloadPageLinkTargets, renderDownloadError, renderDownloadPage } from '../player/download-page.js'
-import { renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
+import { P2P_CORE_IMPORT_MAP_CSP_HASH, renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
 import { PlayerLinkGenerator } from '../player/link-generator.js'
 import { Security } from '../security/security.js'
 import type { CountryCodeLookup } from '../security/geoip-country.js'
@@ -279,17 +280,20 @@ export async function registerPlayerRoutes(
       reply.code(400).type('text/html; charset=utf-8')
       return renderEmbedError(parsed.errors[0] ?? 'The player link is invalid.')
     }
-    applyEmbedHeaders(reply, ads)
     if (networkAccessRejected(request, misc, countryCode, true, config.baseUrl.origin) ||
       mediaHostDisabled(resolvedMedia, misc.disable_host) ||
       accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(resolvedMedia))) {
+      applyEmbedHeaders(reply, ads)
       reply.code(403)
       return renderEmbedError('You are not allowed to access this player.')
     }
     const media = proxyPlayerMedia(withDefaultPoster(resolvedMedia, player), security)
+    const p2pMode = playerP2pMode(player, media)
+    applyEmbedHeaders(reply, ads, p2pMode, player)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
       downloadUrl: publicSettings.enable_download_page ? routePath(player.slug_download, parsed.token) : '',
+      ...(p2pMode === null ? {} : { p2pSwarmId: playerP2pSwarmId(config, resolvedMedia) }),
       embedOnly: publicSettings.embed_only,
       hostingData: hosting.data,
       customNames: hosting.customNames
@@ -504,11 +508,13 @@ function mediaHosts(media: PlayerMediaQuery): readonly string[] {
 
 function applyEmbedHeaders(
   reply: Parameters<FastifyRequest['routeOptions']['handler']>[1],
-  ads: AdsSettings
+  ads: AdsSettings,
+  p2pMode: 'hls' | 'dash' | null = null,
+  player?: PlayerSettings
 ): void {
   reply
     .header('cache-control', 'private, no-store')
-    .header('content-security-policy', embedContentSecurityPolicy(ads))
+    .header('content-security-policy', embedContentSecurityPolicy(ads, p2pMode, player))
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'strict-origin-when-cross-origin')
     .type('text/html; charset=utf-8')
@@ -581,8 +587,9 @@ function applyAdFrameHeaders(reply: Parameters<FastifyRequest['routeOptions']['h
     .header('x-robots-tag', 'noindex, nofollow')
 }
 
-function embedContentSecurityPolicy(ads: AdsSettings): string {
+function embedContentSecurityPolicy(ads: AdsSettings, p2pMode: 'hls' | 'dash' | null, player?: PlayerSettings): string {
   const scripts = ["'self'"]
+  const connections = ['http:', 'https:']
   const frames = [
     "'self'",
     'https://www.youtube-nocookie.com',
@@ -594,6 +601,17 @@ function embedContentSecurityPolicy(ads: AdsSettings): string {
     scripts.push("'unsafe-eval'", 'https://imasdk.googleapis.com')
     frames.push('http:', 'https:', 'blob:')
   }
+  if (p2pMode !== null && player !== undefined) {
+    if (p2pMode === 'hls') scripts.push(P2P_CORE_IMPORT_MAP_CSP_HASH)
+    for (const tracker of player.torrent_tracker.split(/\r?\n/)) {
+      try {
+        const url = new URL(tracker)
+        if (['ws:', 'wss:'].includes(url.protocol) && !url.username && !url.password && !connections.includes(url.origin)) connections.push(url.origin)
+      } catch {
+        // Runtime settings validation normally guarantees tracker URLs.
+      }
+    }
+  }
   if (!ads.disable_direct_ads && ads.show_iframeads && ads.direct_ads_link.length > 0) {
     try {
       const origin = new URL(ads.direct_ads_link).origin
@@ -602,7 +620,27 @@ function embedContentSecurityPolicy(ads: AdsSettings): string {
       // Settings validation normally guarantees a URL; omit invalid values defensively.
     }
   }
-  return `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src http: https:; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
+  return `default-src 'none'; script-src ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; media-src http: https: blob:; connect-src ${connections.join(' ')}; img-src 'self' http: https: data:; frame-src ${frames.join(' ')}; worker-src blob:; base-uri 'none'; form-action 'none'; object-src 'none'`
+}
+
+function playerP2pMode(player: PlayerSettings, media: PlayerMediaQuery): 'hls' | 'dash' | null {
+  if (player.player !== 'plyr' || !player.p2p || media.host !== 'direct' || media.id === undefined) return null
+  if (media.id.startsWith('/hls/')) return 'hls'
+  if (media.id.startsWith('/mpd/')) return 'dash'
+  try {
+    const pathname = new URL(media.id).pathname.toLowerCase()
+    if (pathname.endsWith('.m3u8')) return 'hls'
+    if (pathname.endsWith('.mpd')) return 'dash'
+  } catch {
+    // Invalid direct URLs are handled by the renderer.
+  }
+  return null
+}
+
+function playerP2pSwarmId(config: AppConfig, media: PlayerMediaQuery): string {
+  return createHmac('sha256', config.secureSalt)
+    .update(`gplayer-p2p\0${media.host ?? ''}\0${media.id ?? ''}`)
+    .digest('hex')
 }
 
 function toArray(value: string | string[] | undefined): string[] {

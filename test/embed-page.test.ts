@@ -69,4 +69,47 @@ describe('native embed appearance', () => {
     expect(jwplayer).not.toContain('/assets/vendor/plyr/3.6.3/plyr-custom.min.css')
     expect(jwplayer).not.toContain(' src="https://media.example.test/video.mp4"')
   })
+
+  it('publishes P2P transport only for configured Plyr HLS and DASH media', () => {
+    const settings = playerSettings({
+      player: 'plyr',
+      p2p: 'true',
+      torrent_tracker: 'wss://tracker.example/socket\nws://tracker2.example/announce'
+    }, defaults)
+    const options = { settings, downloadUrl: '', p2pSwarmId: 'a'.repeat(64) }
+    const hls = renderEmbedPage(
+      { host: 'direct', id: 'https://media.example.test/live.m3u8' },
+      publicOptions,
+      undefined,
+      options
+    )
+    const serialized = hls.match(/<script type="application\/json" data-p2p-config>([\s\S]*?)<\/script>/)?.[1]
+    expect(JSON.parse(serialized ?? '')).toEqual({
+      swarmId: 'a'.repeat(64),
+      trackers: ['wss://tracker.example/socket', 'ws://tracker2.example/announce']
+    })
+    expect(hls).toContain('<script type="importmap">')
+    expect(hls).toContain('/assets/vendor/hls.js/1.6.4/hls.min.js')
+    expect(hls).not.toContain(' src="https://media.example.test/live.m3u8"')
+
+    const dash = renderEmbedPage(
+      { host: 'direct', id: 'https://media.example.test/manifest.mpd' },
+      publicOptions,
+      undefined,
+      options
+    )
+    expect(dash).toContain('/assets/vendor/shaka-player/2.5.23/shaka-player.compiled.js')
+    expect(dash).toContain('/assets/vendor/p2p-media-loader-core/0.6.2/p2p-media-loader-core.min.js')
+    expect(dash).toContain('/assets/vendor/p2p-media-loader-shaka/0.6.2/p2p-media-loader-shaka.min.js')
+    expect(dash).not.toContain(' src="https://media.example.test/manifest.mpd"')
+
+    const jw = renderEmbedPage(
+      { host: 'direct', id: 'https://media.example.test/live.m3u8' },
+      publicOptions,
+      undefined,
+      { settings: playerSettings({ player: 'jwplayer', p2p: 'true' }, defaults), downloadUrl: '', p2pSwarmId: 'a'.repeat(64) }
+    )
+    expect(jw).not.toContain('data-p2p-config')
+    expect(jw).not.toContain('p2p-media-loader')
+  })
 })

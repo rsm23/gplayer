@@ -318,5 +318,8 @@ describe('legacy-compatible system routes', () => {
     expect(embedScript.body).toContain("body.dataset.activePlayer = 'native'")
     expect(embedScript.body).toContain('tagUrl: vastConfig.schedule[0].tag')
     expect(embedScript.body).toContain('advertising: vastConfig')
+    expect(embedScript.body).toContain("import('/assets/vendor/p2p-media-loader-hlsjs/2.2.1/p2p-media-loader-hlsjs.es.min.js')")
+    expect(embedScript.body).toContain("body.dataset.p2pTransport = 'hls'")
+    expect(embedScript.body).toContain("body.dataset.p2pTransport = 'dash'")
   })
 })

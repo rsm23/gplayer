@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { parsePlayerQuery } from '../src/core/player-query.js'
+import { P2P_CORE_IMPORT_MAP_CSP_HASH } from '../src/player/embed-page.js'
 import { Security } from '../src/security/security.js'
 import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
 import { AuthService, type AuthStore, type AuthUser } from '../src/auth/auth-service.js'
@@ -443,6 +445,48 @@ describe('player HTTP routes', () => {
       omidSupport: 'enabled',
       maxRedirects: 20
     })
+  })
+
+  it('activates the bounded P2P transport and tracker CSP only for compatible media', async () => {
+    const values = {
+      player: 'plyr',
+      p2p: 'true',
+      torrent_tracker: 'wss://tracker.example/socket\nws://tracker2.example/announce'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const security = new Security(secureSalt)
+    const hlsToken = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Flive.m3u8')
+    const dashToken = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmanifest.mpd')
+
+    const hls = await app.inject({ method: 'GET', url: `/e/?${hlsToken}` })
+    expect(hls.statusCode).toBe(200)
+    expect(hls.headers['content-security-policy']).toContain("'sha256-AiLle+FwOAtYz21T4sfz0xDyuDG9d1tL/UAOz35ZmeI='")
+    expect(hls.headers['content-security-policy']).toContain('wss://tracker.example')
+    expect(hls.headers['content-security-policy']).toContain('ws://tracker2.example')
+    expect(hls.body).toContain('/assets/vendor/p2p-media-loader-core/2.2.1/p2p-media-loader-core.es.min.js')
+    const importMap = hls.body.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1] ?? ''
+    const importMapHash = `'sha256-${createHash('sha256').update(importMap).digest('base64')}'`
+    expect(importMapHash).toBe(P2P_CORE_IMPORT_MAP_CSP_HASH)
+    expect(hls.headers['content-security-policy']).toContain(importMapHash)
+    const serialized = hls.body.match(/<script type="application\/json" data-p2p-config>([\s\S]*?)<\/script>/)?.[1]
+    expect(JSON.parse(serialized ?? '')).toEqual({
+      swarmId: expect.stringMatching(/^[a-f0-9]{64}$/),
+      trackers: ['wss://tracker.example/socket', 'ws://tracker2.example/announce']
+    })
+
+    const dash = await app.inject({ method: 'GET', url: `/e/?${dashToken}` })
+    expect(dash.statusCode).toBe(200)
+    expect(dash.headers['content-security-policy']).not.toContain(P2P_CORE_IMPORT_MAP_CSP_HASH)
+    expect(dash.body).toContain('/assets/vendor/p2p-media-loader-shaka/0.6.2/p2p-media-loader-shaka.min.js')
+
+    const mp4Token = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fvideo.mp4')
+    const mp4 = await app.inject({ method: 'GET', url: `/e/?${mp4Token}` })
+    expect(mp4.statusCode).toBe(200)
+    expect(mp4.headers['content-security-policy']).not.toContain(P2P_CORE_IMPORT_MAP_CSP_HASH)
+    expect(mp4.headers['content-security-policy']).not.toContain('tracker.example')
+    expect(mp4.body).not.toContain('data-p2p-config')
   })
 
   it('uses configured player slugs, embed markup, query policy, and native presentation settings', async () => {

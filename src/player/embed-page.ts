@@ -23,10 +23,19 @@ export type EmbedAdsOptions = Readonly<{
 export type EmbedPlayerOptions = Readonly<{
   settings: PlayerSettings
   downloadUrl: string
+  p2pSwarmId?: string
   embedOnly?: boolean
   hostingData?: HostingData
   customNames?: Readonly<Record<string, string>>
 }>
+
+type RuntimeP2pConfiguration = Readonly<{
+  swarmId: string
+  trackers: readonly string[]
+}>
+
+export const P2P_CORE_IMPORT_MAP_CSP_HASH = "'sha256-AiLle+FwOAtYz21T4sfz0xDyuDG9d1tL/UAOz35ZmeI='"
+const P2P_CORE_IMPORT_MAP = '{"imports":{"p2p-media-loader-core":"/assets/vendor/p2p-media-loader-core/2.2.1/p2p-media-loader-core.es.min.js"}}'
 
 const DISABLED_EMBED_ADS: EmbedAdsOptions = Object.freeze({
   blockAdblocker: false,
@@ -70,7 +79,7 @@ export function renderEmbedPage(
   } else if (source.kind === 'unavailable') {
     player = `<div class="player-notice"><span>Source accepted</span><h1>Provider adapter in progress</h1><p>${escapeHtml(source.message ?? 'This provider is not available in the Node player yet.')}</p></div>`
   } else {
-    const sourceAttribute = source.kind === 'hls' || settings?.player === 'jwplayer' || playerOptions?.embedOnly === true
+    const sourceAttribute = source.kind === 'hls' || source.kind === 'dash' || settings?.player === 'jwplayer' || playerOptions?.embedOnly === true
       ? ''
       : ` src="${escapeHtmlAttribute(source.url)}"`
     player = `<video id="media-player" class="player-stretch-${stretching}" controls playsinline preload="${preload}"${videoAttributes}${sourceAttribute}${poster ? ` poster="${escapeHtmlAttribute(poster)}"` : ''} data-source="${escapeHtmlAttribute(source.url)}" data-source-kind="${source.kind}">${tracks}<p>Your browser cannot play this media.</p></video>`
@@ -101,6 +110,8 @@ export function renderEmbedPage(
     ? `<section class="player-resume" data-player-resume hidden role="dialog" aria-modal="true" aria-labelledby="player-resume-text"><p id="player-resume-text" data-player-resume-text>${escapeHtml(settings.text_resume)}</p><div><button type="button" data-player-resume-yes>${escapeHtml(settings.text_resume_yes)}</button><button type="button" data-player-resume-no>${escapeHtml(settings.text_resume_no)}</button></div></section>`
     : ''
   const vastConfiguration = renderVastConfiguration(ads.vastAds)
+  const p2pConfiguration = runtimeP2pConfiguration(settings, source.kind, playerOptions?.p2pSwarmId ?? '')
+  const p2pConfigurationScript = renderP2pConfiguration(p2pConfiguration)
   const documentTitle = settings === undefined
     ? 'GPlayer'
     : settings.text_title.replaceAll('{title}', title).replaceAll('{siteName}', 'GPlayer')
@@ -122,7 +133,8 @@ export function renderEmbedPage(
   ${adblockNotice}
   ${resumePrompt}
   ${vastConfiguration}
-  ${settings?.player === 'jwplayer' ? '' : source.kind === 'hls' ? '<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>' : source.kind === 'dash' ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>' : ''}
+  ${p2pConfigurationScript}
+  ${renderPlayerRuntimeScripts(settings, source.kind, p2pConfiguration)}
   <script src="/assets/js/gplayer-embed.js"></script>
 </body>
 </html>`
@@ -235,13 +247,55 @@ function renderPlayerStyles(settings: PlayerSettings): string {
 
 function renderVastConfiguration(config: RuntimeVastConfiguration | null): string {
   if (config === null) return ''
-  const json = JSON.stringify(config)
+  return `<script type="application/json" data-vast-config>${safeJsonScript(config)}</script>`
+}
+
+function runtimeP2pConfiguration(
+  settings: PlayerSettings | undefined,
+  sourceKind: RenderedSource['kind'],
+  swarmId: string
+): RuntimeP2pConfiguration | null {
+  if (settings?.player !== 'plyr' || settings.p2p !== true || (sourceKind !== 'hls' && sourceKind !== 'dash') || !/^[a-f0-9]{64}$/.test(swarmId)) return null
+  const trackers = settings.torrent_tracker.split(/\r?\n/).flatMap((value) => {
+    try {
+      const url = new URL(value)
+      return ['ws:', 'wss:'].includes(url.protocol) && !url.username && !url.password ? [url.toString()] : []
+    } catch {
+      return []
+    }
+  })
+  return trackers.length === 0 ? null : Object.freeze({ swarmId, trackers: Object.freeze(trackers) })
+}
+
+function renderP2pConfiguration(config: RuntimeP2pConfiguration | null): string {
+  return config === null ? '' : `<script type="application/json" data-p2p-config>${safeJsonScript(config)}</script>`
+}
+
+function renderPlayerRuntimeScripts(
+  settings: PlayerSettings | undefined,
+  sourceKind: RenderedSource['kind'],
+  p2p: RuntimeP2pConfiguration | null
+): string {
+  if (settings?.player === 'jwplayer') return ''
+  if (sourceKind === 'hls') {
+    const importMap = p2p === null ? '' : `<script type="importmap">${P2P_CORE_IMPORT_MAP}</script>`
+    return `${importMap}<script src="/assets/vendor/hls.js/1.6.4/hls.min.js"></script>`
+  }
+  if (sourceKind === 'dash') {
+    return p2p === null
+      ? '<script src="/assets/vendor/shaka-player/4.13.4/shaka-player.compiled.js"></script>'
+      : '<script src="/assets/vendor/shaka-player/2.5.23/shaka-player.compiled.js"></script><script src="/assets/vendor/p2p-media-loader-core/0.6.2/p2p-media-loader-core.min.js"></script><script src="/assets/vendor/p2p-media-loader-shaka/0.6.2/p2p-media-loader-shaka.min.js"></script>'
+  }
+  return ''
+}
+
+function safeJsonScript(value: unknown): string {
+  return JSON.stringify(value)
     .replaceAll('&', '\\u0026')
     .replaceAll('<', '\\u003c')
     .replaceAll('>', '\\u003e')
     .replaceAll('\u2028', '\\u2028')
     .replaceAll('\u2029', '\\u2029')
-  return `<script type="application/json" data-vast-config>${json}</script>`
 }
 
 function playerTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {

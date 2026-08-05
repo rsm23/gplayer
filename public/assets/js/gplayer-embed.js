@@ -64,6 +64,163 @@
     }
   }
 
+  const readP2pConfiguration = () => {
+    const element = document.querySelector('[data-p2p-config]')
+    if (!(element instanceof HTMLScriptElement)) return null
+    try {
+      const parsed = JSON.parse(element.textContent || '')
+      if (parsed === null || typeof parsed !== 'object' || !/^[a-f0-9]{64}$/.test(parsed.swarmId || '')) return null
+      if (!Array.isArray(parsed.trackers) || parsed.trackers.length === 0 || parsed.trackers.length > 100) return null
+      const trackers = parsed.trackers.flatMap((value) => {
+        if (typeof value !== 'string' || value.length > 2_048) return []
+        try {
+          const url = new URL(value)
+          return ['ws:', 'wss:'].includes(url.protocol) && !url.username && !url.password ? [url.toString()] : []
+        } catch {
+          return []
+        }
+      })
+      if (trackers.length !== parsed.trackers.length || new Set(trackers).size !== trackers.length) return null
+      return { swarmId: parsed.swarmId, trackers }
+    } catch {
+      return null
+    }
+  }
+
+  const hlsRuntimeConfiguration = (p2p) => ({
+    abrEwmaFastLive: 7,
+    abrEwmaFastVoD: 7,
+    abrEwmaSlowLive: 9,
+    abrEwmaSlowVoD: 9,
+    abrMaxWithRealBitrate: true,
+    appendErrorMaxRetry: 10,
+    debug: false,
+    defaultAudioCodec: 'mp4a.40.2',
+    enableWorker: true,
+    fpsDroppedMonitoringPeriod: 2_500,
+    fpsDroppedMonitoringThreshold: 0.1,
+    fragLoadPolicy: retryLoadPolicy(),
+    highBufferWatchdogPeriod: 4,
+    liveDurationInfinity: true,
+    lowLatencyMode: false,
+    manifestLoadPolicy: retryLoadPolicy(),
+    maxBufferHole: 0.2,
+    maxBufferLength: 10,
+    maxBufferSize: 600_000,
+    maxFragLookUpTolerance: 0.5,
+    maxLiveSyncPlaybackRate: 1,
+    maxMaxBufferLength: 20,
+    nudgeOffset: 0.1,
+    nudgeMaxRetry: 10,
+    playlistLoadPolicy: retryLoadPolicy(),
+    progressive: false,
+    ...(p2p === null ? {} : {
+      p2p: {
+        core: {
+          swarmId: p2p.swarmId,
+          announceTrackers: p2p.trackers,
+          highDemandTimeWindow: 30,
+          simultaneousHttpDownloads: 5,
+          p2pNotReceivingBytesTimeoutMs: 10_000,
+          p2pInactiveLoaderDestroyTimeoutMs: 15_000,
+          httpNotReceivingBytesTimeoutMs: 8_000,
+          httpErrorRetries: 5,
+          p2pErrorRetries: 5
+        }
+      }
+    }),
+    testBandwidth: false
+  })
+
+  function retryLoadPolicy () {
+    return {
+      default: {
+        maxTimeToFirstByteMs: 60_000,
+        maxLoadTimeMs: 120_000,
+        timeoutRetry: { maxNumRetry: 10, retryDelayMs: 1_000, maxRetryDelayMs: 0 },
+        errorRetry: { maxNumRetry: 10, retryDelayMs: 1_000, maxRetryDelayMs: 0 }
+      }
+    }
+  }
+
+  const shakaRuntimeConfiguration = () => ({
+    abr: { enabled: true, defaultBandwidthEstimate: 500_000 },
+    manifest: { dash: { autoCorrectDrift: true, ignoreEmptyAdaptationSet: true } },
+    streaming: { bufferBehind: 15, bufferingGoal: 10, rebufferingGoal: 5 }
+  })
+
+  const initializePlyrTransport = async (media) => {
+    const source = media.dataset.source || ''
+    const kind = media.dataset.sourceKind || 'video'
+    const p2p = readP2pConfiguration()
+    if (!source || (kind !== 'hls' && kind !== 'dash')) return null
+
+    if (kind === 'hls') {
+      if (typeof window.Hls === 'function' && window.Hls.isSupported()) {
+        let HlsRuntime = window.Hls
+        let p2pActive = false
+        if (p2p !== null) {
+          try {
+            const module = await import('/assets/vendor/p2p-media-loader-hlsjs/2.2.1/p2p-media-loader-hlsjs.es.min.js')
+            if (typeof module.HlsJsP2PEngine?.injectMixin === 'function') {
+              HlsRuntime = module.HlsJsP2PEngine.injectMixin(window.Hls)
+              p2pActive = true
+            }
+          } catch {
+            p2pActive = false
+          }
+        }
+        const hls = new HlsRuntime(hlsRuntimeConfiguration(p2pActive ? p2p : null))
+        hls.attachMedia(media)
+        hls.on(window.Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source))
+        window.gplayerMediaTransport = hls
+        body.dataset.mediaTransport = 'hls.js'
+        if (p2pActive) body.dataset.p2pTransport = 'hls'
+        window.addEventListener('pagehide', () => hls.destroy(), { once: true })
+        return hls
+      }
+      if (media.canPlayType('application/vnd.apple.mpegurl')) {
+        media.src = source
+        body.dataset.mediaTransport = 'native-hls'
+      }
+      return null
+    }
+
+    if (window.shaka?.Player?.isBrowserSupported?.()) {
+      window.shaka.polyfill?.installAll?.()
+      const shakaPlayer = new window.shaka.Player()
+      await shakaPlayer.attach(media)
+      shakaPlayer.configure(shakaRuntimeConfiguration())
+      let p2pEngine = null
+      if (p2p !== null && typeof window.p2pml?.shaka?.Engine === 'function') {
+        try {
+          p2pEngine = new window.p2pml.shaka.Engine({
+            segments: { swarmId: p2p.swarmId },
+            loader: {
+              trackerAnnounce: p2p.trackers,
+              httpUseRanges: true,
+              httpDownloadProbabilitySkipIfNoPeers: true
+            }
+          })
+          p2pEngine.initShakaPlayer(shakaPlayer)
+          body.dataset.p2pTransport = 'dash'
+        } catch {
+          p2pEngine = null
+        }
+      }
+      await shakaPlayer.load(source)
+      window.gplayerMediaTransport = shakaPlayer
+      window.gplayerP2pEngine = p2pEngine
+      body.dataset.mediaTransport = 'shaka'
+      window.addEventListener('pagehide', () => {
+        void p2pEngine?.destroy?.()
+        void shakaPlayer.destroy()
+      }, { once: true })
+      return shakaPlayer
+    }
+    return null
+  }
+
   const loadRuntimeScript = (source, key) => new Promise((resolve, reject) => {
     if (document.querySelector(`script[data-player-runtime="${key}"]`)) {
       resolve()
@@ -162,6 +319,7 @@
     const vastConfig = readVastConfiguration()
     if (body.dataset.playerLibrary === 'plyr') {
       try {
+        const mediaTransport = await initializePlyrTransport(video)
         await loadRuntimeScript('/assets/vendor/plyr/3.6.3/plyr-custom.polyfilled.min.js', 'plyr')
         if (typeof window.Plyr !== 'function') return fallback
         const speedEnabled = body.dataset.playbackRate === 'true'
@@ -173,6 +331,7 @@
           speed: { selected: 1, options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
           tooltips: { controls: true, seek: true }
         })
+        instance.mediaTransport = mediaTransport
         instance.resumePlayback = () => instance.play()
         window.gdPlyr = instance
         body.dataset.activePlayer = 'plyr'
