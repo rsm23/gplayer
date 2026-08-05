@@ -23,6 +23,8 @@ import type { DriveBypassResult } from '../drive/drive-sharer-service.js'
 import { renderSharerPage } from '../player/sharer-page.js'
 import { applyPublicPageHeaders } from './system-routes.js'
 import { publicErrors, renderPublicError } from '../player/public-page.js'
+import { loadRuntimeGeneralSettings, visitCounterLimit, visitCounterRuntime, type GeneralSettingsLoader } from '../settings/general-runtime.js'
+import type { ViewCounterCapture } from '../stats/view-counter-service.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -43,6 +45,11 @@ const driveBypassInputSchema = z.object({
   'g-recaptcha-response': z.string().max(8_192).optional()
 }).passthrough()
 
+const statCounterInputSchema = z.object({
+  action: z.literal('statCounter'),
+  data: z.string().min(1).max(65_536)
+}).passthrough()
+
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
 const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const MAX_SHORTLINK_TARGETS = 20
@@ -53,6 +60,7 @@ export type PlayerRouteOptions = Readonly<{
   loadMiscSettings?: MiscSettingsLoader
   loadHostingSettings?: HostingSettingsLoader
   loadPublicSettings?: PublicSettingsLoader
+  loadGeneralSettings?: GeneralSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
@@ -63,6 +71,7 @@ export type PlayerRouteOptions = Readonly<{
   verifyRecaptcha?: (responseToken: string, remoteIp: string) => Promise<boolean>
   loadRecaptchaSiteKey?: () => Promise<string>
   capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
+  captureView?: (input: ViewCounterCapture) => Promise<string | null>
 }>
 
 export async function registerPlayerRoutes(
@@ -164,15 +173,45 @@ export async function registerPlayerRoutes(
     }
   }
 
+  const statCounter = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    reply.headers({
+      'cache-control': 'private, no-store',
+      pragma: 'no-cache',
+      'x-content-type-options': 'nosniff'
+    })
+    const input = statCounterInputSchema.safeParse(request.method === 'GET' ? request.query : request.body)
+    if (!input.success) return statCounterFailure()
+    const media = parsePlayerQuery(input.data.data, security, { secureSalt: config.secureSalt }).media
+    if (media === null) return statCounterFailure()
+    const general = await loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
+    try {
+      const id = await options.captureView?.(Object.freeze({
+        media,
+        clientIp: request.ip,
+        userAgent: request.headers['user-agent'] ?? '',
+        maximum: visitCounterLimit(general)
+      })) ?? null
+      return id === null
+        ? statCounterFailure()
+        : { status: 'ok', message: 'Total daily visits successfully created', result: id }
+    } catch {
+      return statCounterFailure()
+    }
+  }
+
   const dispatchPublicAjax = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const action = typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
       ? (request.body as Record<string, unknown>).action
       : undefined
-    return action === 'gdriveBypassLimit' ? await bypassDrive(request, reply) : await createPlayer(request, reply)
+    if (action === 'gdriveBypassLimit') return await bypassDrive(request, reply)
+    if (action === 'statCounter') return await statCounter(request, reply)
+    return await createPlayer(request, reply)
   }
 
   app.post('/ajax/public', dispatchPublicAjax)
   app.post('/ajax/public/', dispatchPublicAjax)
+  app.get('/ajax', statCounter)
+  app.get('/ajax/', statCounter)
 
   const showSharer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const publicSettings = await loadRuntimePublicSettings(options.loadPublicSettings)
@@ -253,10 +292,11 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.request}/`, redirectPlaintextRequest)
 
   const showEmbed = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player, publicSettings, misc, hosting, countryCode] = await Promise.all([
+    const [ads, player, publicSettings, general, misc, hosting, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
       loadRuntimePublicSettings(options.loadPublicSettings),
+      loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
@@ -295,6 +335,7 @@ export async function registerPlayerRoutes(
       downloadUrl: publicSettings.enable_download_page ? routePath(player.slug_download, parsed.token) : '',
       ...(p2pMode === null ? {} : { p2pSwarmId: playerP2pSwarmId(config, resolvedMedia) }),
       embedOnly: publicSettings.embed_only,
+      viewCounter: Object.freeze({ token: parsed.token, runtime: visitCounterRuntime(general) }),
       hostingData: hosting.data,
       customNames: hosting.customNames
     })
@@ -382,6 +423,10 @@ export async function registerPlayerRoutes(
 
   app.get('/:playerSlug/:savedSlug', dispatchSavedPlayerRoute)
   app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
+}
+
+function statCounterFailure(): Readonly<{ status: 'fail'; message: string; result: 0 }> {
+  return Object.freeze({ status: 'fail', message: 'Total daily visits have been exceeded', result: 0 })
 }
 
 async function authenticatedRequest(

@@ -55,6 +55,20 @@ describe('native embed appearance', () => {
     expect(html).not.toContain('data-player-loader')
   })
 
+  it('publishes only the signed token and bounded playback threshold needed by the view counter', () => {
+    const settings = playerSettings({}, defaults)
+    const html = renderEmbedPage(
+      { host: 'direct', id: 'https://media.example.test/video.mp4' },
+      publicOptions,
+      undefined,
+      { settings, downloadUrl: '', viewCounter: { token: 'signed_token-123', runtime: 17 } }
+    )
+
+    expect(html).toContain('data-view-counter-token="signed_token-123"')
+    expect(html).toContain('data-view-counter-runtime="17"')
+    expect(html).not.toContain('https://media.example.test/video.mp4" data-view-counter')
+  })
+
   it('selects only the configured local player stylesheet', () => {
     const plyr = renderEmbedPage(
       { host: 'direct', id: 'https://media.example.test/video.mp4' },

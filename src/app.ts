@@ -81,6 +81,7 @@ import { registerPrivateAdminRoutes } from './http/private-admin-routes.js'
 import { FileSystemSettingsMaintenanceFiles } from './settings/settings-maintenance-files.js'
 import { SettingsMaintenanceService } from './settings/settings-maintenance-service.js'
 import { registerBootstrapCompatibility, sendLegacyHeadFallback } from './http/bootstrap-compatibility.js'
+import { ViewCounterService } from './stats/view-counter-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -109,6 +110,7 @@ export type AppDependencies = Readonly<{
   driveMedia?: DriveMediaService
   driveBackground?: Pick<DriveBackgroundCoordinator, 'trigger'>
   statsWorker?: StatsWorker
+  viewCounter?: Pick<ViewCounterService, 'capture'>
   generalWorker?: GeneralWorker
   sourceRefreshWorker?: SourceRefreshWorker
   mediaDownloadWorker?: MediaDownloadWorker
@@ -174,13 +176,12 @@ export async function buildApp(
     const settings = await settingsRuntime.general(config.baseUrl)
     return Object.freeze({ copy: settings.gdrive_copy === true, copyAll: settings.gdrive_copy_all === true })
   }
-  const statsWorkerRuntime = dependencies.statsWorker ?? new StatsWorker(
-    authRuntime.statsWorkerStore,
-    createGeoIpDetailsLookup(
-      path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb'),
-      path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-ASN.mmdb')
-    )
+  const geoIpDetailsLookup = createGeoIpDetailsLookup(
+    path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb'),
+    path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-ASN.mmdb')
   )
+  const statsWorkerRuntime = dependencies.statsWorker ?? new StatsWorker(authRuntime.statsWorkerStore, geoIpDetailsLookup)
+  const viewCounterRuntime = dependencies.viewCounter ?? new ViewCounterService(authRuntime.viewCounterStore, geoIpDetailsLookup)
   const pluginsRoot = path.resolve(currentDirectory, '../plugins')
   const pluginBackgrounds = new PluginBackgroundManager(pluginsRoot)
   app.addHook('onClose', async () => await pluginBackgrounds.close())
@@ -271,6 +272,7 @@ export async function buildApp(
   )
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
   const loadPublicSettings = async () => await settingsRuntime.runtimePublicSettings()
+  const loadGeneralSettings = async () => await settingsRuntime.general(config.baseUrl)
   const shortlinkRuntime = dependencies.shortlinks ?? new ShortlinkService(
     async () => await settingsRuntime.runtimeShortlinkSettings()
   )
@@ -426,6 +428,7 @@ export async function buildApp(
     loadAdsSettings,
     loadPlayerSettings,
     loadPublicSettings,
+    loadGeneralSettings,
     loadMiscSettings,
     loadHostingSettings,
     countryCodeLookup,
@@ -443,7 +446,8 @@ export async function buildApp(
       const general = await settingsRuntime.general(config.baseUrl)
       return String(general.recaptcha_site_key)
     },
-    capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId)
+    capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId),
+    captureView: async (input) => await viewCounterRuntime.capture(input)
   })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
@@ -451,6 +455,7 @@ export async function buildApp(
     loadAdsSettings,
     loadPlayerSettings,
     loadMiscSettings,
+    loadGeneralSettings,
     countryCodeLookup,
     supportedHosts,
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),

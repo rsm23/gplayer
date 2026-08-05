@@ -898,6 +898,31 @@
     controller.onEnded(forget)
   }
 
+  const initializeViewCounter = (controller) => {
+    if (controller === null) return
+    const token = body.dataset.viewCounterToken || ''
+    const runtime = Number.parseInt(body.dataset.viewCounterRuntime || '', 10)
+    if (!token || !Number.isInteger(runtime) || runtime < 0 || runtime > 86_400) return
+    let counted = false
+    const count = () => {
+      if (counted) return
+      counted = true
+      const payload = new URLSearchParams({ action: 'statCounter', data: token })
+      window.fetch('/ajax/public/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: payload.toString(),
+        credentials: 'same-origin',
+        cache: 'no-store',
+        keepalive: true
+      }).catch(() => {})
+    }
+    if (runtime === 0) controller.onPlay(count, true)
+    controller.onTime((position) => {
+      if (Number.isFinite(position) && position >= runtime) count()
+    })
+  }
+
   const formatTime = (seconds) => {
     const value = Math.max(0, Math.floor(seconds))
     const hours = Math.floor(value / 3_600)
@@ -1059,6 +1084,7 @@
     initializeFakePlay(controller)
     initializeVisibilityPause(controller)
     initializeContinueWatching(controller)
+    initializeViewCounter(controller)
     initializeAdblockDetection(controller)
     controller?.onPlay(visitPlayAds, true)
     if (body.dataset.popupFrameUrl && Number.parseInt(body.dataset.popupDelaySeconds || '0', 10) === 0) {

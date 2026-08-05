@@ -51,6 +51,8 @@ describe('legacy player source API routes', () => {
       isSafariIE: true,
       player: 'jwplayer',
       playerVersion: '4.6.6',
+      productionMode: false,
+      statCounterRuntime: 10,
       showDownloadButton: true
     })
     expect(decoded).toHaveProperty('torrentList')
@@ -97,7 +99,9 @@ describe('legacy player source API routes', () => {
       disable_direct_ads: 'false',
       direct_ads_link: 'https://ads.example/campaign',
       visitads_onplay: 'false',
-      show_iframeads: 'false'
+      show_iframeads: 'false',
+      production_mode: 'true',
+      visit_counter_runtime: '23'
     }
     app = await buildApp(config, {
       sourceApi: { resolve, supportedHosts: new Set(['direct']) },
@@ -118,6 +122,8 @@ describe('legacy player source API routes', () => {
       showIframeAds: false,
       disableDirectAds: false,
       directAdsLink: 'https://ads.example/campaign',
+      productionMode: true,
+      statCounterRuntime: 23,
       vastAds: {
         client: 'googima',
         schedule: [

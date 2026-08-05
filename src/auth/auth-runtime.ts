@@ -42,6 +42,8 @@ import { MySqlPrivateAdminStore } from '../system/mysql-private-admin-store.js'
 import type { PrivateAdminStore } from '../system/private-admin-service.js'
 import { MySqlSettingsMaintenanceStore } from '../settings/mysql-settings-maintenance-store.js'
 import type { SettingsMaintenanceStore } from '../settings/settings-maintenance-service.js'
+import { MySqlViewCounterStore } from '../stats/mysql-view-counter-store.js'
+import type { ViewCounterStore } from '../stats/view-counter-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -54,6 +56,7 @@ export type AuthRuntime = Readonly<{
   driveAccounts: DriveAccountAdminService
   driveAdminStore: DriveAdminStore
   statsWorkerStore: StatsWorkerStore
+  viewCounterStore: ViewCounterStore
   generalWorkerStore: GeneralWorkerStore
   proxyMaintenanceStore: ProxyMaintenanceStore
   pluginMaintenanceStore: PluginMaintenanceStore
@@ -79,6 +82,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let driveAccountStore: MySqlDriveAccountAdminStore | undefined
   let driveAdminStore: MySqlDriveAdminStore | undefined
   let statsWorkerStore: MySqlStatsWorkerStore | undefined
+  let viewCounterStore: MySqlViewCounterStore | undefined
   let generalWorkerStore: MySqlGeneralWorkerStore | undefined
   let pluginMaintenanceStore: MySqlPluginMaintenanceStore | undefined
   let sourceRefreshStore: MySqlSourceRefreshStore | undefined
@@ -133,6 +137,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentStatsWorkerStore = (): MySqlStatsWorkerStore => {
     statsWorkerStore ??= new MySqlStatsWorkerStore(currentDatabase())
     return statsWorkerStore
+  }
+  const currentViewCounterStore = (): MySqlViewCounterStore => {
+    viewCounterStore ??= new MySqlViewCounterStore(currentDatabase())
+    return viewCounterStore
   }
   const currentGeneralWorkerStore = (): MySqlGeneralWorkerStore => {
     generalWorkerStore ??= new MySqlGeneralWorkerStore(currentDatabase())
@@ -265,6 +273,9 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     listMissingGeo: async (afterId, limit) => await currentStatsWorkerStore().listMissingGeo(afterId, limit),
     saveGeo: async (ip, details) => await currentStatsWorkerStore().saveGeo(ip, details)
   }
+  const lazyViewCounterStore: ViewCounterStore = {
+    capture: async (input) => await currentViewCounterStore().capture(input)
+  }
   const lazyGeneralWorkerStore: GeneralWorkerStore = {
     deleteExpiredSources: async (now) => await currentGeneralWorkerStore().deleteExpiredSources(now),
     normalizeSubtitleLanguages: async () => await currentGeneralWorkerStore().normalizeSubtitleLanguages(),
@@ -356,6 +367,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     driveAccounts: new DriveAccountAdminService(lazyDriveAccountStore),
     driveAdminStore: lazyDriveAdminStore,
     statsWorkerStore: lazyStatsWorkerStore,
+    viewCounterStore: lazyViewCounterStore,
     generalWorkerStore: lazyGeneralWorkerStore,
     proxyMaintenanceStore: lazyProxyMaintenanceStore,
     pluginMaintenanceStore: lazyPluginMaintenanceStore,

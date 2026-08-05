@@ -18,6 +18,8 @@ import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../setting
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
+import { loadRuntimeGeneralSettings, visitCounterRuntime, type GeneralSettingsLoader } from '../settings/general-runtime.js'
+import type { GeneralSettings } from '../settings/settings-admin-service.js'
 
 const MAX_API_TOKEN_LENGTH = 65_536
 const SOURCE_TOKEN_SEPARATOR = '-,'
@@ -45,6 +47,7 @@ export type SourceApiRouteOptions = Readonly<{
   loadAdsSettings?: AdsSettingsLoader
   loadPlayerSettings?: PlayerSettingsLoader
   loadMiscSettings?: MiscSettingsLoader
+  loadGeneralSettings?: GeneralSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   filterResponse?: (response: unknown, query: Readonly<Record<string, unknown>>) => Promise<unknown>
   capturePublicVideo?: (media: PlayerMediaQuery, result: MediaResult) => Promise<unknown>
@@ -75,17 +78,18 @@ export async function registerSourceApiRoutes(
       ? null
       : parsePlayerQuery(queryToken, security, { secureSalt: config.secureSalt }).media
     const resolved = await resolveSavedMedia(parsed, options.resolveSavedVideo)
-    const [ads, player, misc, countryCode] = await Promise.all([
+    const [ads, player, general, misc, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
     if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(resolved, misc.disable_host)) return plaintextFailure(reply)
     const configuredMedia = withoutDisabledAlternatives(resolved, misc.disable_host)
     const output = isDownloadConfigRequest(request)
-      ? createDownloadConfiguration(config, configuredMedia, ads)
-      : createEmbedConfiguration(config, configuredMedia, request.headers['user-agent'] ?? '', ads, player)
+      ? createDownloadConfiguration(config, configuredMedia, ads, general)
+      : createEmbedConfiguration(config, configuredMedia, request.headers['user-agent'] ?? '', ads, player, general)
     const filtered = await filterResponse(options.filterResponse, output, Object.freeze({ route: 'api-config', media: configuredMedia }))
 
     return reply
@@ -282,7 +286,8 @@ function createEmbedConfiguration(
   media: PlayerMediaQuery | null,
   userAgent: string,
   ads: AdsSettings,
-  playerSettings: PlayerSettings
+  playerSettings: PlayerSettings,
+  generalSettings: GeneralSettings
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
@@ -329,8 +334,8 @@ function createEmbedConfiguration(
     text_rewind: playerSettings.text_rewind,
     text_forward: playerSettings.text_forward,
     text_download: playerSettings.text_download,
-    productionMode: false,
-    statCounterRuntime: 60,
+    productionMode: generalSettings.production_mode,
+    statCounterRuntime: visitCounterRuntime(generalSettings),
     showDownloadButton: playerSettings.enable_download_button,
     enableDownloadPage: true,
     defaultResolution: numericResolution(playerSettings.default_resolution),
@@ -342,7 +347,8 @@ function createEmbedConfiguration(
 function createDownloadConfiguration(
   config: AppConfig,
   media: PlayerMediaQuery | null,
-  ads: AdsSettings
+  ads: AdsSettings,
+  generalSettings: GeneralSettings
 ): Readonly<Record<string, unknown>> {
   const valid = media !== null
   return {
@@ -352,7 +358,7 @@ function createDownloadConfiguration(
     disableDirectAds: ads.disable_direct_ads,
     directAdsLink: ads.direct_ads_link,
     showIframeAds: ads.show_iframeads,
-    productionMode: false
+    productionMode: generalSettings.production_mode
   }
 }
 

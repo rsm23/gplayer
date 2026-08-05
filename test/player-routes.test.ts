@@ -85,6 +85,67 @@ describe('player HTTP routes', () => {
     expect(isolatedFailure.json()).toMatchObject({ status: 'ok', message: '', result: { embed_url: expect.any(String) } })
   })
 
+  it('captures signed playback views through both modern and legacy AJAX contracts', async () => {
+    const capture = vi.fn(async (): Promise<string | null> => '77')
+    const values = { visit_counter: '2', visit_counter_runtime: '12' }
+    app = await buildApp(loadConfig({
+      NODE_ENV: 'test',
+      BASE_URL: 'https://player.example/',
+      SECURE_SALT: secureSalt
+    }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      viewCounter: { capture },
+      videos: {
+        savedQuery: async (identity: string) => identity === 'movie-slug'
+          ? { host: 'direct', id: 'https://cdn.example.test/movie.mp4', title: 'Movie' }
+          : null
+      } as never
+    })
+    const token = new Security(secureSalt).encryptURL('source=db&id=movie-slug')
+    const modern = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'Playback Browser' },
+      payload: `action=statCounter&data=${encodeURIComponent(token)}`
+    })
+    const legacy = await app.inject({
+      method: 'GET',
+      url: `/ajax/?action=statCounter&data=${encodeURIComponent(token)}`,
+      headers: { 'user-agent': 'Legacy Playback Browser' }
+    })
+
+    expect(modern.json()).toEqual({ status: 'ok', message: 'Total daily visits successfully created', result: '77' })
+    expect(legacy.json()).toEqual({ status: 'ok', message: 'Total daily visits successfully created', result: '77' })
+    expect(modern.headers['cache-control']).toBe('private, no-store')
+    expect(capture).toHaveBeenNthCalledWith(1, {
+      media: { source: 'db', id: 'movie-slug' },
+      clientIp: '127.0.0.1',
+      userAgent: 'Playback Browser',
+      maximum: 2
+    })
+    expect(capture).toHaveBeenNthCalledWith(2, expect.objectContaining({ userAgent: 'Legacy Playback Browser', maximum: 2 }))
+
+    const embed = await app.inject({ method: 'GET', url: `/e/?${token}` })
+    expect(embed.body).toContain(`data-view-counter-token="${token}"`)
+    expect(embed.body).toContain('data-view-counter-runtime="12"')
+    const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-embed.js' })
+    expect(runtime.body).toContain("new URLSearchParams({ action: 'statCounter', data: token })")
+    expect(runtime.body).toContain("window.fetch('/ajax/public/'")
+
+    capture.mockResolvedValueOnce(null)
+    const capped = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `action=statCounter&data=${encodeURIComponent(token)}`
+    })
+    expect(capped.json()).toEqual({ status: 'fail', message: 'Total daily visits have been exceeded', result: 0 })
+
+    const invalid = await app.inject({ method: 'GET', url: '/ajax/?action=statCounter&data=malformed' })
+    expect(invalid.json()).toEqual({ status: 'fail', message: 'Total daily visits have been exceeded', result: 0 })
+    expect(capture).toHaveBeenCalledTimes(3)
+  })
+
   it('consumes custom provider domains, source-page templates, and display names', async () => {
     const values = {
       'custom-hostnames': JSON.stringify({ youtube: ['video.private.example'] }),
