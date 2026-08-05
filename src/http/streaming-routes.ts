@@ -20,7 +20,7 @@ const MAX_STREAM_URL_LENGTH = 16_384
 const MAX_CACHEABLE_RESOURCE_BYTES = 128 * 1_024 * 1_024
 const MP4_RANGE_SIZE_TTL_MILLISECONDS = 10_800 * 1_000
 const DEFAULT_MP4_RANGE_MEMORY_ENTRIES = 4_096
-const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gsc', 'gd', 'gl', 'gx', 'gxr', 'gt'])
+const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gct', 'gsc', 'gd', 'gl', 'gx', 'gxr', 'gt'])
 const PROVIDER_CONTEXT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const CACHED_PROVIDER_CONTEXT_PLACEHOLDER = '__GPLAYER_PROVIDER_CONTEXT__'
 const CACHED_ACCESS_TOKEN_PLACEHOLDER = '__GPLAYER_STREAM_ACCESS__'
@@ -63,6 +63,7 @@ export type StreamingIdentity = Readonly<{
   host: string
   id: string
   label?: string
+  title?: string
   live?: boolean
   contextToken?: string
   accessToken?: string
@@ -251,7 +252,7 @@ export async function registerStreamingRoutes(
     const cacheSettings = await loadCacheSettings()
 
     if (kind === 'stream-vid' && options.cacheRoot !== undefined && parsed.identity.label !== undefined) {
-      if (cacheSettings.enabled && await sendCachedMedia(request, reply, options.cacheRoot, parsed.identity, cacheSettings.mode)) {
+      if (cacheSettings.enabled && await sendCachedMedia(request, reply, options.cacheRoot, parsed.identity, cacheSettings)) {
         sourceRecovery.succeed(parsed.identity, request.ip)
         return reply
       }
@@ -308,7 +309,7 @@ export async function registerStreamingRoutes(
         reply.header('cache-control', `public, max-age=${maxAge}`)
       }
       reply
-        .header('content-disposition', 'inline')
+        .header('content-disposition', kind === 'stream-vid' ? remoteMediaDisposition(parsed.identity) : 'inline')
         .header('x-content-type-options', 'nosniff')
         .header('referrer-policy', 'no-referrer')
         .code(response.status)
@@ -594,6 +595,7 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
     if ((target.protocol !== 'http:' && target.protocol !== 'https:') || target.username || target.password) return null
     if (target.toString().length > MAX_STREAM_URL_LENGTH) return null
     const label = cacheLabel(request, security)
+    const title = cacheTitle(request, security)
     const live = request.searchParams.get('gl') === '1'
     const contextToken = providerContextToken(request)
     const accessToken = streamingAccessToken(request)
@@ -604,6 +606,7 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
         host: identityValue.slice(0, separator),
         id: identityValue.slice(separator + 1),
         ...(label === null ? {} : { label }),
+        ...(title === null ? {} : { title }),
         ...(live ? { live: true } : {}),
         ...(contextToken === null ? {} : { contextToken }),
         ...(accessToken === null ? {} : { accessToken }),
@@ -665,7 +668,7 @@ function restoreStreamingPath(value: string): string {
 }
 
 function appleStreamingExtensionRedirect(requestUrl: string, userAgent: string): string | null {
-  if (!/(?:mac|ios|iphone|ipad|ipod)/i.test(userAgent)) return null
+  if (!isAppleStreamingUserAgent(userAgent)) return null
   const request = new URL(requestUrl, 'http://gplayer.invalid')
   const separator = request.pathname.lastIndexOf('/')
   const facade = facadeNameParts(request.pathname.slice(separator + 1))
@@ -681,6 +684,10 @@ function sendAppleStreamingExtensionRedirect(reply: FastifyReply, location: stri
     .header('location', location)
     .code(302)
     .send()
+}
+
+function isAppleStreamingUserAgent(userAgent: string): boolean {
+  return /(?:mac|ios|iphone|ipad|ipod)/i.test(userAgent)
 }
 
 function normalizeIp(value: string): string | null {
@@ -814,6 +821,7 @@ function withInternalQuery(value: string, identity: StreamingIdentity, security:
   if (identity.downloadable === true) internal.set('dl', '1')
   if (identity.recoverable === true) internal.set('gxr', '1')
   if (identity.label !== undefined && identity.label.trim() !== '') internal.set('gcl', security.encryptURL(identity.label))
+  if (identity.title !== undefined && validCacheTitle(identity.title)) internal.set('gct', security.encryptURL(identity.title))
   if (identity.contextToken !== undefined && PROVIDER_CONTEXT_TOKEN_PATTERN.test(identity.contextToken)) internal.set('gsc', identity.contextToken)
   if (identity.accessToken !== undefined && validAccessToken(identity.accessToken)) internal.set('gt', identity.accessToken)
   const query = internal.toString()
@@ -830,6 +838,17 @@ function cacheLabel(request: URL, security: Security): string | null {
   if (token === '' || token.length > 2_048) return null
   const label = security.decryptURLStrict(token)?.trim() ?? ''
   return label === '' || label.length > 120 ? null : label
+}
+
+function cacheTitle(request: URL, security: Security): string | null {
+  const token = request.searchParams.get('gct') ?? ''
+  if (token === '' || token.length > 2_048) return null
+  const title = security.decryptURLStrict(token) ?? ''
+  return validCacheTitle(title) ? title : null
+}
+
+function validCacheTitle(value: string): boolean {
+  return value.trim() !== '' && value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value)
 }
 
 function providerContextToken(request: URL): string | null {
@@ -918,12 +937,45 @@ function authorizeCachedManifestResources(
   }
 }
 
+function mediaDownloadFilename(identity: StreamingIdentity): string {
+  const title = identity.title ?? 'video.mp4'
+  const stem = path.posix.parse(title).name
+  const label = identity.label ?? ''
+  const joined = `${stem}-${label}`.replace(/^[ _-]+|[ _-]+$/gu, '') || 'video'
+  const safe = joined
+    .toWellFormed()
+    .replace(/[\u0000-\u001f\u007f/\\]/gu, '_')
+  return `${Array.from(safe).slice(0, 480).join('')}.mp4`
+}
+
+function encodedDispositionFilename(value: string): string {
+  return encodeURIComponent(value.toWellFormed()).replace(/['()*]/gu, (character) =>
+    `%${character.codePointAt(0)?.toString(16).toUpperCase().padStart(2, '0') ?? '3F'}`)
+}
+
+function remoteMediaDisposition(identity: StreamingIdentity): string {
+  if (identity.downloadable !== true) return 'inline'
+  return `attachment; filename*=UTF-8''${encodedDispositionFilename(mediaDownloadFilename(identity))}`
+}
+
+function cachedMediaDisposition(identity: StreamingIdentity): string {
+  const disposition = identity.downloadable === true ? 'attachment' : 'inline'
+  const filename = mediaDownloadFilename(identity)
+  const ascii = filename
+    .normalize('NFKD')
+    .replace(/\p{Mark}+/gu, '')
+    .replace(/[^\x20-\x7e]/gu, '_')
+    .replace(/["\\]/gu, '_')
+  const quoted = `${disposition}; filename="${ascii}"`
+  return ascii === filename ? quoted : `${quoted}; filename*=UTF-8''${encodedDispositionFilename(filename)}`
+}
+
 async function sendCachedMedia(
   request: FastifyRequest,
   reply: FastifyReply,
   cacheRoot: string,
   identity: StreamingIdentity,
-  mode: StreamCacheMode
+  settings: StreamCacheSettings
 ): Promise<boolean> {
   const paths = mediaCachePaths(cacheRoot, identity.host, identity.id, identity.label ?? 'Original')
   const details = await lstat(paths.complete).catch(() => null)
@@ -940,18 +992,23 @@ async function sendCachedMedia(
     return true
   }
   const partial = rangeValue !== ''
+  const localFileMode = settings.mode === 'php'
+  const contentType = isAppleStreamingUserAgent(request.headers['user-agent'] ?? '') || !localFileMode && request.method !== 'GET'
+    ? 'video/mp4'
+    : 'application/octet-stream'
   reply
     .header('accept-ranges', 'bytes')
-    .header('content-type', 'video/mp4')
+    .header('content-type', contentType)
     .header('content-length', Math.max(0, range.end - range.start + 1))
     .header('last-modified', details.mtime.toUTCString())
-    .header('cache-control', 'public, max-age=300')
-    .header('content-disposition', 'inline')
+    .header('cache-control', `public, max-age=${localFileMode ? 3_600 : settings.maxAgeSeconds}`)
+    .header('content-disposition', localFileMode ? cachedMediaDisposition(identity) : remoteMediaDisposition(identity))
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'no-referrer')
     .code(partial ? 206 : 200)
-  if (partial) reply.header('content-range', `bytes ${range.start}-${range.end}/${details.size}`)
-  sendCachedFile(reply, mode, paths.complete, cacheOffloadPath(cacheRoot, paths.complete), () => createReadStream(paths.complete, { start: range.start, end: range.end }))
+  if (localFileMode || partial) reply.header('content-range', `bytes ${range.start}-${range.end}/${details.size}`)
+  if (localFileMode) reply.header('x-cache', 'HIT')
+  sendCachedFile(reply, settings.mode, paths.complete, cacheOffloadPath(cacheRoot, paths.complete), () => createReadStream(paths.complete, { start: range.start, end: range.end }))
   return true
 }
 

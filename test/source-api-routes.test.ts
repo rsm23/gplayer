@@ -350,6 +350,7 @@ describe('legacy player source API routes', () => {
     const protectedSource = new URL(decoded.sources[0].file)
     expect(protectedSource.searchParams.get('dl')).toBe('1')
     expect(security.decryptURLStrict(protectedSource.searchParams.get('gt'))).toBe('127.0.0.1')
+    expect(security.decryptURLStrict(protectedSource.searchParams.get('gct'))).toBe('Example title')
     expect(JSON.stringify(decoded)).not.toContain('provider-secret')
     expect(JSON.stringify(decoded)).not.toContain('https://origin.example.test/')
     expect(decoded.poster).not.toContain('gsc=')

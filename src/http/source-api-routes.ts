@@ -448,6 +448,7 @@ export function createSourceResponse(
   const identity: StreamingIdentity = {
     host: upstream.host,
     id: upstream.id,
+    title,
     recoverable: true,
     ...(contextToken === undefined ? {} : { contextToken }),
     ...(accessToken === undefined ? {} : { accessToken }),

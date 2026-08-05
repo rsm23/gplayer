@@ -252,9 +252,11 @@ describe('authenticated streaming routes', () => {
     access.disableValidation = false
     access.downloadPageEnabled = false
     const download = createStreamingProxyPath('stream-vid', new URL('/video.mp4', upstreamUrl), security, {
-      host: 'direct', id: 'download-fixture', downloadable: true
+      host: 'direct', id: 'download-fixture', label: '720p', title: 'Example movie.mkv', downloadable: true
     })
-    expect((await app.inject({ method: 'GET', url: download })).statusCode).toBe(200)
+    const downloadResponse = await app.inject({ method: 'GET', url: download })
+    expect(downloadResponse.statusCode).toBe(200)
+    expect(downloadResponse.headers['content-disposition']).toBe("attachment; filename*=UTF-8''Example%20movie-720p.mp4")
   })
 
   it('rewrites an HLS master and its child playlist into authenticated local routes', async () => {
