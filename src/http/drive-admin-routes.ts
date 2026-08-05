@@ -5,6 +5,7 @@ import type { AppConfig } from '../config.js'
 import type { DriveAccountAdminService, DriveAccountMutationResult } from '../drive/drive-account-admin-service.js'
 import type { DriveAdminService, DriveMutationResult } from '../drive/drive-admin-service.js'
 import { renderAdminDriveAccountForm, renderAdminDriveAccounts, renderAdminDriveBackups, renderAdminDriveFiles, renderAdminDriveQueue, renderAdminError, type AdminMessage } from '../player/admin-page.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const UNAUTHORIZED = 'You are not authorized to access this feature'
@@ -24,8 +25,6 @@ export async function registerDriveAdminRoutes(
   const editUrl = `${adminBase}/gdrive/edit/`
   const deleteUrl = `${adminBase}/gdrive/delete/`
   const flagUrl = `${adminBase}/gdrive/flag/`
-  const ajaxUrls = [`${adminBase}/ajax/gdrive-account/`, `${adminBase}/ajax/gdrive-accounts/`] as const
-  const listAjaxUrls = [`${adminBase}/ajax/gdrive-account-list/`, `${adminBase}/ajax/gdrive-accounts-list/`] as const
   const filesUrl = `${adminBase}/gdrive/files/`
   const fileActionUrl = `${adminBase}/gdrive/files/action/`
   const backupsUrl = `${adminBase}/gdrive/backup-files/`
@@ -189,12 +188,14 @@ export async function registerDriveAdminRoutes(
     }
   }
 
-  for (const url of listAjaxUrls) {
-    app.route({ method: ['GET', 'POST'], url, handler: async (request, reply) => await ajax(request, reply, true) })
-  }
-  for (const url of ajaxUrls) {
-    app.route({ method: ['GET', 'POST'], url, handler: async (request, reply) => await ajax(request, reply, false) })
-  }
+  registerLegacyAjaxAliases(app, [
+    `${adminBase}/ajax/gdrive-account-list`,
+    `${adminBase}/ajax/gdrive-accounts-list`
+  ], async (request, reply) => await ajax(request, reply, true))
+  registerLegacyAjaxAliases(app, [
+    `${adminBase}/ajax/gdrive-account`,
+    `${adminBase}/ajax/gdrive-accounts`
+  ], async (request, reply) => await ajax(request, reply, false))
 
   app.get(`${adminBase}/gdrive/files`, async (_request, reply) => await reply.redirect(filesUrl, 308))
   app.get(`${adminBase}/gdrive/backup-files`, async (_request, reply) => await reply.redirect(backupsUrl, 308))
@@ -381,17 +382,20 @@ export async function registerDriveAdminRoutes(
   }
 
   const controllerRoutes = [
-    ['file', `${adminBase}/ajax/gdrive-file/`],
-    ['file', `${adminBase}/ajax/gdrive-files/`],
-    ['mirror', `${adminBase}/ajax/gdrive-mirror/`],
-    ['queue', `${adminBase}/ajax/gdrive-queue/`]
+    ['file', [`${adminBase}/ajax/gdrive-file`, `${adminBase}/ajax/gdrive-files`]],
+    ['mirror', [`${adminBase}/ajax/gdrive-mirror`, `${adminBase}/ajax/gdrive-backup-files`]],
+    ['queue', [`${adminBase}/ajax/gdrive-queue`, `${adminBase}/ajax/gdrive-backup-queue`]]
   ] as const
-  for (const [controller, url] of controllerRoutes) app.route({ method: ['GET', 'POST'], url, handler: async (request, reply) => await driveAjax(request, reply, controller) })
-  for (const [controller, url] of [
-    ['file', `${adminBase}/ajax/gdrive-file-list/`],
-    ['mirror', `${adminBase}/ajax/gdrive-mirror-list/`],
-    ['queue', `${adminBase}/ajax/gdrive-queue-list/`]
-  ] as const) app.route({ method: ['GET', 'POST'], url, handler: async (request, reply) => await driveAjax(request, reply, controller, true) })
+  for (const [controller, aliases] of controllerRoutes) {
+    registerLegacyAjaxAliases(app, aliases, async (request, reply) => await driveAjax(request, reply, controller))
+  }
+  for (const [controller, aliases] of [
+    ['file', [`${adminBase}/ajax/gdrive-file-list`, `${adminBase}/ajax/gdrive-files-list`]],
+    ['mirror', [`${adminBase}/ajax/gdrive-mirror-list`, `${adminBase}/ajax/gdrive-backup-files-list`]],
+    ['queue', [`${adminBase}/ajax/gdrive-queue-list`, `${adminBase}/ajax/gdrive-backup-queue-list`]]
+  ] as const) {
+    registerLegacyAjaxAliases(app, aliases, async (request, reply) => await driveAjax(request, reply, controller, true))
+  }
 }
 
 function applyAdminHeaders(reply: FastifyReply, config: AppConfig): void {

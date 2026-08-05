@@ -12,6 +12,7 @@ import type { PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 import { renderAdFrameDocument, type AdFrameContent } from '../player/ad-frame.js'
 import { legacyAdBaitImage } from '../player/ad-bait-image.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 import { downloadPageLinkTargets, renderDownloadError, renderDownloadPage } from '../player/download-page.js'
 import { P2P_CORE_IMPORT_MAP_CSP_HASH, renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
 import { PlayerLinkGenerator } from '../player/link-generator.js'
@@ -379,8 +380,10 @@ export async function registerPlayerRoutes(
     return await createPlayer(request, reply)
   }
 
-  app.route({ method: ['GET', 'POST'], url: '/ajax/public', handler: dispatchPublicAjax })
-  app.route({ method: ['GET', 'POST'], url: '/ajax/public/', handler: dispatchPublicAjax })
+  registerLegacyAjaxAliases(app, [
+    '/ajax/public',
+    `/${config.adminDirectory}/ajax/public`
+  ], dispatchPublicAjax)
   app.get('/ajax', statCounter)
   app.get('/ajax/', statCounter)
 

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { AppConfig } from '../config.js'
 import type { PrivateAdminService } from '../system/private-admin-service.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const INVALID_PARAMETERS = 'Invalid parameters'
@@ -14,40 +15,39 @@ export async function registerPrivateAdminRoutes(
   auth: AuthService,
   service: PrivateAdminService
 ): Promise<void> {
-  const url = `/${config.adminDirectory}/ajax/private/`
-  app.route({
-    method: ['GET', 'POST'],
-    url,
-    handler: async (request, reply) => {
-      applyAdminHeaders(reply, config)
-      reply.type('application/json; charset=utf-8')
-      const data = { ...objectValue(request.query), ...objectValue(request.body) }
-      let user: AuthUser | null
-      try {
-        user = await auth.authenticate(tokenFor(request) || stringValue(data.token), request.headers['user-agent'] ?? '')
-      } catch {
-        return reply.code(503).send(legacy('fail', UNAVAILABLE, null))
-      }
-      if (user?.role !== 0 || user.status !== 1) return reply.send(legacy('fail', UNAUTHORIZED, null))
+  const adminBase = `/${config.adminDirectory}`
+  registerLegacyAjaxAliases(app, [
+    `${adminBase}/ajax/private`,
+    `${adminBase}/ajax/admin-api`
+  ], async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    const data = { ...objectValue(request.query), ...objectValue(request.body) }
+    let user: AuthUser | null
+    try {
+      user = await auth.authenticate(tokenFor(request) || stringValue(data.token), request.headers['user-agent'] ?? '')
+    } catch {
+      return reply.code(503).send(legacy('fail', UNAVAILABLE, null))
+    }
+    if (user?.role !== 0 || user.status !== 1) return reply.send(legacy('fail', UNAUTHORIZED, null))
 
-      const action = stringValue(data.action)
-      if (action === 'serverStatus') {
-        try {
-          return reply.send(legacy('ok', '', await service.serverStatus(data.group)))
-        } catch {
-          return reply.code(503).send(legacy('fail', UNAVAILABLE, null))
-        }
-      }
-      if (action !== 'clearVideoCache' && action !== 'clearLoadBalancer') {
-        return reply.send(legacy('fail', INVALID_PARAMETERS, null))
-      }
-      if (request.method !== 'POST') return reply.code(405).send(legacy('fail', INVALID_PARAMETERS, null))
-      if (!hasSameOrigin(request, config)) return reply.code(403).send(legacy('fail', 'The private administration request did not originate from this application', null))
+    const action = stringValue(data.action)
+    if (action === 'serverStatus') {
       try {
-        return reply.send(action === 'clearVideoCache' ? await service.clearVideoCache(data.id) : await service.clearLoadBalancer())
+        return reply.send(legacy('ok', '', await service.serverStatus(data.group)))
       } catch {
         return reply.code(503).send(legacy('fail', UNAVAILABLE, null))
       }
+    }
+    if (action !== 'clearVideoCache' && action !== 'clearLoadBalancer') {
+      return reply.send(legacy('fail', INVALID_PARAMETERS, null))
+    }
+    if (request.method !== 'POST') return reply.code(405).send(legacy('fail', INVALID_PARAMETERS, null))
+    if (!hasSameOrigin(request, config)) return reply.code(403).send(legacy('fail', 'The private administration request did not originate from this application', null))
+    try {
+      return reply.send(action === 'clearVideoCache' ? await service.clearVideoCache(data.id) : await service.clearLoadBalancer())
+    } catch {
+      return reply.code(503).send(legacy('fail', UNAVAILABLE, null))
     }
   })
 }

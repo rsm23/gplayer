@@ -4,6 +4,7 @@ import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } fr
 import type { AppConfig } from '../config.js'
 import { LOAD_BALANCER_CONTINENTS, type LoadBalancerAdminService, type LoadBalancerMutationResult } from '../load-balancers/load-balancer-admin-service.js'
 import { renderAdminError, renderAdminLoadBalancerForm, renderAdminLoadBalancers, type AdminMessage } from '../player/admin-page.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const DATABASE_UNAVAILABLE = 'The load balancer database is temporarily unavailable.'
@@ -134,8 +135,14 @@ export async function registerLoadBalancerAdminRoutes(
     } catch { return reply.code(503).send(legacyMutation({ status: 'invalid', message: DATABASE_UNAVAILABLE })) }
     return reply.send(legacyMutation(result))
   }
-  for (const url of [`${adminBase}/ajax/load-balancer/`, `${adminBase}/ajax/load-balancers/`]) app.route({ method: ['GET', 'POST'], url, handler: async (request, reply) => await ajax(request, reply, false) })
-  for (const url of [`${adminBase}/ajax/load-balancer-list/`, `${adminBase}/ajax/load-balancers-list/`]) app.route({ method: ['GET', 'POST'], url, handler: async (request, reply) => await ajax(request, reply, true) })
+  registerLegacyAjaxAliases(app, [
+    `${adminBase}/ajax/load-balancer`,
+    `${adminBase}/ajax/load-balancers`
+  ], async (request, reply) => await ajax(request, reply, false))
+  registerLegacyAjaxAliases(app, [
+    `${adminBase}/ajax/load-balancer-list`,
+    `${adminBase}/ajax/load-balancers-list`
+  ], async (request, reply) => await ajax(request, reply, true))
 }
 
 function normalizedFormBody(body: Record<string, unknown>): Record<string, unknown> {

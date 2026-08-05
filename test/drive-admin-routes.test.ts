@@ -173,17 +173,17 @@ describe('Google Drive file, backup, and queue administration routes', () => {
   it('preserves legacy file, mirror, and queue AJAX shapes with method and origin enforcement', async () => {
     const drive = new FixtureDriveAdmin()
     app = await createApp(drive)
-    const list = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-file/?action=list&draw=7&email=drive%40example.test', headers })
+    const list = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-files-list?draw=7&email=drive%40example.test', headers })
     expect(list.json()).toEqual({ draw: 7, data: [file], recordsTotal: 1, recordsFiltered: 1, token: 'next-page' })
 
-    const shared = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-file/?action=getSharedDrives&email=drive%40example.test', headers })
+    const shared = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-files?action=getSharedDrives&email=drive%40example.test', headers })
     expect(shared.json()).toEqual({ status: 'ok', message: '', result: [{ id: 'sharedDriveABC', name: 'Editorial' }] })
 
-    const rejectedGet = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-queue/?action=delete&id=4', headers })
+    const rejectedGet = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-backup-queue?action=delete&id=4', headers })
     expect(rejectedGet.statusCode).toBe(405)
     const rejectedOrigin = await app.inject({
       method: 'POST',
-      url: '/administrator/ajax/gdrive-mirror/',
+      url: '/administrator/ajax/gdrive-backup-files',
       headers: { ...headers, origin: 'https://foreign.example', 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'action=delete&id=3'
     })
@@ -191,7 +191,7 @@ describe('Google Drive file, backup, and queue administration routes', () => {
 
     const copied = await app.inject({
       method: 'POST',
-      url: '/administrator/ajax/gdrive-queue/',
+      url: '/administrator/ajax/gdrive-backup-queue',
       headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'action=copy&id=sourceFileABC'
     })
@@ -201,7 +201,7 @@ describe('Google Drive file, backup, and queue administration routes', () => {
   it('returns an empty legacy page to non-admin users', async () => {
     const drive = new FixtureDriveAdmin()
     app = await createApp(drive, new RouteAuthStore({ ...admin, role: 1 }))
-    const response = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-mirror-list/?draw=9', headers })
+    const response = await app.inject({ method: 'GET', url: '/administrator/ajax/gdrive-backup-files-list?draw=9', headers })
     expect(response.json()).toEqual({ draw: 9, data: [], recordsTotal: 0, recordsFiltered: 0 })
   })
 })

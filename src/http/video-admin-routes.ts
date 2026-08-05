@@ -14,6 +14,7 @@ import { VIDEO_BULK_MAX_ITEMS, type VideoBulkService } from '../videos/video-bul
 import type { VideoCheckerService } from '../videos/video-checker-service.js'
 import { VIDEO_EXPORT_FAIL, VIDEO_EXPORT_SUCCESS, VIDEO_IMPORT_FAIL, type VideoTransferService } from '../videos/video-transfer-service.js'
 import type { PluginExtensionRuntime } from '../plugins/plugin-extension-runtime.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: http: https:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const UNAUTHORIZED = 'You are not authorized to access this feature'
@@ -348,8 +349,8 @@ export async function registerVideoAdminRoutes(
     }
   }
 
-  app.route({ method: ['GET', 'POST'], url: listAjaxUrl, handler: async (request, reply) => await videoAjax(request, reply, true) })
-  app.route({ method: ['GET', 'POST'], url: ajaxUrl, handler: async (request, reply) => await videoAjax(request, reply, false) })
+  registerLegacyAjaxAliases(app, [listAjaxUrl], async (request, reply) => await videoAjax(request, reply, true))
+  registerLegacyAjaxAliases(app, [ajaxUrl], async (request, reply) => await videoAjax(request, reply, false))
 
   app.post(publicAjaxUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -371,7 +372,7 @@ export async function registerVideoAdminRoutes(
     }
   })
 
-  app.post(importAjaxUrl, async (request, reply) => {
+  registerLegacyAjaxAliases(app, [importAjaxUrl], async (request, reply) => {
     applyAdminHeaders(reply, config)
     reply.type('application/json; charset=utf-8')
     if (!hasSameOrigin(request, config)) return reply.code(403).send({ status: 'fail', message: VIDEO_IMPORT_FAIL, result: [] })
@@ -386,9 +387,9 @@ export async function registerVideoAdminRoutes(
     } catch {
       return reply.send({ status: 'fail', message: VIDEO_IMPORT_FAIL, result: [] })
     }
-  })
+  }, ['POST'])
 
-  app.post(exportAjaxUrl, async (request, reply) => {
+  registerLegacyAjaxAliases(app, [exportAjaxUrl], async (request, reply) => {
     applyAdminHeaders(reply, config)
     reply.type('application/json; charset=utf-8')
     if (!hasSameOrigin(request, config)) return reply.code(403).send({ status: 'fail', message: VIDEO_EXPORT_FAIL, result: null })
@@ -399,7 +400,7 @@ export async function registerVideoAdminRoutes(
     if (result.status === 'fail') return reply.send({ status: 'fail', message: result.message, result: null })
     const query = new URLSearchParams({ ids }).toString()
     return reply.send({ status: 'ok', message: VIDEO_EXPORT_SUCCESS, result: new URL(`${exportDownloadUrl}?${query}`, config.baseUrl).href })
-  })
+  }, ['POST'])
 }
 
 async function videoListPage(

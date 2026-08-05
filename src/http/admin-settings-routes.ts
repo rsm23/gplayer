@@ -8,6 +8,7 @@ import type { SettingsAdminService } from '../settings/settings-admin-service.js
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
 import { InvalidVastAssetError, type VastAssetManager } from '../settings/vast-assets-service.js'
 import type { SettingsMaintenanceService } from '../settings/settings-maintenance-service.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
@@ -692,7 +693,7 @@ export async function registerAdminSettingsRoutes(
     }
   })
 
-  app.post(settingsAjaxUrl, async (request, reply) => {
+  registerLegacyAjaxAliases(app, [settingsAjaxUrl], async (request, reply) => {
     applyAdminHeaders(reply, config)
     if (!hasSameOrigin(request, config)) {
       return reply.code(403).send({ status: 'fail', message: 'The settings request did not originate from this application.' })
@@ -731,7 +732,7 @@ export async function registerAdminSettingsRoutes(
     }
 
     return reply.code(400).send({ status: 'fail', message: 'The settings action is not supported' })
-  })
+  }, ['POST'])
 }
 
 const SETTINGS_MAINTENANCE_ACTIONS = new Set([

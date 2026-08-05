@@ -228,7 +228,7 @@ describe('private administration routes', () => {
   it('serves legacy status envelopes and renders the Node-only dashboard monitor for admins', async () => {
     const runtime = await createApp(admin)
     app = runtime.app
-    const response = await app.inject({ method: 'GET', url: '/administrator/ajax/private/?action=serverStatus&group=2', headers })
+    const response = await app.inject({ method: 'GET', url: '/administrator/ajax/admin-api?action=serverStatus&group=2', headers })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ status: 'ok', message: '', result: { ram } })
     const page = await app.inject({ method: 'GET', url: '/administrator/dashboard/', headers })

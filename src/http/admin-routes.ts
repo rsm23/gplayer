@@ -8,6 +8,7 @@ import { LogAdminService, LogFileError } from '../logs/log-admin-service.js'
 import { renderAdminDashboard, renderAdminDmca, renderAdminError, renderAdminLoginPage, renderAdminLogs, renderAdminProfile, renderAdminSessions, renderAdminUserForm, renderAdminUsers, type AdminMessage } from '../player/admin-page.js'
 import { DashboardAdminService, type DashboardAccess } from '../dashboard/dashboard-admin-service.js'
 import type { SystemStatusSnapshot } from '../system/system-inspector.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const SESSION_DELETE_FAIL = 'The session failed to delete'
@@ -155,48 +156,44 @@ export async function registerAdminRoutes(
     }
   })
 
-  app.route({
-    method: ['GET', 'POST'],
-    url: dashboardAjaxUrl,
-    handler: async (request, reply) => {
-      applyAdminHeaders(reply, config)
-      reply.type('application/json; charset=utf-8')
-      const data = { ...objectValue(request.query), ...objectValue(request.body) }
-      let user: AuthUser | null
-      try {
-        user = await auth.authenticate(tokenFor(request) || stringValue(data.token), request.headers['user-agent'] ?? '')
-      } catch {
-        return reply.code(503).send(legacyJson('fail', 'The dashboard database is temporarily unavailable.'))
-      }
-      if (user === null) return reply.send(legacyJson('fail', UNAUTHORIZED))
-      const access = dashboardAccess(user)
-      try {
-        switch (stringValue(data.action)) {
-          case 'videosStatus':
-            return reply.send(legacyResult('', await dashboard.videosStatus(data, access)))
-          case 'serversStatus': {
-            const servers = await dashboard.serversStatus(access)
-            if (servers === null) return reply.send(legacyJson('fail', UNAUTHORIZED))
-            return reply.send(legacyResult('', Object.fromEntries(servers.map((server) => [server.name, server.sources]))))
-          }
-          case 'views':
-            return reply.send(legacyResult('OK', await dashboard.views(data, access)))
-          case 'recentVideos':
-            return reply.send(await dashboard.recentVideos(data, access))
-          case 'popularVideos':
-            return reply.send(await dashboard.popularVideos(data, access))
-          case 'popularBrowsers':
-            return reply.send(await dashboard.popularBrowsers(data, access))
-          case 'popularCountries':
-            return reply.send(await dashboard.popularCountries(data, access))
-          case 'popularASN':
-            return reply.send(await dashboard.popularAsns(data, access))
-          default:
-            return reply.send(legacyJson('fail', 'Invalid parameters'))
+  registerLegacyAjaxAliases(app, [dashboardAjaxUrl], async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    const data = { ...objectValue(request.query), ...objectValue(request.body) }
+    let user: AuthUser | null
+    try {
+      user = await auth.authenticate(tokenFor(request) || stringValue(data.token), request.headers['user-agent'] ?? '')
+    } catch {
+      return reply.code(503).send(legacyJson('fail', 'The dashboard database is temporarily unavailable.'))
+    }
+    if (user === null) return reply.send(legacyJson('fail', UNAUTHORIZED))
+    const access = dashboardAccess(user)
+    try {
+      switch (stringValue(data.action)) {
+        case 'videosStatus':
+          return reply.send(legacyResult('', await dashboard.videosStatus(data, access)))
+        case 'serversStatus': {
+          const servers = await dashboard.serversStatus(access)
+          if (servers === null) return reply.send(legacyJson('fail', UNAUTHORIZED))
+          return reply.send(legacyResult('', Object.fromEntries(servers.map((server) => [server.name, server.sources]))))
         }
-      } catch {
-        return reply.code(503).send(legacyJson('fail', 'The dashboard database is temporarily unavailable.'))
+        case 'views':
+          return reply.send(legacyResult('OK', await dashboard.views(data, access)))
+        case 'recentVideos':
+          return reply.send(await dashboard.recentVideos(data, access))
+        case 'popularVideos':
+          return reply.send(await dashboard.popularVideos(data, access))
+        case 'popularBrowsers':
+          return reply.send(await dashboard.popularBrowsers(data, access))
+        case 'popularCountries':
+          return reply.send(await dashboard.popularCountries(data, access))
+        case 'popularASN':
+          return reply.send(await dashboard.popularAsns(data, access))
+        default:
+          return reply.send(legacyJson('fail', 'Invalid parameters'))
       }
+    } catch {
+      return reply.code(503).send(legacyJson('fail', 'The dashboard database is temporarily unavailable.'))
     }
   })
 
@@ -526,16 +523,8 @@ export async function registerAdminRoutes(
     }
   }
 
-  app.route({
-    method: ['GET', 'POST'],
-    url: userListAjaxUrl,
-    handler: async (request, reply) => await userAjax(request, reply, true)
-  })
-  app.route({
-    method: ['GET', 'POST'],
-    url: userAjaxUrl,
-    handler: async (request, reply) => await userAjax(request, reply, false)
-  })
+  registerLegacyAjaxAliases(app, [userListAjaxUrl, `${adminBase}/ajax/profile-list`], async (request, reply) => await userAjax(request, reply, true))
+  registerLegacyAjaxAliases(app, [userAjaxUrl, `${adminBase}/ajax/profile`], async (request, reply) => await userAjax(request, reply, false))
 
   app.get(sessionsUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -617,16 +606,8 @@ export async function registerAdminRoutes(
     }
   }
 
-  app.route({
-    method: ['GET', 'POST'],
-    url: sessionListAjaxUrl,
-    handler: async (request, reply) => await sessionAjax(request, reply, true)
-  })
-  app.route({
-    method: ['GET', 'POST'],
-    url: sessionAjaxUrl,
-    handler: async (request, reply) => await sessionAjax(request, reply, false)
-  })
+  registerLegacyAjaxAliases(app, [sessionListAjaxUrl], async (request, reply) => await sessionAjax(request, reply, true))
+  registerLegacyAjaxAliases(app, [sessionAjaxUrl], async (request, reply) => await sessionAjax(request, reply, false))
 
   app.post(`${adminBase}/logout/`, async (request, reply) => {
     applyAdminHeaders(reply, config)

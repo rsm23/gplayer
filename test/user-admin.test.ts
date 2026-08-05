@@ -311,7 +311,7 @@ describe('user administration routes', () => {
     app = await createApp(store, routeAuth)
     const response = await app.inject({
       method: 'POST',
-      url: '/administrator/ajax/users/',
+      url: '/administrator/ajax/profile',
       headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'action=editEmail&email=new%40example.test'
     })

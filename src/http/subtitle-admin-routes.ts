@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { AppConfig } from '../config.js'
+import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
 import { renderAdminError, renderAdminSubtitles, type AdminMessage } from '../player/admin-page.js'
 import type { SubtitleAccess, SubtitleAdminService, SubtitleMutationResult } from '../subtitles/subtitle-admin-service.js'
 
@@ -164,8 +165,8 @@ export async function registerSubtitleAdminRoutes(
     }
   }
 
-  app.route({ method: ['GET', 'POST'], url: listAjaxUrl, handler: async (request, reply) => await subtitleAjax(request, reply, true) })
-  app.route({ method: ['GET', 'POST'], url: ajaxUrl, handler: async (request, reply) => await subtitleAjax(request, reply, false) })
+  registerLegacyAjaxAliases(app, [listAjaxUrl], async (request, reply) => await subtitleAjax(request, reply, true))
+  registerLegacyAjaxAliases(app, [ajaxUrl], async (request, reply) => await subtitleAjax(request, reply, false))
 }
 
 async function subtitlePage(
