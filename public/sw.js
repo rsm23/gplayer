@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gplayer-node-public-v4'
+const CACHE_NAME = 'gplayer-node-public-v5'
 const scopedUrl = (path) => new URL(path, self.registration.scope).toString()
 const OFFLINE_URL = scopedUrl('offline.html')
 const PRECACHE = [

@@ -8,6 +8,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { createAuthRuntime } from './auth/auth-runtime.js'
 import type { AuthService } from './auth/auth-service.js'
 import type { SessionAdminService } from './auth/session-admin-service.js'
+import type { UserAdminService } from './auth/user-admin-service.js'
 import { loadConfig, type AppConfig } from './config.js'
 import { registerAdminRoutes } from './http/admin-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
@@ -24,6 +25,7 @@ export type AppDependencies = Readonly<{
   sourceApi?: SourceApiRouteOptions
   auth?: AuthService
   sessions?: SessionAdminService
+  users?: UserAdminService
 }>
 
 export async function buildApp(
@@ -48,7 +50,13 @@ export async function buildApp(
   const authRuntime = createAuthRuntime(app, config)
 
   await registerSystemRoutes(app, config)
-  await registerAdminRoutes(app, config, dependencies.auth ?? authRuntime.auth, dependencies.sessions ?? authRuntime.sessions)
+  await registerAdminRoutes(
+    app,
+    config,
+    dependencies.auth ?? authRuntime.auth,
+    dependencies.sessions ?? authRuntime.sessions,
+    dependencies.users ?? authRuntime.users
+  )
   await registerPlayerRoutes(app, config)
   await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
   await registerMediaRoutes(app, config)

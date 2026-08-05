@@ -156,10 +156,16 @@ describe('session administration routes', () => {
       url: '/administrator/ajax/sessions-list/?draw=1',
       headers: { 'user-agent': userAgent }
     })
+    const rejectedGet = await app.inject({
+      method: 'GET',
+      url: '/administrator/ajax/sessions/?action=delete&id=12',
+      headers
+    })
 
     expect(deleted.json()).toEqual({ status: 'ok', message: 'The session has been successfully deleted', result: null })
+    expect(rejectedGet.statusCode).toBe(405)
     expect(store.deleted).toEqual(['12'])
-    expect(unauthorized.json()).toEqual({ status: 'fail', message: 'You are not authorized to access this feature', result: null })
+    expect(unauthorized.json()).toEqual({ draw: 1, data: [], recordsTotal: 0, recordsFiltered: 0 })
   })
 
   it('requires both same-origin delivery and a signed form token for browser revocation', async () => {
@@ -196,6 +202,6 @@ describe('session administration routes', () => {
 
     expect(page.statusCode).toBe(302)
     expect(page.headers.location).toBe('/administrator/403/')
-    expect(ajax.json()).toEqual({ status: 'fail', message: 'You are not authorized to access this feature', result: null })
+    expect(ajax.json()).toEqual({ draw: 0, data: [], recordsTotal: 0, recordsFiltered: 0 })
   })
 })

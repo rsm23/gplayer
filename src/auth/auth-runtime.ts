@@ -4,17 +4,21 @@ import { Database } from '../database/database.js'
 import { AuthService, type AuthStore } from './auth-service.js'
 import { MySqlAuthStore } from './mysql-auth-store.js'
 import { MySqlSessionAdminStore } from './mysql-session-admin-store.js'
+import { MySqlUserAdminStore } from './mysql-user-admin-store.js'
 import { SessionAdminService, type SessionAdminStore } from './session-admin-service.js'
+import { UserAdminService, type UserAdminStore } from './user-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
   sessions: SessionAdminService
+  users: UserAdminService
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
   let database: Database | undefined
   let authStore: MySqlAuthStore | undefined
   let sessionStore: MySqlSessionAdminStore | undefined
+  let userStore: MySqlUserAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -28,6 +32,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     sessionStore ??= new MySqlSessionAdminStore(currentDatabase())
     return sessionStore
   }
+  const currentUserStore = (): MySqlUserAdminStore => {
+    userStore ??= new MySqlUserAdminStore(currentDatabase())
+    return userStore
+  }
 
   const lazyStore: AuthStore = {
     findUserByIdentifier: async (identifier) => await currentAuthStore().findUserByIdentifier(identifier),
@@ -40,6 +48,16 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     listSessions: async (query) => await currentSessionStore().listSessions(query),
     deleteSession: async (id) => await currentSessionStore().deleteSession(id)
   }
+  const lazyUserStore: UserAdminStore = {
+    listUsers: async (query) => await currentUserStore().listUsers(query),
+    getUser: async (id) => await currentUserStore().getUser(id),
+    findConflict: async (username, email, excludeId) => await currentUserStore().findConflict(username, email, excludeId),
+    createUser: async (user) => await currentUserStore().createUser(user),
+    updateUser: async (id, user) => await currentUserStore().updateUser(id, user),
+    updateEmail: async (id, email, updated) => await currentUserStore().updateEmail(id, email, updated),
+    updateUsername: async (id, username, updated) => await currentUserStore().updateUsername(id, username, updated),
+    deleteUser: async (id) => await currentUserStore().deleteUser(id)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -47,6 +65,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
 
   return Object.freeze({
     auth: new AuthService(lazyStore),
-    sessions: new SessionAdminService(lazySessionStore)
+    sessions: new SessionAdminService(lazySessionStore),
+    users: new UserAdminService(lazyUserStore)
   })
 }
