@@ -156,14 +156,19 @@ export async function registerSystemRoutes(
   })
 
   app.get('/embed.php', async (request, reply) => {
-    const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
-    return reply.redirect(`/e/${query}`)
+    const query = legacyShimQuery(request.url)
+    return query === '' ? reply.code(200).send() : reply.redirect(`/e/?${query}`)
   })
 
   app.get('/embed2.php', async (request, reply) => {
-    const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
-    return reply.redirect(`/r/${query}`)
+    const query = legacyShimQuery(request.url)
+    return query === '' ? reply.code(200).send() : reply.redirect(`/r/?${query}`)
   })
+}
+
+function legacyShimQuery(requestUrl: string): string {
+  const index = requestUrl.indexOf('?')
+  return index < 0 ? '' : requestUrl.slice(index + 1)
 }
 
 function publicNavigation(contactUrl: string): Readonly<{ contactUrl?: string }> {

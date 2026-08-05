@@ -182,12 +182,69 @@ describe('legacy-compatible system routes', () => {
 
   it.each([
     ['/embed.php?id=abc', '/e/?id=abc'],
-    ['/embed2.php?id=abc', '/r/?id=abc']
+    ['/embed2.php?id=abc', '/r/?id=abc'],
+    ['/embed.php?sub%5B%5D=https%3A%2F%2Fcdn.example%2Fa.vtt&lang%5B%5D=en', '/e/?sub%5B%5D=https%3A%2F%2Fcdn.example%2Fa.vtt&lang%5B%5D=en']
   ])('preserves old PHP redirect compatibility for %s', async (url, location) => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const response = await app.inject({ method: 'GET', url })
     expect(response.statusCode).toBe(302)
     expect(response.headers.location).toBe(location)
+  })
+
+  it.each(['/embed.php', '/embed.php?', '/embed2.php'])('retains the empty legacy shim response for %s without a query', async (url) => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
+    const response = await app.inject({ method: 'GET', url })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers.location).toBeUndefined()
+    expect(response.body).toBe('')
+  })
+
+  it('returns the readable front-controller CORS and OPTIONS contract on every path', async () => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
+    const [bare, preflight, page] = await Promise.all([
+      app.inject({ method: 'OPTIONS', url: '/not-a-route' }),
+      app.inject({
+        method: 'OPTIONS',
+        url: '/api',
+        headers: {
+          origin: 'https://client.example',
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'authorization, content-type'
+        }
+      }),
+      app.inject({ method: 'GET', url: '/assets/css/gplayer-public.css' })
+    ])
+
+    for (const response of [bare, preflight]) {
+      expect(response.statusCode).toBe(204)
+      expect(response.body).toBe('')
+      expect(response.headers['cache-control']).toBe('no-cache, no-store, no-transform, must-revalidate')
+    }
+    for (const response of [bare, preflight, page]) {
+      expect(response.headers['access-control-allow-methods']).toBe('GET, POST, HEAD, OPTIONS')
+      expect(response.headers['access-control-allow-origin']).toBe('*')
+      expect(response.headers['access-control-allow-headers']).toBe('*')
+      expect(response.headers['access-control-expose-headers']).toBe('*')
+    }
+  })
+
+  it('uses the legacy empty HEAD response only when no explicit Node route exists', async () => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
+    const [unknown, dashUnknown, explicitError] = await Promise.all([
+      app.inject({ method: 'HEAD', url: '/not-a-route' }),
+      app.inject({ method: 'HEAD', url: '/compat/mpd/manifest' }),
+      app.inject({ method: 'HEAD', url: '/404/' })
+    ])
+
+    for (const response of [unknown, dashUnknown]) {
+      expect(response.statusCode).toBe(200)
+      expect(response.rawPayload).toHaveLength(0)
+      expect(response.headers['cache-control']).toBe('no-cache, no-store, no-transform, must-revalidate')
+    }
+    expect(unknown.headers['content-type']).toBeUndefined()
+    expect(dashUnknown.headers['content-type']).toBe('application/dash+xml')
+    expect(explicitError.statusCode).toBe(404)
+    expect(explicitError.rawPayload).toHaveLength(0)
   })
 
   it('returns the legacy 404 title', async () => {

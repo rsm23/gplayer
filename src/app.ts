@@ -1,7 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import cookie from '@fastify/cookie'
-import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
@@ -79,6 +78,7 @@ import { PrivateAdminService } from './system/private-admin-service.js'
 import { registerPrivateAdminRoutes } from './http/private-admin-routes.js'
 import { FileSystemSettingsMaintenanceFiles } from './settings/settings-maintenance-files.js'
 import { SettingsMaintenanceService } from './settings/settings-maintenance-service.js'
+import { registerBootstrapCompatibility, sendLegacyHeadFallback } from './http/bootstrap-compatibility.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -130,11 +130,7 @@ export async function buildApp(
     requestIdHeader: 'x-request-id'
   })
 
-  await app.register(cors, {
-    origin: '*',
-    methods: ['GET', 'POST', 'HEAD', 'OPTIONS'],
-    exposedHeaders: ['content-length', 'content-range', 'accept-ranges']
-  })
+  registerBootstrapCompatibility(app)
 
   await app.register(formbody)
   await app.register(multipart, {
@@ -490,7 +486,8 @@ export async function buildApp(
     index: false
   })
 
-  app.setNotFoundHandler(async (_request, reply) => {
+  app.setNotFoundHandler(async (request, reply) => {
+    if (request.method === 'HEAD') return sendLegacyHeadFallback(request, reply)
     const contactUrl = await loadPublicSettings().then((settings) => settings.contact_page_link).catch(() => '')
     applyPublicPageHeaders(reply, true)
     reply.code(404).type('text/html; charset=utf-8')
