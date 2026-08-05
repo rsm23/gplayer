@@ -109,6 +109,7 @@ export async function buildApp(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
   )
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
+  const loadPublicSettings = async () => await settingsRuntime.runtimePublicSettings()
   const shortlinkRuntime = dependencies.shortlinks ?? new ShortlinkService(
     async () => await settingsRuntime.runtimeShortlinkSettings()
   )
@@ -163,6 +164,7 @@ export async function buildApp(
   await registerPlayerRoutes(app, config, {
     loadAdsSettings,
     loadPlayerSettings,
+    loadPublicSettings,
     loadMiscSettings,
     loadHostingSettings,
     countryCodeLookup,

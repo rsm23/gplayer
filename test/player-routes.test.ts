@@ -88,6 +88,60 @@ describe('player HTTP routes', () => {
     expect(parsed.media).toEqual({ host: 'earnvids', id: 'legacy-id', poster: '' })
   })
 
+  it('enforces disabled public request, subtitle insertion, and download-page settings', async () => {
+    const values = {
+      enable_request_url: 'false',
+      enable_json_subtitles: 'false',
+      enable_download_page: 'false',
+      enable_download_button: 'true'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const generated = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=createPlayer&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&sub[]=https%3A%2F%2Fcdn.example%2Fen.vtt&lang[]=English&subs=https%3A%2F%2Fcdn.example%2Fcaptions.json'
+    })
+    const token = new URL(generated.json().result.embed_url).search.slice(1)
+    expect(parsePlayerQuery(token, new Security(secureSalt), { secureSalt }).media).toEqual({
+      host: 'direct',
+      id: 'https://cdn.example/movie.mp4',
+      poster: ''
+    })
+
+    const request = await app.inject({ method: 'GET', url: '/r/?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4' })
+    expect(request.statusCode).toBe(403)
+    expect(request.json()).toEqual({ status: 'fail', message: 'Access denied', result: null })
+
+    const embed = await app.inject({ method: 'GET', url: `/e/?${token}` })
+    expect(embed.statusCode).toBe(200)
+    expect(embed.body).not.toContain(`href="/d/?${token}"`)
+
+    const download = await app.inject({ method: 'GET', url: `/d/?${token}` })
+    expect(download.statusCode).toBe(403)
+    expect(download.body).toContain('The download page is disabled.')
+  })
+
+  it('strips subtitles from enabled plaintext request URLs when public insertion is disabled', async () => {
+    const values = { enable_request_url: 'true', enable_json_subtitles: 'false' }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const response = await app.inject({
+      method: 'GET',
+      url: '/r/?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&sub[]=https%3A%2F%2Fcdn.example%2Fen.vtt&lang[]=English&subs=https%3A%2F%2Fcdn.example%2Fcaptions.json'
+    })
+
+    expect(response.statusCode).toBe(302)
+    const token = response.headers.location?.split('?', 2)[1] ?? ''
+    expect(parsePlayerQuery(token, new Security(secureSalt), { secureSalt }).media).toEqual({
+      host: 'direct',
+      id: 'https://cdn.example/movie.mp4'
+    })
+  })
+
   it('renders authenticated direct media with player options and subtitles', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const security = new Security(secureSalt)
@@ -396,6 +450,33 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain(`href="/e/?${token}"`)
     expect(response.body).toMatch(/href="\/d\/\?[^\"]+">Use alternative server/)
     expect(response.body).not.toContain('href="https://backup.example/fallback.mp4"')
+  })
+
+  it('hides disabled watch and subtitle downloads without transforming hidden destinations', async () => {
+    const transformed: string[] = []
+    const values = {
+      enable_download_page: 'true',
+      show_sub_download: 'false',
+      show_watch_button: 'false'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      shortlinks: {
+        shorten: async (target) => {
+          transformed.push(target)
+          return 'https://short.example/media'
+        }
+      }
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&ahost=direct&aid=https%3A%2F%2Fbackup.example%2Ffallback.mp4&sub[]=https%3A%2F%2Fcdn.example%2Fen.vtt&lang[]=English')
+    const response = await app.inject({ method: 'GET', url: `/d/?${token}` })
+
+    expect(response.statusCode).toBe(200)
+    expect(transformed).toEqual(['https://cdn.example/movie.mp4'])
+    expect(response.body).toContain('href="https://short.example/media"')
+    expect(response.body).not.toContain('Watch video')
+    expect(response.body).not.toContain('Download English')
+    expect(response.body).toContain('Use alternative server')
   })
 
   it('caps per-page shortlink provider work while leaving every remaining destination direct', async () => {

@@ -13,6 +13,8 @@ export type DownloadPageOptions = Readonly<{
   hostingData?: HostingData
   customNames?: Readonly<Record<string, string>>
   shortenedLinks?: ReadonlyMap<string, string>
+  showSubtitleDownloads?: boolean
+  showWatchButton?: boolean
 }>
 
 type DownloadItem = Readonly<{
@@ -30,9 +32,10 @@ type SubtitleTarget = Readonly<{
 export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPageOptions): string {
   const title = mediaTitle(media, options.customNames)
   const primary = mediaDownloadItem(media, title, options)
-  const subtitles = subtitleDownloadItems(media, options.shortenedLinks)
+  const subtitles = options.showSubtitleDownloads === false ? [] : subtitleDownloadItems(media, options.shortenedLinks)
   const availableItems = primary === null ? subtitles : [primary, ...subtitles]
   const adapterPending = media.host !== 'direct'
+  const actions = renderDownloadActions(options)
 
   return `<!doctype html>
 <html lang="en">
@@ -52,10 +55,7 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
       <h1 id="download-title">${escapeHtml(title)}</h1>
       <p class="intro">Choose the media or subtitle file you want to open.</p>
       ${renderAdFrame(options.bannerTopFrameUrl, 'Advertisement above download options', 'banner')}
-      <div class="actions">
-        <a class="button button-watch" href="${escapeHtmlAttribute(options.embedUrl)}" target="_blank" rel="noopener noreferrer">Watch video</a>
-        ${options.alternativeUrl === undefined ? '' : `<a class="button button-secondary" href="${escapeHtmlAttribute(options.alternativeUrl)}">Use alternative server</a>`}
-      </div>
+      ${actions}
       ${availableItems.length === 0
         ? '<div class="notice notice-error"><strong>No downloadable source is available.</strong><span>The link is valid, but this source cannot be opened safely.</span></div>'
         : `<ul class="download-list">${availableItems.map(renderDownloadItem).join('')}</ul>`}
@@ -70,9 +70,9 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
 </html>`
 }
 
-export function downloadPageLinkTargets(media: PlayerMediaQuery, hostingData?: HostingData): readonly string[] {
+export function downloadPageLinkTargets(media: PlayerMediaQuery, hostingData?: HostingData, includeSubtitles = true): readonly string[] {
   const primary = mediaDownloadHref(media, hostingData)
-  const subtitles = subtitleTargets(media).map(({ href }) => href)
+  const subtitles = includeSubtitles ? subtitleTargets(media).map(({ href }) => href) : []
   return Object.freeze([...new Set([primary, ...subtitles].filter((value) => value !== ''))])
 }
 
@@ -100,6 +100,16 @@ function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: Down
     detail: options.hideHostname === true ? 'Video source' : providerName(media.host ?? 'provider', options.customNames),
     kind: 'source'
   }
+}
+
+function renderDownloadActions(options: DownloadPageOptions): string {
+  const watch = options.showWatchButton === false
+    ? ''
+    : `<a class="button button-watch" href="${escapeHtmlAttribute(options.embedUrl)}" target="_blank" rel="noopener noreferrer">Watch video</a>`
+  const alternative = options.alternativeUrl === undefined
+    ? ''
+    : `<a class="button button-secondary" href="${escapeHtmlAttribute(options.alternativeUrl)}">Use alternative server</a>`
+  return watch === '' && alternative === '' ? '' : `<div class="actions">${watch}${alternative}</div>`
 }
 
 function configuredDownloadLabel(template: string | undefined, title: string): string {

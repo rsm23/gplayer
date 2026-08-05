@@ -17,6 +17,7 @@ import { Security } from '../security/security.js'
 import type { CountryCodeLookup } from '../security/geoip-country.js'
 import { accessPolicyFromMisc, accessPolicyRejects, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
 import { loadRuntimeHostingSettings, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
+import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -40,6 +41,7 @@ export type PlayerRouteOptions = Readonly<{
   loadPlayerSettings?: PlayerSettingsLoader
   loadMiscSettings?: MiscSettingsLoader
   loadHostingSettings?: HostingSettingsLoader
+  loadPublicSettings?: PublicSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
@@ -62,8 +64,9 @@ export async function registerPlayerRoutes(
     }
 
     try {
-      const [player, misc, hosting, countryCode] = await Promise.all([
+      const [player, publicSettings, misc, hosting, countryCode] = await Promise.all([
         loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+        loadRuntimePublicSettings(options.loadPublicSettings),
         loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
         loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
         countryCodeForRequest(request, options.countryCodeLookup)
@@ -77,8 +80,8 @@ export async function registerPlayerRoutes(
         iframeCode: player.iframe_code,
         hostingData: hosting.data
       })
-      const sub = toArray(parsed.data['sub[]'] ?? parsed.data.sub)
-      const lang = toArray(parsed.data['lang[]'] ?? parsed.data.lang)
+      const sub = publicSettings.enable_json_subtitles ? toArray(parsed.data['sub[]'] ?? parsed.data.sub) : []
+      const lang = publicSettings.enable_json_subtitles ? toArray(parsed.data['lang[]'] ?? parsed.data.lang) : []
       const aid = toArray(parsed.data.aid)[0]
       const generated = generator.generate({
         id: parsed.data.id,
@@ -86,7 +89,7 @@ export async function registerPlayerRoutes(
         ...(parsed.data.poster !== undefined ? { poster: parsed.data.poster } : {}),
         ...(sub.length > 0 ? { sub } : {}),
         ...(lang.length > 0 ? { lang } : {}),
-        ...(parsed.data.subs !== undefined ? { subs: parsed.data.subs } : {}),
+        ...(publicSettings.enable_json_subtitles && parsed.data.subs !== undefined ? { subs: parsed.data.subs } : {}),
         ...(parsed.data.uid !== undefined ? { uid: parsed.data.uid } : {})
       })
       if (mediaContainsDisabledHost(generated.query, misc.disable_host)) throw new Error('This video host is disabled')
@@ -133,17 +136,23 @@ export async function registerPlayerRoutes(
   })
 
   const redirectPlaintextRequest = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [player, misc, countryCode] = await Promise.all([
+    const [player, publicSettings, misc, countryCode] = await Promise.all([
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimePublicSettings(options.loadPublicSettings),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
+    if (!publicSettings.enable_request_url) {
+      reply.code(403).type('application/json; charset=utf-8')
+      return { status: 'fail', message: 'Access denied', result: null }
+    }
     const rawQuery = rawQueryFromUrl(request.url)
     const parsed = parsePlayerQuery(rawQuery, security, {
       secureSalt: config.secureSalt,
       allowPlaintextMedia: true
     })
-    const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
+    const requestedMedia = parsed.media === null ? null : publicMediaQuery(parsed.media, publicSettings.enable_json_subtitles)
+    const resolvedMedia = await resolveSavedMedia(requestedMedia, options.resolveSavedVideo)
     if (resolvedMedia === null) {
       reply.code(400).type('application/json; charset=utf-8')
       return { status: 'fail', message: parsed.errors[0] ?? 'Bad Request', result: null }
@@ -154,7 +163,7 @@ export async function registerPlayerRoutes(
       reply.code(403).type('application/json; charset=utf-8')
       return { status: 'fail', message: 'Access denied', result: null }
     }
-    const token = security.encryptURL(buildPlayerQuery(parsed.media as PlayerMediaQuery))
+    const token = security.encryptURL(buildPlayerQuery(requestedMedia as PlayerMediaQuery))
     return reply.redirect(routePath(player.slug_embed, token))
   }
 
@@ -162,9 +171,10 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.request}/`, redirectPlaintextRequest)
 
   const showEmbed = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player, misc, hosting, countryCode] = await Promise.all([
+    const [ads, player, publicSettings, misc, hosting, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimePublicSettings(options.loadPublicSettings),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
@@ -193,7 +203,7 @@ export async function registerPlayerRoutes(
     const media = proxyPlayerMedia(withDefaultPoster(resolvedMedia, player), security)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
-      downloadUrl: routePath(player.slug_download, parsed.token),
+      downloadUrl: publicSettings.enable_download_page ? routePath(player.slug_download, parsed.token) : '',
       hostingData: hosting.data,
       customNames: hosting.customNames
     })
@@ -203,9 +213,10 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.embed}/`, showEmbed)
 
   const showDownload = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player, misc, hosting, countryCode] = await Promise.all([
+    const [ads, player, publicSettings, misc, hosting, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimePublicSettings(options.loadPublicSettings),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
@@ -214,6 +225,10 @@ export async function registerPlayerRoutes(
       secureSalt: config.secureSalt
     })
     applyDownloadHeaders(reply)
+    if (!publicSettings.enable_download_page) {
+      reply.code(403).type('text/html; charset=utf-8')
+      return renderDownloadError('The download page is disabled.')
+    }
     const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
     if (resolvedMedia === null) {
       reply.code(400).type('text/html; charset=utf-8')
@@ -227,7 +242,7 @@ export async function registerPlayerRoutes(
     }
     const embedUrl = routePath(player.slug_embed, parsed.token)
     const alternativeUrl = createAlternativeDownloadUrl(resolvedMedia, security, player.slug_download, misc.disable_host)
-    const shortenedLinks = await transformDownloadLinks(resolvedMedia, hosting.data, options.shortenUrl)
+    const shortenedLinks = await transformDownloadLinks(resolvedMedia, hosting.data, publicSettings.show_sub_download, options.shortenUrl)
     reply.type('text/html; charset=utf-8')
     return renderDownloadPage(resolvedMedia, {
       embedUrl,
@@ -237,6 +252,8 @@ export async function registerPlayerRoutes(
       hostingData: hosting.data,
       customNames: hosting.customNames,
       shortenedLinks,
+      showSubtitleDownloads: publicSettings.show_sub_download,
+      showWatchButton: publicSettings.show_watch_button,
       ...downloadAdFrames(ads)
     })
   }
@@ -276,13 +293,20 @@ export async function registerPlayerRoutes(
   app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
 }
 
+function publicMediaQuery(media: PlayerMediaQuery, allowSubtitles: boolean): PlayerMediaQuery {
+  if (allowSubtitles) return media
+  const { sub: _sub, lang: _lang, subs: _subs, ...withoutSubtitles } = media
+  return withoutSubtitles
+}
+
 async function transformDownloadLinks(
   media: PlayerMediaQuery,
   hostingData: HostingData | undefined,
+  includeSubtitles: boolean,
   shortenUrl: PlayerRouteOptions['shortenUrl']
 ): Promise<ReadonlyMap<string, string>> {
   if (shortenUrl === undefined) return new Map()
-  const targets = downloadPageLinkTargets(media, hostingData).slice(0, MAX_SHORTLINK_TARGETS)
+  const targets = downloadPageLinkTargets(media, hostingData, includeSubtitles).slice(0, MAX_SHORTLINK_TARGETS)
   const transformed = await Promise.all(targets.map(async (target) => {
     try {
       return [target, await shortenUrl(target)] as const

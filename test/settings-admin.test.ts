@@ -221,6 +221,13 @@ describe('settings administration service', () => {
       public_video_user: '1',
       contact_page_link: 'https://example.test/contact'
     }))
+    await expect(settings.runtimePublicSettings()).resolves.toEqual({
+      enable_request_url: true,
+      enable_json_subtitles: true,
+      enable_download_page: true,
+      show_sub_download: true,
+      show_watch_button: true
+    })
 
     await expect(settings.savePublic({
       anonymous_generator: ['false', 'true'],
@@ -231,6 +238,7 @@ describe('settings administration service', () => {
     })).resolves.toEqual({ status: 'ok', message: 'The Public Settings have been successfully updated' })
     expect(store.values).toEqual(expect.objectContaining({ anonymous_generator: 'true', enable_download_page: 'false', contact_page_link: '', public_video_user: '1' }))
     expect(store.values).not.toHaveProperty('ignored_public_key')
+    await expect(settings.runtimePublicSettings()).resolves.toEqual(expect.objectContaining({ enable_download_page: false }))
     await expect(settings.savePublic({ public_video_user: '4294967296' })).resolves.toEqual({ status: 'invalid', message: 'The public video user is invalid' })
     await expect(settings.savePublic({ contact_page_link: 'javascript:alert(1)' })).resolves.toEqual({ status: 'invalid', message: 'The contact page URL is invalid' })
   })

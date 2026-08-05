@@ -95,6 +95,14 @@ export type PublicSettingKey =
 
 export type PublicSettings = Readonly<Record<PublicSettingKey, string | boolean>>
 
+export type RuntimePublicSettings = Readonly<{
+  enable_request_url: boolean
+  enable_json_subtitles: boolean
+  enable_download_page: boolean
+  show_sub_download: boolean
+  show_watch_button: boolean
+}>
+
 export type SmtpProvider = typeof SMTP_PROVIDERS[number]
 
 export type SmtpSettings = Readonly<{
@@ -243,6 +251,18 @@ export class SettingsAdminService {
     result.contact_page_link = normalizedOptionalHttpUrl(raw.contact_page_link) ?? ''
     result.public_video_user = positiveId(raw.public_video_user) ?? ''
     return Object.freeze(result)
+  }
+
+  public async runtimePublicSettings(): Promise<RuntimePublicSettings> {
+    const raw = await this.store.getAll()
+    const enabled = (key: keyof RuntimePublicSettings): boolean => raw[key] === undefined || raw[key] === 'true'
+    return Object.freeze({
+      enable_request_url: enabled('enable_request_url'),
+      enable_json_subtitles: enabled('enable_json_subtitles'),
+      enable_download_page: enabled('enable_download_page'),
+      show_sub_download: enabled('show_sub_download'),
+      show_watch_button: enabled('show_watch_button')
+    })
   }
 
   public async savePublic(input: Record<string, unknown>): Promise<SettingsMutationResult> {

@@ -515,7 +515,7 @@ export function renderAdminPublicSettings(input: Readonly<{
         <div class="field"><label for="public_video_user">Save public videos as</label><select id="public_video_user" name="public_video_user" required>${userOptions || '<option value="">No users available</option>'}</select><p class="field-hint">The selected account must exist when this form is submitted.</p></div>
       </div>
     </section>
-    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update public settings</span><span aria-hidden="true">↗</span></button><p>Public feature flags remain dormant until their corresponding Node routes and workers consume them.</p></div>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update public settings</span><span aria-hidden="true">↗</span></button><p>Request URLs, public subtitle insertion, download access, subtitle downloads, and the watch action are enforced by the Node player routes.</p></div>
   </form>
 </main>`)
 }
