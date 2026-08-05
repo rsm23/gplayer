@@ -124,6 +124,32 @@ describe('player HTTP routes', () => {
     expect(download.body).toContain('The download page is disabled.')
   })
 
+  it('enforces embed-only mode for explicit top-level browser navigation', async () => {
+    const values = { embed_only: 'true' }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+
+    const [topLevel, iframe, ambiguousChromium, legacyClient] = await Promise.all([
+      app.inject({ method: 'GET', url: `/e/?${token}`, headers: { 'sec-fetch-dest': 'document' } }),
+      app.inject({ method: 'GET', url: `/e/?${token}`, headers: { 'sec-fetch-dest': 'iframe' } }),
+      app.inject({ method: 'GET', url: `/e/?${token}`, headers: { 'sec-fetch-dest': 'empty' } }),
+      app.inject({ method: 'GET', url: `/e/?${token}` })
+    ])
+
+    expect(topLevel.statusCode).toBe(403)
+    expect(topLevel.body).toContain('available only when embedded')
+    expect(topLevel.headers['cache-control']).toBe('private, no-store')
+    expect(iframe.statusCode).toBe(200)
+    expect(iframe.body).toContain('<video id="media-player"')
+    expect(iframe.body).toContain('data-embed-only="true"')
+    expect(iframe.body).not.toContain(' src="https://cdn.example/movie.mp4"')
+    expect(ambiguousChromium.statusCode).toBe(200)
+    expect(legacyClient.statusCode).toBe(200)
+    expect(legacyClient.body).toContain('<video id="media-player"')
+  })
+
   it('strips subtitles from enabled plaintext request URLs when public insertion is disabled', async () => {
     const values = { enable_request_url: 'true', enable_json_subtitles: 'false' }
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {

@@ -46,6 +46,7 @@ export type PlayerRouteOptions = Readonly<{
   supportedHosts?: ReadonlySet<string>
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
   shortenUrl?: (target: string) => Promise<string>
+  isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
 }>
 
 export async function registerPlayerRoutes(
@@ -72,6 +73,9 @@ export async function registerPlayerRoutes(
         countryCodeForRequest(request, options.countryCodeLookup)
       ])
       if (networkAccessRejected(request, misc, countryCode, false)) throw new Error('Access denied')
+      if (!publicSettings.anonymous_generator && !await authenticatedRequest(request, options.isAuthenticated)) {
+        throw new Error('Access denied')
+      }
       const generator = new PlayerLinkGenerator(security, {
         baseUrl: config.baseUrl,
         embedSlug: player.slug_embed,
@@ -179,6 +183,11 @@ export async function registerPlayerRoutes(
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
+    if (embedOnlyRejectsRequest(publicSettings.embed_only, request.headers['sec-fetch-dest'])) {
+      applyEmbedHeaders(reply, ads)
+      reply.code(403)
+      return renderEmbedError('This player is available only when embedded in a page.')
+    }
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
       secureSalt: config.secureSalt,
       allowPublicQuery: player.allow_public_qry,
@@ -204,6 +213,7 @@ export async function registerPlayerRoutes(
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
       downloadUrl: publicSettings.enable_download_page ? routePath(player.slug_download, parsed.token) : '',
+      embedOnly: publicSettings.embed_only,
       hostingData: hosting.data,
       customNames: hosting.customNames
     })
@@ -291,6 +301,27 @@ export async function registerPlayerRoutes(
 
   app.get('/:playerSlug/:savedSlug', dispatchSavedPlayerRoute)
   app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
+}
+
+async function authenticatedRequest(
+  request: FastifyRequest,
+  authenticate: PlayerRouteOptions['isAuthenticated']
+): Promise<boolean> {
+  if (authenticate === undefined) return false
+  try {
+    return await authenticate(request)
+  } catch {
+    return false
+  }
+}
+
+function embedOnlyRejectsRequest(enabled: boolean, destination: string | string[] | undefined): boolean {
+  if (!enabled) return false
+  const value = (Array.isArray(destination) ? destination[0] : destination)?.trim().toLowerCase() ?? ''
+  // Fetch Metadata is unavailable in older browsers and non-browser clients.
+  // Some instrumented Chromium sessions report `empty` for both frame and
+  // top-level navigations. The document boot guard handles that ambiguous case.
+  return value !== '' && value !== 'empty' && value !== 'iframe' && value !== 'frame'
 }
 
 function publicMediaQuery(media: PlayerMediaQuery, allowSubtitles: boolean): PlayerMediaQuery {

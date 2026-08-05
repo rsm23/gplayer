@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.js'
 import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type SessionWrite, type StoredAuthUser } from '../src/auth/auth-service.js'
 import { loadConfig } from '../src/config.js'
 import { Security } from '../src/security/security.js'
+import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -61,6 +62,44 @@ describe('legacy-compatible system routes', () => {
     expect(script.body).toContain("github\\.io")
     expect(script.body).toContain("document.querySelector('#product-demo')")
     expect(script.body).not.toMatch(/gdplayer\.(?:to|io)/i)
+  })
+
+  it('limits disabled public pages to authenticated sessions', async () => {
+    const values = { anonymous_generator: 'false' }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(new SystemRouteAuthStore()),
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+
+    const [anonymousPage, anonymousGenerator] = await Promise.all([
+      app.inject({ method: 'GET', url: '/?generator=1' }),
+      app.inject({
+        method: 'POST',
+        url: '/ajax/public/',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        payload: 'action=createPlayer&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4'
+      })
+    ])
+    expect(anonymousPage.statusCode).toBe(403)
+    expect(anonymousPage.headers['cache-control']).toBe('no-store')
+    expect(anonymousPage.body).toContain('403 Forbidden')
+    expect(anonymousGenerator.json()).toEqual({ status: 'fail', message: 'Access denied', result: null })
+
+    const authenticatedHeaders = {
+      'user-agent': systemUserAgent,
+      cookie: `${AUTH_COOKIE_NAME}=${memberToken}`
+    }
+    const authenticatedPage = await app.inject({ method: 'GET', url: '/', headers: authenticatedHeaders })
+    expect(authenticatedPage.statusCode).toBe(200)
+    expect(authenticatedPage.body).toContain('id="player-form"')
+
+    const authenticatedGenerator = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { ...authenticatedHeaders, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=createPlayer&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4'
+    })
+    expect(authenticatedGenerator.json()).toMatchObject({ status: 'ok' })
   })
 
   it('serves the health contract', async () => {
@@ -206,12 +245,13 @@ describe('legacy-compatible system routes', () => {
       SECURE_SALT: secureSalt
     }))
 
-    const [sitemap, manifest, worker, offline, publicStyle] = await Promise.all([
+    const [sitemap, manifest, worker, offline, publicStyle, embedScript] = await Promise.all([
       app.inject({ method: 'GET', url: '/sitemap.xml' }),
       app.inject({ method: 'GET', url: '/manifest.json' }),
       app.inject({ method: 'GET', url: '/sw.js' }),
       app.inject({ method: 'GET', url: '/offline.html' }),
-      app.inject({ method: 'GET', url: '/assets/css/gplayer-public.css' })
+      app.inject({ method: 'GET', url: '/assets/css/gplayer-public.css' }),
+      app.inject({ method: 'GET', url: '/assets/js/gplayer-embed.js' })
     ])
 
     expect(sitemap.statusCode).toBe(200)
@@ -225,11 +265,17 @@ describe('legacy-compatible system routes', () => {
       start_url: './'
     }))
     expect(worker.statusCode).toBe(200)
+    expect(worker.body).toContain("gplayer-node-public-v24")
     expect(worker.body).toContain("const OFFLINE_URL = scopedUrl('offline.html')")
     expect(worker.body).toContain('.map(scopedUrl)')
     expect(worker.body).not.toContain('main-v3.9.8')
     expect(offline.statusCode).toBe(200)
     expect(publicStyle.statusCode).toBe(200)
     expect(publicStyle.body).toContain('.public-main')
+    expect(publicStyle.body).toContain('color: var(--brand-ink)')
+    expect(embedScript.statusCode).toBe(200)
+    expect(embedScript.body).toContain("body.dataset.embedOnly !== 'true'")
+    expect(embedScript.body).toContain('window.self !== window.top')
+    expect(embedScript.body).toContain('provider.dataset.deferredSource')
   })
 })

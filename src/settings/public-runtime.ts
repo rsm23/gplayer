@@ -3,6 +3,8 @@ import type { RuntimePublicSettings } from './settings-admin-service.js'
 export type PublicSettingsLoader = () => Promise<RuntimePublicSettings>
 
 export const DEFAULT_RUNTIME_PUBLIC: RuntimePublicSettings = Object.freeze({
+  anonymous_generator: true,
+  embed_only: false,
   enable_request_url: true,
   enable_json_subtitles: true,
   enable_download_page: true,

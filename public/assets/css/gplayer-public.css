@@ -118,7 +118,7 @@
   padding: 0 18px;
   border-radius: 10px;
   background: var(--brand);
-  color: #fff;
+  color: var(--brand-ink);
   font-size: 14px;
   font-weight: 750;
 }

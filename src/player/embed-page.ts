@@ -21,6 +21,7 @@ export type EmbedAdsOptions = Readonly<{
 export type EmbedPlayerOptions = Readonly<{
   settings: PlayerSettings
   downloadUrl: string
+  embedOnly?: boolean
   hostingData?: HostingData
   customNames?: Readonly<Record<string, string>>
 }>
@@ -59,11 +60,16 @@ export function renderEmbedPage(
 
   let player: string
   if (source.kind === 'provider') {
-    player = `<iframe class="provider-frame" src="${escapeHtmlAttribute(source.url)}" title="Embedded video player" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"></iframe>`
+    const providerSource = playerOptions?.embedOnly === true
+      ? ` data-deferred-source="${escapeHtmlAttribute(source.url)}"`
+      : ` src="${escapeHtmlAttribute(source.url)}"`
+    player = `<iframe class="provider-frame" data-provider-frame${providerSource} title="Embedded video player" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"></iframe>`
   } else if (source.kind === 'unavailable') {
     player = `<div class="player-notice"><span>Source accepted</span><h1>Provider adapter in progress</h1><p>${escapeHtml(source.message ?? 'This provider is not available in the Node player yet.')}</p></div>`
   } else {
-    const sourceAttribute = source.kind === 'hls' ? '' : ` src="${escapeHtmlAttribute(source.url)}"`
+    const sourceAttribute = source.kind === 'hls' || playerOptions?.embedOnly === true
+      ? ''
+      : ` src="${escapeHtmlAttribute(source.url)}"`
     player = `<video id="media-player" class="player-stretch-${stretching}" controls playsinline preload="${preload}"${videoAttributes}${sourceAttribute}${poster ? ` poster="${escapeHtmlAttribute(poster)}"` : ''} data-source="${escapeHtmlAttribute(source.url)}" data-source-kind="${source.kind}">${tracks}<p>Your browser cannot play this media.</p></video>`
   }
 
@@ -103,7 +109,7 @@ export function renderEmbedPage(
   <title>${escapeHtml(documentTitle)}</title>
   <link rel="stylesheet" href="/assets/css/gplayer-embed.css">
 </head>
-<body data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
+<body data-embed-only="${String(playerOptions?.embedOnly === true)}" data-block-adblocker="${String(ads.blockAdblocker)}" data-direct-ad-url="${escapeHtmlAttribute(ads.directAdUrl)}" data-direct-ad-on-play="${String(directEnabled)}" data-direct-ad-iframe="${String(ads.showIframeAds)}" data-popup-frame-url="${escapeHtmlAttribute(ads.popupFrameUrl)}" data-popup-delay-seconds="${String(ads.popupDelaySeconds)}" data-player-color="#${escapeHtmlAttribute(settings?.player_color ?? '8068ff')}" data-player-color-2="#${escapeHtmlAttribute(settings?.player_color2 ?? '8068ff')}" data-pause-on-left="${String(settings?.pause_on_left === true)}" data-continue-watching="${String(settings?.continue_watching === true)}" data-logo-margin="${escapeHtmlAttribute(settings?.logo_margin ?? '0')}">
   <main class="player-stage" aria-label="Video player">${player}${providerGate}${fakePlay}${titleOverlay}${logo}${smallLogo}${toolbar}</main>
   ${directFallback}
   ${adblockNotice}

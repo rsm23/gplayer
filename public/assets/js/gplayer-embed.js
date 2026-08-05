@@ -4,6 +4,39 @@
   const body = document.body
   const video = document.querySelector('#media-player')
 
+  const enforceEmbedOnly = () => {
+    if (body.dataset.embedOnly !== 'true' || window.self !== window.top) return true
+    document.title = 'Player unavailable'
+    const stage = document.createElement('main')
+    stage.className = 'player-stage'
+    const notice = document.createElement('div')
+    notice.className = 'player-notice player-error'
+    const label = document.createElement('span')
+    label.textContent = 'GDPlayer'
+    const heading = document.createElement('h1')
+    heading.textContent = 'Player unavailable'
+    const message = document.createElement('p')
+    message.textContent = 'This player is available only when embedded in a page.'
+    notice.append(label, heading, message)
+    stage.append(notice)
+    body.replaceChildren(stage)
+    return false
+  }
+
+  if (!enforceEmbedOnly()) return
+
+  const initializeDeferredSources = () => {
+    if (video instanceof HTMLVideoElement && video.dataset.sourceKind === 'video' && !video.hasAttribute('src')) {
+      const source = video.dataset.source
+      if (source) video.src = source
+    }
+    const provider = document.querySelector('[data-provider-frame]')
+    if (provider instanceof HTMLIFrameElement && !provider.hasAttribute('src')) {
+      const source = provider.dataset.deferredSource
+      if (source) provider.src = source
+    }
+  }
+
   const initializePlayerAppearance = () => {
     if (/^#[a-f0-9]{6}$/i.test(body.dataset.playerColor || '')) {
       document.documentElement.style.setProperty('--brand', body.dataset.playerColor)
@@ -237,6 +270,7 @@
   }
 
   initializePlayerAppearance()
+  initializeDeferredSources()
   initializeStreamingPlayback()
   initializeVisibilityPause()
   initializeContinueWatching()

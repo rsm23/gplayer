@@ -5,9 +5,9 @@ import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import { createAuthRuntime } from './auth/auth-runtime.js'
-import type { AuthService } from './auth/auth-service.js'
+import { AUTH_COOKIE_NAME, authTokenFromRequest, type AuthService } from './auth/auth-service.js'
 import type { SessionAdminService } from './auth/session-admin-service.js'
 import type { UserAdminService } from './auth/user-admin-service.js'
 import { loadConfig, type AppConfig } from './config.js'
@@ -123,7 +123,15 @@ export async function buildApp(
     settingsRuntime.clearRuntimeCaches()
     return true
   })
-  await registerSystemRoutes(app, config, authService, clearRuntimeCache)
+  const isAuthenticated = async (request: FastifyRequest): Promise<boolean> => {
+    const token = authTokenFromRequest({
+      authorization: request.headers.authorization,
+      cookie: request.cookies[AUTH_COOKIE_NAME]
+    })
+    const user = await authService.authenticate(token, request.headers['user-agent'] ?? '')
+    return user !== null && user.status === 1
+  }
+  await registerSystemRoutes(app, config, authService, clearRuntimeCache, { loadPublicSettings, isAuthenticated })
   await registerAdminRoutes(
     app,
     config,
@@ -170,7 +178,8 @@ export async function buildApp(
     countryCodeLookup,
     supportedHosts,
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
-    shortenUrl: async (target) => await shortlinkRuntime.shorten(target)
+    shortenUrl: async (target) => await shortlinkRuntime.shorten(target),
+    isAuthenticated
   })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,

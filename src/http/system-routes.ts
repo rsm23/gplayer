@@ -11,6 +11,7 @@ import {
   renderTermsPage
 } from '../player/public-page.js'
 import { Security } from '../security/security.js'
+import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
 
 const publicPageCsp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
@@ -33,9 +34,21 @@ export async function registerSystemRoutes(
   app: FastifyInstance,
   config: AppConfig,
   auth: AuthService,
-  clearRuntimeCache: () => boolean | Promise<boolean>
+  clearRuntimeCache: () => boolean | Promise<boolean>,
+  options: Readonly<{
+    loadPublicSettings?: PublicSettingsLoader
+    isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
+  }> = {}
 ): Promise<void> {
   const security = new Security(config.secureSalt)
+
+  app.addHook('onRequest', async (request, reply) => {
+    if ((request.method !== 'GET' && request.method !== 'HEAD') || request.url.split('?', 1)[0] !== '/') return
+    const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+    if (settings.anonymous_generator || await authenticatedRequest(request, options.isAuthenticated)) return
+    applyPublicPageHeaders(reply, true)
+    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(publicErrors[403]))
+  })
 
   app.get('/ping', async (_request, reply) => {
     reply.header('cache-control', 'no-cache')
@@ -123,6 +136,18 @@ export async function registerSystemRoutes(
     const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
     return reply.redirect(`/r/${query}`)
   })
+}
+
+async function authenticatedRequest(
+  request: FastifyRequest,
+  authenticate: ((request: FastifyRequest) => Promise<boolean>) | undefined
+): Promise<boolean> {
+  if (authenticate === undefined) return false
+  try {
+    return await authenticate(request)
+  } catch {
+    return false
+  }
 }
 
 function cacheToken(request: FastifyRequest): string {
