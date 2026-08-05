@@ -19,7 +19,8 @@ describe('player link generator', () => {
       aid: 'https://vidhide.com/v/alt-id',
       poster: 'https://img.example/poster.jpg',
       sub: ['https://sub.example/en.vtt'],
-      lang: ['English']
+      lang: ['English'],
+      uid: '86Rf07'
     })
 
     expect(result.query).toEqual({
@@ -29,7 +30,8 @@ describe('player link generator', () => {
       aid: 'alt-id',
       poster: 'https://img.example/poster.jpg',
       sub: ['https://sub.example/en.vtt'],
-      lang: ['English']
+      lang: ['English'],
+      uid: '86Rf07'
     })
     expect(result.embedUrl).toBe(`https://player.example/base/e/?${result.token}`)
     expect(result.downloadUrl).toBe(`https://player.example/base/d/?${result.token}`)
@@ -43,6 +45,11 @@ describe('player link generator', () => {
   it('rejects non-http URLs and URLs containing credentials', () => {
     expect(() => generator.generate({ id: 'file:///tmp/video.mp4' })).toThrow(/HTTP/)
     expect(() => generator.generate({ id: 'https://user:pass@example.com/video.mp4' })).toThrow(/credentials/)
+  })
+
+  it('accepts only bounded default-alphabet Sqids user identifiers', () => {
+    expect(generator.generate({ id: 'https://cdn.example/video.mp4', uid: 'Jg' }).query.uid).toBe('Jg')
+    expect(generator.generate({ id: 'https://cdn.example/video.mp4', uid: '42-' }).query.uid).toBeUndefined()
   })
 
   it('applies an administrator-provided iframe template without executing it', () => {

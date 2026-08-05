@@ -84,6 +84,7 @@ import { SettingsMaintenanceService } from './settings/settings-maintenance-serv
 import { registerBootstrapCompatibility, sendLegacyHeadFallback } from './http/bootstrap-compatibility.js'
 import { ViewCounterService } from './stats/view-counter-service.js'
 import { redactSensitiveRequestUrl } from './http/request-log.js'
+import Sqids from 'sqids'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -349,6 +350,7 @@ export async function buildApp(
     })
     return await authService.authenticate(token, request.headers['user-agent'] ?? '')
   }
+  const sqids = new Sqids()
   const isAuthenticated = async (request: FastifyRequest): Promise<boolean> => (await authenticateRequest(request))?.status === 1
   const isAdmin = async (request: FastifyRequest): Promise<boolean> => {
     const user = await authenticateRequest(request)
@@ -507,6 +509,13 @@ export async function buildApp(
           }
         }),
     publicGeneratorUploads,
+    publicUserUid: async (request, fallbackUserId) => {
+      const user = await authenticateRequest(request).catch(() => null)
+      if (user !== null && user.status === 1) return sqids.encode([user.id])
+      if (fallbackUserId === undefined) return undefined
+      const fallback = Number(fallbackUserId)
+      return Number.isSafeInteger(fallback) && fallback >= 0 ? sqids.encode([fallback]) : undefined
+    },
     loadRecaptchaSiteKey: async () => {
       const general = await settingsRuntime.general(config.baseUrl)
       return String(general.recaptcha_site_key)

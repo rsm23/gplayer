@@ -186,7 +186,8 @@ describe('player HTTP routes', () => {
     const submission = publicGeneratorMultipart([
       ['action', 'createPlayer'],
       ['id', 'https://cdn.example/movie.mp4'],
-      ['lang-file[]', 'English']
+      ['lang-file[]', 'English'],
+      ['uid', 'caller-controlled-value']
     ], [{ field: 'sub-file[]', filename: 'captions.vtt', type: 'text/vtt', content: Buffer.from('WEBVTT\n') }])
     const headers = { 'content-type': `multipart/form-data; boundary=${submission.boundary}` }
     const authenticated = await app.inject({
@@ -204,8 +205,29 @@ describe('player HTTP routes', () => {
 
     expect(authenticated.json()).toMatchObject({ status: 'ok' })
     expect(anonymous.json()).toMatchObject({ status: 'ok' })
+    const authenticatedToken = new URL(authenticated.json().result.embed_url).search.slice(1)
+    const anonymousToken = new URL(anonymous.json().result.embed_url).search.slice(1)
+    expect(parsePlayerQuery(authenticatedToken, new Security(secureSalt), { secureSalt }).media).toMatchObject({ uid: 'nJ' })
+    expect(parsePlayerQuery(anonymousToken, new Security(secureSalt), { secureSalt }).media).not.toHaveProperty('uid')
     expect(upload).toHaveBeenNthCalledWith(1, expect.objectContaining({ originalName: 'captions.vtt' }), { userId: '9', isAdmin: false })
     expect(upload).toHaveBeenNthCalledWith(2, expect.objectContaining({ originalName: 'captions.vtt' }), { userId: '7', isAdmin: false })
+
+    const plaintextPath = '/r/?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&uid=999'
+    const authenticatedRequest = await app.inject({
+      method: 'GET',
+      url: plaintextPath,
+      headers: { 'user-agent': 'Upload browser', cookie: `${AUTH_COOKIE_NAME}=upload-session-token` }
+    })
+    const anonymousRequest = await app.inject({ method: 'GET', url: plaintextPath })
+    const retainedSqidRequest = await app.inject({ method: 'GET', url: plaintextPath.replace('uid=999', 'uid=ExistingSqid') })
+    const redirectMedia = (location: string | undefined) => parsePlayerQuery(
+      location?.split('?', 2)[1] ?? '',
+      new Security(secureSalt),
+      { secureSalt }
+    ).media
+    expect(redirectMedia(authenticatedRequest.headers.location)).toMatchObject({ uid: 'nJ' })
+    expect(redirectMedia(anonymousRequest.headers.location)).toMatchObject({ uid: 'AX' })
+    expect(redirectMedia(retainedSqidRequest.headers.location)).toMatchObject({ uid: 'ExistingSqid' })
   })
 
   it('captures generated public videos under the configured account without changing the response contract', async () => {
@@ -454,7 +476,7 @@ describe('player HTTP routes', () => {
     expect(response.headers.location).toMatch(/^\/e\/\?/)
     const token = response.headers.location?.split('?', 2)[1] ?? ''
     const parsed = parsePlayerQuery(token, new Security(secureSalt), { secureSalt })
-    expect(parsed.media).toEqual({ host: 'earnvids', id: 'legacy-id', poster: '' })
+    expect(parsed.media).toEqual({ host: 'earnvids', id: 'legacy-id', poster: '', uid: 'Uk' })
   })
 
   it('enforces disabled public request, subtitle insertion, and download-page settings', async () => {
@@ -637,7 +659,8 @@ describe('player HTTP routes', () => {
     const token = response.headers.location?.split('?', 2)[1] ?? ''
     expect(parsePlayerQuery(token, new Security(secureSalt), { secureSalt }).media).toEqual({
       host: 'direct',
-      id: 'https://cdn.example/movie.mp4'
+      id: 'https://cdn.example/movie.mp4',
+      uid: 'Uk'
     })
   })
 

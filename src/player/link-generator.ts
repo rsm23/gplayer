@@ -78,7 +78,7 @@ export class PlayerLinkGenerator {
     if (input.subs !== undefined && input.subs.trim().length > 0) {
       query.subs = requiredHttpUrl(input.subs, 'Subtitle URL')
     }
-    if (input.uid !== undefined && /^\d+$/.test(input.uid)) query.uid = input.uid
+    if (input.uid !== undefined && /^[A-Za-z0-9]{1,255}$/u.test(input.uid)) query.uid = input.uid
 
     const queryString = buildPlayerQuery(query)
     const token = this.security.encryptURL(queryString)

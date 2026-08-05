@@ -55,7 +55,6 @@ const inputSchema = z.object({
   'lang-file': z.union([z.string(), z.array(z.string())]).optional(),
   'lang-file[]': z.union([z.string(), z.array(z.string())]).optional(),
   subs: z.string().optional(),
-  uid: z.string().optional(),
   'g-recaptcha-response': z.string().max(8_192).optional()
 }).passthrough()
 
@@ -114,6 +113,7 @@ export type PlayerRouteOptions = Readonly<{
   bypassDrive?: (input: string) => Promise<DriveBypassResult | null>
   verifyRecaptcha?: (responseToken: string, remoteIp: string) => Promise<boolean>
   publicGeneratorUploads?: PublicGeneratorUploads
+  publicUserUid?: (request: FastifyRequest, fallbackUserId?: string) => Promise<string | undefined>
   loadRecaptchaSiteKey?: () => Promise<string>
   capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
   captureView?: (input: ViewCounterCapture) => Promise<string | null>
@@ -206,6 +206,7 @@ export async function registerPlayerRoutes(
         ? toArray(parsed.data['lang-url[]'] ?? parsed.data['lang-url'] ?? parsed.data['lang[]'] ?? parsed.data.lang).slice(0, MAX_PUBLIC_SUBTITLE_FILES)
         : []
       const aid = toArray(parsed.data.aid)[0]
+      const generatedUid = await options.publicUserUid?.(request).catch(() => undefined)
       const baseInput = {
         id: parsed.data.id,
         ...(aid !== undefined ? { aid } : {}),
@@ -213,7 +214,7 @@ export async function registerPlayerRoutes(
         ...(urlSubtitles.length > 0 ? { sub: urlSubtitles } : {}),
         ...(urlLanguages.length > 0 ? { lang: urlLanguages } : {}),
         ...(publicSettings.enable_json_subtitles && parsed.data.subs !== undefined ? { subs: parsed.data.subs } : {}),
-        ...(parsed.data.uid !== undefined ? { uid: parsed.data.uid } : {})
+        ...(generatedUid === undefined ? {} : { uid: generatedUid })
       }
       const validated = generator.generate(baseInput)
       if (mediaContainsDisabledHost(validated.query, misc.disable_host)) throw new Error('This video host is disabled')
@@ -446,7 +447,11 @@ export async function registerPlayerRoutes(
       secureSalt: config.secureSalt,
       allowPlaintextMedia: true
     })
-    const requestedMedia = parsed.media === null ? null : publicMediaQuery(parsed.media, publicSettings.enable_json_subtitles)
+    let requestedMedia = parsed.media === null ? null : publicMediaQuery(parsed.media, publicSettings.enable_json_subtitles)
+    if (requestedMedia !== null && (requestedMedia.uid === undefined || /^\d+$/u.test(requestedMedia.uid))) {
+      const uid = await options.publicUserUid?.(request, publicSettings.public_video_user || '1').catch(() => undefined)
+      if (uid !== undefined) requestedMedia = Object.freeze({ ...requestedMedia, uid })
+    }
     const resolvedMedia = await resolveSavedMedia(requestedMedia, options.resolveSavedVideo)
     if (resolvedMedia === null) {
       reply.code(400).type('application/json; charset=utf-8')
