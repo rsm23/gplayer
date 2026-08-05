@@ -6,6 +6,7 @@ import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
 import { LogAdminService, LogFileError } from '../logs/log-admin-service.js'
 import { renderAdminDashboard, renderAdminDmca, renderAdminError, renderAdminLoginPage, renderAdminLogs, renderAdminProfile, renderAdminSessions, renderAdminUserForm, renderAdminUsers, type AdminMessage } from '../player/admin-page.js'
+import { DashboardAdminService, type DashboardAccess } from '../dashboard/dashboard-admin-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const SESSION_DELETE_FAIL = 'The session failed to delete'
@@ -21,11 +22,14 @@ export async function registerAdminRoutes(
   sessions: SessionAdminService,
   users: UserAdminService,
   logs: LogAdminService,
-  loadRegistrationEnabled: () => Promise<boolean> = async () => false
+  dashboard: DashboardAdminService,
+  loadRegistrationEnabled: () => Promise<boolean> = async () => false,
+  loadDashboardTimezone: () => Promise<string> = async () => 'UTC'
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
   const loginUrl = `${adminBase}/login/`
   const dashboardUrl = `${adminBase}/dashboard/`
+  const dashboardAjaxUrl = `${adminBase}/ajax/dashboard/`
   const usersUrl = `${adminBase}/users/`
   const userNewUrl = `${adminBase}/users/new/`
   const userEditUrl = `${adminBase}/users/edit/`
@@ -139,7 +143,58 @@ export async function registerAdminRoutes(
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The authentication database is temporarily unavailable.'))
     }
     if (user === null) return await reply.redirect(loginUrl, 302)
-    return reply.type('text/html; charset=utf-8').send(renderAdminDashboard(adminBase, user))
+    try {
+      const timezone = await loadDashboardTimezone().catch(() => 'UTC')
+      const snapshot = await dashboard.snapshot(dashboardAccess(user), timezone)
+      return reply.type('text/html; charset=utf-8').send(renderAdminDashboard(adminBase, user, snapshot, timezone))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The dashboard database is temporarily unavailable.'))
+    }
+  })
+
+  app.route({
+    method: ['GET', 'POST'],
+    url: dashboardAjaxUrl,
+    handler: async (request, reply) => {
+      applyAdminHeaders(reply, config)
+      reply.type('application/json; charset=utf-8')
+      const data = { ...objectValue(request.query), ...objectValue(request.body) }
+      let user: AuthUser | null
+      try {
+        user = await auth.authenticate(tokenFor(request) || stringValue(data.token), request.headers['user-agent'] ?? '')
+      } catch {
+        return reply.code(503).send(legacyJson('fail', 'The dashboard database is temporarily unavailable.'))
+      }
+      if (user === null) return reply.send(legacyJson('fail', UNAUTHORIZED))
+      const access = dashboardAccess(user)
+      try {
+        switch (stringValue(data.action)) {
+          case 'videosStatus':
+            return reply.send(legacyResult('', await dashboard.videosStatus(data, access)))
+          case 'serversStatus': {
+            const servers = await dashboard.serversStatus(access)
+            if (servers === null) return reply.send(legacyJson('fail', UNAUTHORIZED))
+            return reply.send(legacyResult('', Object.fromEntries(servers.map((server) => [server.name, server.sources]))))
+          }
+          case 'views':
+            return reply.send(legacyResult('OK', await dashboard.views(data, access)))
+          case 'recentVideos':
+            return reply.send(await dashboard.recentVideos(data, access))
+          case 'popularVideos':
+            return reply.send(await dashboard.popularVideos(data, access))
+          case 'popularBrowsers':
+            return reply.send(await dashboard.popularBrowsers(data, access))
+          case 'popularCountries':
+            return reply.send(await dashboard.popularCountries(data, access))
+          case 'popularASN':
+            return reply.send(await dashboard.popularAsns(data, access))
+          default:
+            return reply.send(legacyJson('fail', 'Invalid parameters'))
+        }
+      } catch {
+        return reply.code(503).send(legacyJson('fail', 'The dashboard database is temporarily unavailable.'))
+      }
+    }
   })
 
   app.get(profileUrl, async (request, reply) => {
@@ -681,6 +736,14 @@ function validCsrfToken(config: AppConfig, token: string, candidate: string, sco
 
 function legacyJson(status: 'ok' | 'fail', message: string): Readonly<{ status: 'ok' | 'fail'; message: string; result: null }> {
   return Object.freeze({ status, message, result: null })
+}
+
+function legacyResult<T>(message: string, result: T): Readonly<{ status: 'ok'; message: string; result: T }> {
+  return Object.freeze({ status: 'ok', message, result })
+}
+
+function dashboardAccess(user: AuthUser): DashboardAccess {
+  return Object.freeze({ userId: user.id, isAdmin: user.role === 0 })
 }
 
 function emptyDataTables(draw: unknown): Readonly<{ draw: number; data: readonly never[]; recordsTotal: 0; recordsFiltered: 0 }> {

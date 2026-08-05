@@ -15,6 +15,7 @@ import type { LoadBalancerAdminRecord } from '../load-balancers/load-balancer-ad
 import type { LogFileRecord, LogReadResult } from '../logs/log-admin-service.js'
 import type { PluginAdminRecord } from '../plugins/plugin-admin-service.js'
 import type { PluginConfigField } from '../plugins/plugin-archive.js'
+import type { DashboardNamedAggregate, DashboardSnapshot, DashboardVideo } from '../dashboard/dashboard-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -149,19 +150,67 @@ export function renderAdminResetPasswordPage(input: AccountPageInput & Readonly<
 </main>`)
 }
 
-export function renderAdminDashboard(adminBase: string, user: AuthUser): string {
+export function renderAdminDashboard(adminBase: string, user: AuthUser, dashboard: DashboardSnapshot, timezone = 'UTC'): string {
   const role = ['Admin', 'User', 'Premium'][user.role] ?? 'User'
+  const metrics: Array<readonly [string, number, string]> = [
+    ['Total videos', dashboard.status.total_videos, 'All saved media records'],
+    ['Healthy', dashboard.status.good, 'Available sources'],
+    ['Broken', dashboard.status.broken, 'Requires attention'],
+    ['Warning', dashboard.status.warning, 'Needs review']
+  ]
+  if (user.role === 0) metrics.push(
+    ['Servers', dashboard.status.total_servers, 'Configured load balancers'],
+    ['Drive accounts', dashboard.status.total_gdrives, 'Configured credentials']
+  )
+  const metricCards = metrics.map(([label, value, description]) => `<article><span>${escapeHtml(label)}</span><strong>${value.toLocaleString('en-US')}</strong><p>${escapeHtml(description)}</p></article>`).join('')
+  const maxViews = Math.max(1, ...dashboard.views.map((row) => row.value))
+  const viewBars = dashboard.views.length === 0
+    ? '<p class="dashboard-empty">No playback views were recorded during this range.</p>'
+    : dashboard.views.map((row) => {
+        const level = Math.max(1, Math.ceil(row.value / maxViews * 10))
+        const date = dashboardDate(row.timestamp, timezone)
+        return `<div class="dashboard-chart-column" role="listitem"><strong>${row.value.toLocaleString('en-US')}</strong><span class="dashboard-chart-track"><i class="dashboard-level-${level}"></i></span><small>${escapeHtml(date)}</small></div>`
+      }).join('')
+  const serverRows = dashboard.serverUsage.map((server) => `<tr><td>${escapeHtml(server.name)}</td><td>${server.sources.toLocaleString('en-US')}</td></tr>`).join('')
   return adminDocument('Dashboard', `${adminHeader(adminBase, 'dashboard', user.role === 0)}
-<main class="admin-dashboard">
-  <p class="eyebrow"><span></span>Control plane</p>
-  <div class="admin-dashboard-heading"><div><h1>Good to see you, ${escapeHtml(user.name)}.</h1><p>The authenticated Node.js administration boundary is active.</p></div><span class="admin-role">${escapeHtml(role)}</span></div>
-  <section class="admin-status-grid" aria-label="Administration status">
-    <article><span>Session</span><strong>Authenticated</strong><p>Bound to this browser user agent and backed by the legacy-compatible session table.</p></article>
-    <article><span>Runtime</span><strong>Node 24</strong><p>No PHP process is loaded by the application runtime.</p></article>
-    <article><span>Account</span><strong>${escapeHtml(user.username)}</strong><p>${escapeHtml(user.email)}</p></article>
+<main class="admin-dashboard admin-analytics-page">
+  <p class="eyebrow"><span></span>Media intelligence</p>
+  <div class="admin-dashboard-heading"><div><h1>Good to see you, ${escapeHtml(user.name)}.</h1><p>A live view of your media library, playback traffic, audience, and source infrastructure.</p></div><span class="admin-role">${escapeHtml(role)}</span></div>
+  <section class="admin-status-grid dashboard-metric-grid" aria-label="Video status">${metricCards}</section>
+  <section class="dashboard-panel dashboard-views-panel" aria-labelledby="dashboard-views-title">
+    <div class="dashboard-panel-heading"><div><p class="panel-kicker">Recent 7 days</p><h2 id="dashboard-views-title">Playback views</h2></div><span>${dashboard.views.reduce((sum, row) => sum + row.value, 0).toLocaleString('en-US')} total</span></div>
+    <div class="dashboard-chart" role="list" aria-label="Playback views by day">${viewBars}</div>
   </section>
-  <section class="admin-next"><p class="section-index">Management</p><h2>Your media control plane is online.</h2><p>Create stable saved-video links, attach fallback sources and captions, and maintain uploaded subtitle assets from the authenticated Node.js administration surface.</p><div class="admin-next-actions"><a class="hero-link-primary" href="${escapeHtml(adminBase)}/videos/list/">Manage videos <span aria-hidden="true">↗</span></a><a class="admin-back-link" href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitle Manager</a>${user.role === 0 ? `<a class="admin-back-link" href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a>` : ''}</div></section>
+  <div class="dashboard-split">
+    ${dashboardVideoPanel('Popular today', 'Most watched videos', dashboard.popularVideos, adminBase)}
+    ${dashboardVideoPanel('Recently added', 'Newest videos', dashboard.recentVideos, adminBase)}
+  </div>
+  <div class="dashboard-audience-grid">
+    ${dashboardAggregatePanel('Audience', 'Top browsers', dashboard.browsers.map((row) => ({ name: row.name, views: row.views })), 'Browser')}
+    ${dashboardAggregatePanel('Geography', 'Top countries', dashboard.countries, 'Country')}
+    ${dashboardAggregatePanel('Networks', 'Top ASNs', dashboard.asns, 'Network')}
+  </div>
+  ${user.role === 0 ? `<section class="dashboard-panel dashboard-server-panel" aria-labelledby="dashboard-server-title"><div class="dashboard-panel-heading"><div><p class="panel-kicker">Source distribution</p><h2 id="dashboard-server-title">Server usage</h2></div><a href="${escapeHtml(adminBase)}/load-balancers/list/">Manage servers</a></div><div class="dashboard-table-scroll" tabindex="0"><table class="dashboard-table"><thead><tr><th>Server</th><th>Cached sources</th></tr></thead><tbody>${serverRows || '<tr><td colspan="2">No servers found.</td></tr>'}</tbody></table></div></section>` : ''}
+  <div class="admin-next-actions dashboard-actions"><a class="hero-link-primary" href="${escapeHtml(adminBase)}/videos/list/">Manage videos <span aria-hidden="true">↗</span></a><a class="admin-back-link" href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitle Manager</a>${user.role === 0 ? `<a class="admin-back-link" href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a>` : ''}</div>
 </main>`)
+}
+
+function dashboardVideoPanel(kicker: string, title: string, videos: readonly DashboardVideo[], adminBase: string): string {
+  const rows = videos.map((video) => `<tr><td><a class="dashboard-video-link" href="${escapeHtml(adminBase)}/videos/edit/?id=${encodeURIComponent(video.id)}"><strong>${escapeHtml(video.title || `Video ${video.id}`)}</strong><span>${escapeHtml(video.host)} · ${escapeHtml(video.name)}</span></a></td><td>${video.views.toLocaleString('en-US')}</td><td><a href="${escapeHtml(video.actions.embed)}" target="_blank" rel="noopener noreferrer">Open ↗</a></td></tr>`).join('')
+  return `<section class="dashboard-panel dashboard-video-panel"><div class="dashboard-panel-heading"><div><p class="panel-kicker">${escapeHtml(kicker)}</p><h2>${escapeHtml(title)}</h2></div><a href="${escapeHtml(adminBase)}/videos/list/">View all</a></div><div class="dashboard-table-scroll" tabindex="0"><table class="dashboard-table"><thead><tr><th>Video</th><th>Views</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>${rows || '<tr><td colspan="3">No videos found.</td></tr>'}</tbody></table></div></section>`
+}
+
+function dashboardAggregatePanel(kicker: string, title: string, rows: readonly DashboardNamedAggregate[], label: string): string {
+  const content = rows.map((row) => `<tr><td>${escapeHtml(row.name || 'Unknown')}</td><td>${row.views.toLocaleString('en-US')}</td></tr>`).join('')
+  return `<section class="dashboard-panel dashboard-audience-panel"><div class="dashboard-panel-heading"><div><p class="panel-kicker">${escapeHtml(kicker)}</p><h2>${escapeHtml(title)}</h2></div></div><div class="dashboard-table-scroll" tabindex="0"><table class="dashboard-table"><thead><tr><th>${escapeHtml(label)}</th><th>Views</th></tr></thead><tbody>${content || '<tr><td colspan="2">No audience data found.</td></tr>'}</tbody></table></div></section>`
+}
+
+function dashboardDate(timestamp: number, timezone: string): string {
+  try {
+    return new Date(timestamp * 1_000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })
+  } catch {
+    return new Date(timestamp * 1_000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  }
 }
 
 export function renderAdminProfile(input: Readonly<{

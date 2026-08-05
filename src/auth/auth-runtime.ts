@@ -36,6 +36,8 @@ import { MySqlPluginAdminStore } from '../plugins/mysql-plugin-admin-store.js'
 import type { PluginAdminStore } from '../plugins/plugin-admin-service.js'
 import { MySqlAccountLifecycleStore } from './mysql-account-lifecycle-store.js'
 import type { AccountLifecycleStore } from './account-lifecycle-service.js'
+import { MySqlDashboardAdminStore } from '../dashboard/mysql-dashboard-admin-store.js'
+import type { DashboardAdminStore } from '../dashboard/dashboard-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -56,6 +58,7 @@ export type AuthRuntime = Readonly<{
   loadBalancerAdminStore: LoadBalancerAdminStore
   pluginAdminStore: PluginAdminStore
   accountLifecycleStore: AccountLifecycleStore
+  dashboardStore: DashboardAdminStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -77,6 +80,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let loadBalancerAdminStore: MySqlLoadBalancerAdminStore | undefined
   let pluginAdminStore: MySqlPluginAdminStore | undefined
   let accountLifecycleStore: MySqlAccountLifecycleStore | undefined
+  let dashboardStore: MySqlDashboardAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -149,6 +153,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentAccountLifecycleStore = (): MySqlAccountLifecycleStore => {
     accountLifecycleStore ??= new MySqlAccountLifecycleStore(currentDatabase())
     return accountLifecycleStore
+  }
+  const currentDashboardStore = (): MySqlDashboardAdminStore => {
+    dashboardStore ??= new MySqlDashboardAdminStore(currentDatabase())
+    return dashboardStore
   }
 
   const lazyStore: AuthStore = {
@@ -295,6 +303,16 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     activatePending: async (email, expectedUpdated, updated) => await currentAccountLifecycleStore().activatePending(email, expectedUpdated, updated),
     resetPassword: async (email, expectedUpdated, passwordHash, updated) => await currentAccountLifecycleStore().resetPassword(email, expectedUpdated, passwordHash, updated)
   }
+  const lazyDashboardStore: DashboardAdminStore = {
+    videoStatus: async (ownerId) => await currentDashboardStore().videoStatus(ownerId),
+    recentVideos: async (ownerId, limit) => await currentDashboardStore().recentVideos(ownerId, limit),
+    popularVideos: async (range, ownerId, limit) => await currentDashboardStore().popularVideos(range, ownerId, limit),
+    dailyViews: async (range, ownerId) => await currentDashboardStore().dailyViews(range, ownerId),
+    popularBrowsers: async (range, ownerId, start, limit) => await currentDashboardStore().popularBrowsers(range, ownerId, start, limit),
+    popularCountries: async (range, ownerId, start, limit) => await currentDashboardStore().popularCountries(range, ownerId, start, limit),
+    popularAsns: async (range, ownerId, start, limit) => await currentDashboardStore().popularAsns(range, ownerId, start, limit),
+    serverUsage: async () => await currentDashboardStore().serverUsage()
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -318,6 +336,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     mediaDownloadStore: lazyMediaDownloadStore,
     loadBalancerAdminStore: lazyLoadBalancerAdminStore,
     pluginAdminStore: lazyPluginAdminStore,
-    accountLifecycleStore: lazyAccountLifecycleStore
+    accountLifecycleStore: lazyAccountLifecycleStore,
+    dashboardStore: lazyDashboardStore
   })
 }

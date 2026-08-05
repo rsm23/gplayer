@@ -72,6 +72,7 @@ import { PluginAdminService } from './plugins/plugin-admin-service.js'
 import { PluginExtensionRuntime } from './plugins/plugin-extension-runtime.js'
 import { NodemailerAccountMailer, type AccountMailer } from './email/smtp-mailer.js'
 import { LogAdminService } from './logs/log-admin-service.js'
+import { DashboardAdminService, EMPTY_DASHBOARD_ADMIN_STORE } from './dashboard/dashboard-admin-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -108,6 +109,7 @@ export type AppDependencies = Readonly<{
   plugins?: PluginAdminService
   pluginExtensions?: PluginExtensionRuntime
   logs?: LogAdminService
+  dashboard?: DashboardAdminService
 }>
 
 export async function buildApp(
@@ -304,6 +306,11 @@ export async function buildApp(
       resetPasswordUrl: new URL(`/${config.adminDirectory}/reset-password/`, config.baseUrl)
     }
   )
+  const dashboardRuntime = dependencies.dashboard ?? new DashboardAdminService(
+    config.nodeEnv === 'test' ? EMPTY_DASHBOARD_ADMIN_STORE : authRuntime.dashboardStore,
+    config.baseUrl,
+    config.slugs
+  )
   await registerAdminRoutes(
     app,
     config,
@@ -311,7 +318,9 @@ export async function buildApp(
     dependencies.sessions ?? authRuntime.sessions,
     dependencies.users ?? authRuntime.users,
     dependencies.logs ?? new LogAdminService(path.resolve(currentDirectory, '../tmp/logs')),
-    async () => (await loadAccountSettings()).enableRegistration
+    dashboardRuntime,
+    async () => (await loadAccountSettings()).enableRegistration,
+    async () => config.nodeEnv === 'test' ? 'UTC' : String((await settingsRuntime.general(config.baseUrl)).timezone)
   )
   await registerAccountRoutes(app, config, authService, accountRuntime, {
     verifyRecaptcha: async (secret, responseToken, remoteIp) => await recaptchaVerifier.verify(secret, responseToken, remoteIp)
