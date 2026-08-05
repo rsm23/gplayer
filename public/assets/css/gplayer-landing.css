@@ -584,6 +584,44 @@ h1 {
   opacity: 0.7;
 }
 
+.runtime-comments {
+  width: var(--page);
+  margin: -38px auto 72px;
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel);
+}
+
+.runtime-comments header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-comments h2 {
+  margin: 0;
+  font-size: clamp(25px, 3vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+.runtime-comments #disqus_thread {
+  padding-top: 26px;
+}
+
+.runtime-comments noscript {
+  display: block;
+  padding-top: 22px;
+  color: var(--muted);
+}
+
+.runtime-comments noscript a {
+  color: var(--ink);
+}
+
 .proof-strip {
   display: grid;
   width: var(--page);

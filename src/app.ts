@@ -330,6 +330,7 @@ export async function buildApp(
   await registerPluginExtensionRoutes(app, config, authService, pluginExtensionRuntime)
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
+    loadGeneralSettings,
     isAuthenticated,
     background: driveBackgroundRuntime,
     landingHtml

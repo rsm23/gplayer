@@ -46,6 +46,8 @@ describe('legacy-compatible system routes', () => {
     expect(page.body).toContain('id="product-demo"')
     expect(page.body).toContain('./assets/img/product/gplayer-generator.png')
     expect(page.body).toContain('rel="manifest" href="./manifest.json"')
+    expect(page.body).not.toContain('runtime-disqus')
+    expect(page.body).not.toContain('gplayer-disqus.js')
     expect(page.body).not.toMatch(/gdplayer\.(?:to|io)/i)
     expect(page.body).not.toMatch(/[–—]/)
 
@@ -120,6 +122,52 @@ describe('legacy-compatible system routes', () => {
     }
     expect(renderLandingContact('before<!-- runtime-contact-link -->after', 'javascript:alert(1)')).toBe('beforeafter')
     expect(renderLandingContact('before<!-- runtime-contact-link -->after', 'https://user:secret@support.example.test/')).toBe('beforeafter')
+  })
+
+  it('mounts a configured Disqus thread through the bounded local bootstrap and scoped CSP', async () => {
+    const values = { disqus_shortname: 'Community-42' }
+    app = await buildApp(loadConfig({
+      NODE_ENV: 'test',
+      BASE_URL: 'https://player.example/base/',
+      SECURE_SALT: secureSalt
+    }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/' })
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('data-disqus-shortname="community-42"')
+    expect(page.body).toContain('data-disqus-page-url="https://player.example/base/"')
+    expect(page.body).toContain('id="disqus_thread"')
+    expect(page.body).toContain('src="/assets/js/gplayer-disqus.js"')
+    expect(page.body).toContain('https://disqus.com/?ref_noscript')
+    expect(page.body).not.toContain('community-42.disqus.com/embed.js')
+    expect(page.headers['content-security-policy']).toContain('https://community-42.disqus.com')
+    expect(page.headers['content-security-policy']).toContain('https://c.disquscdn.com')
+    expect(page.headers['content-security-policy']).toContain('frame-src https://disqus.com https://*.disqus.com')
+
+    const runtime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-disqus.js' })
+    expect(runtime.statusCode).toBe(200)
+    expect(runtime.body).toContain('globalThis.disqus_config')
+    expect(runtime.body).toContain('`https://${shortname}.disqus.com/embed.js`')
+    expect(runtime.body).not.toContain('eval(')
+  })
+
+  it('does not reflect malformed Disqus settings or widen the public-page CSP', async () => {
+    const payload = 'bad"><script>globalThis.disqusInjected=true</script>'
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => ({ disqus_shortname: payload }),
+        upsertMany: async () => {}
+      })
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/' })
+    expect(page.body).not.toContain('disqusInjected')
+    expect(page.body).not.toContain('gplayer-disqus.js')
+    expect(page.body).not.toContain('runtime-disqus')
+    expect(page.headers['content-security-policy']).not.toContain('disqus.com')
+    expect(page.headers['content-security-policy']).not.toContain('frame-src')
   })
 
   it('serves the health contract', async () => {

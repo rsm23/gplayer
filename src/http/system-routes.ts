@@ -13,8 +13,10 @@ import {
 import { Security } from '../security/security.js'
 import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
 import type { DriveBackgroundCoordinator } from '../drive/drive-background-worker.js'
+import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../settings/general-runtime.js'
+import { disqusConfig, disqusCsp, renderDisqus, type DisqusConfig } from '../player/disqus.js'
 
-const publicPageCsp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
+const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
 function memoryUsagePercent(): number {
   const total = totalmem()
@@ -38,6 +40,7 @@ export async function registerSystemRoutes(
   clearRuntimeCache: () => boolean | Promise<boolean>,
   options: Readonly<{
     loadPublicSettings?: PublicSettingsLoader
+    loadGeneralSettings?: GeneralSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
     background?: Pick<DriveBackgroundCoordinator, 'trigger'>
     landingHtml?: string
@@ -56,10 +59,14 @@ export async function registerSystemRoutes(
   const landingHtml = options.landingHtml
   if (landingHtml !== undefined) {
     app.get('/', async (_request, reply) => {
-      const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
-      applyPublicPageHeaders(reply)
+      const [settings, general] = await Promise.all([
+        loadRuntimePublicSettings(options.loadPublicSettings),
+        loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
+      ])
+      const comments = disqusConfig(general, config.baseUrl)
+      applyPublicPageHeaders(reply, false, comments)
       reply.header('cache-control', settings.anonymous_generator ? 'public, max-age=60' : 'private, no-store').type('text/html; charset=utf-8')
-      return renderLandingContact(landingHtml, settings.contact_page_link)
+      return renderLandingDisqus(renderLandingContact(landingHtml, settings.contact_page_link), comments)
     })
   }
 
@@ -194,6 +201,10 @@ export function renderLandingContact(html: string, contactUrl: string): string {
   return html.replace('<!-- runtime-contact-link -->', `<a href="${escaped}">Contact</a>`)
 }
 
+export function renderLandingDisqus(html: string, config: DisqusConfig | null): string {
+  return html.replace('<!-- runtime-disqus -->', renderDisqus(config))
+}
+
 async function authenticatedRequest(
   request: FastifyRequest,
   authenticate: ((request: FastifyRequest) => Promise<boolean>) | undefined
@@ -215,15 +226,21 @@ function cacheToken(request: FastifyRequest): string {
   return authTokenFromRequest({ authorization: request.headers.authorization, cookie: request.cookies[AUTH_COOKIE_NAME] })
 }
 
-export function applyPublicPageHeaders(reply: FastifyReply, noStore = false): void {
+export function applyPublicPageHeaders(reply: FastifyReply, noStore = false, disqus: DisqusConfig | null = null): void {
   reply
-    .header('content-security-policy', publicPageCsp)
+    .header('content-security-policy', publicPageContentSecurityPolicy(disqus))
     .header('x-content-type-options', 'nosniff')
     .header('referrer-policy', 'strict-origin-when-cross-origin')
     .header('x-frame-options', 'SAMEORIGIN')
   if (noStore) {
     reply.header('cache-control', 'no-store').header('x-robots-tag', 'noindex, nofollow')
   }
+}
+
+function publicPageContentSecurityPolicy(disqus: DisqusConfig | null): string {
+  if (disqus === null) return DEFAULT_PUBLIC_PAGE_CSP
+  const sources = disqusCsp(disqus)
+  return `default-src 'none'; script-src 'self' ${sources.scripts.join(' ')}; style-src 'self'; connect-src ${sources.connections.join(' ')}; img-src 'self' data: ${sources.images.join(' ')}; frame-src ${sources.frames.join(' ')}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'`
 }
 
 function parseLegacyRedirect(requestUrl: string, security: Security): URL | null {
