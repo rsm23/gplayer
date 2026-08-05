@@ -1,5 +1,6 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { freemem, loadavg, totalmem } from 'node:os'
+import { AUTH_COOKIE_NAME, authTokenFromRequest, type AuthService } from '../auth/auth-service.js'
 import type { AppConfig } from '../config.js'
 import {
   publicErrors,
@@ -28,7 +29,12 @@ async function activeConnections(app: FastifyInstance): Promise<number> {
   })
 }
 
-export async function registerSystemRoutes(app: FastifyInstance, config: AppConfig): Promise<void> {
+export async function registerSystemRoutes(
+  app: FastifyInstance,
+  config: AppConfig,
+  auth: AuthService,
+  clearRuntimeCache: () => boolean | Promise<boolean>
+): Promise<void> {
   const security = new Security(config.secureSalt)
 
   app.get('/ping', async (_request, reply) => {
@@ -45,6 +51,20 @@ export async function registerSystemRoutes(app: FastifyInstance, config: AppConf
       timestamp: Math.floor(Date.now() / 1_000)
     }
   })
+
+  const clearCache = async (request: FastifyRequest, reply: FastifyReply) => {
+    applyPublicPageHeaders(reply, true)
+    reply.type('text/plain; charset=utf-8')
+    try {
+      const user = await auth.authenticate(cacheToken(request), request.headers['user-agent'] ?? '')
+      if (user === null || user.role !== 0 || user.status !== 1) return 'fail'
+      return await clearRuntimeCache() ? 'ok' : 'fail'
+    } catch {
+      return 'fail'
+    }
+  }
+  app.get('/clear-cache', clearCache)
+  app.get('/clear-cache/', clearCache)
 
   const sitemap = async (_request: unknown, reply: FastifyReply) => {
     const baseUrl = config.baseUrl.toString().replace(/\/$/, '')
@@ -103,6 +123,15 @@ export async function registerSystemRoutes(app: FastifyInstance, config: AppConf
     const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
     return reply.redirect(`/r/${query}`)
   })
+}
+
+function cacheToken(request: FastifyRequest): string {
+  const query = typeof request.query === 'object' && request.query !== null && !Array.isArray(request.query)
+    ? request.query as Record<string, unknown>
+    : {}
+  const legacyToken = typeof query.token === 'string' ? query.token.trim() : ''
+  if (legacyToken !== '') return legacyToken
+  return authTokenFromRequest({ authorization: request.headers.authorization, cookie: request.cookies[AUTH_COOKIE_NAME] })
 }
 
 export function applyPublicPageHeaders(reply: FastifyReply, noStore = false): void {

@@ -174,6 +174,10 @@ export class SettingsAdminService {
 
   public constructor(private readonly store: SettingsAdminStore) {}
 
+  public clearRuntimeCaches(): void {
+    delete this.customHeaderCache
+  }
+
   public async general(defaultBaseUrl: URL): Promise<GeneralSettings> {
     return generalSettings(await this.store.getAll(), defaultBaseUrl)
   }

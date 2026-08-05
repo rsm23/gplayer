@@ -1,11 +1,30 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type SessionWrite, type StoredAuthUser } from '../src/auth/auth-service.js'
 import { loadConfig } from '../src/config.js'
 import { Security } from '../src/security/security.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
+const systemUserAgent = 'GPlayer system route test'
+const adminToken = 'system-admin-token-1234567890'
+const memberToken = 'system-member-token-1234567890'
+const systemAdmin: AuthUser = Object.freeze({ id: 1, username: 'admin', email: 'admin@gplayer.local', name: 'Admin', role: 0, status: 1, created: 1, updated: 1 })
+const systemMember: AuthUser = Object.freeze({ ...systemAdmin, id: 2, username: 'member', email: 'member@gplayer.local', name: 'Member', role: 2 })
+
+class SystemRouteAuthStore implements AuthStore {
+  public async findUserByIdentifier(): Promise<StoredAuthUser | null> { return null }
+  public async createSession(_session: SessionWrite): Promise<void> {}
+  public async recordFailedLogin(_session: Omit<SessionWrite, 'expires' | 'state'>): Promise<void> {}
+  public async revokeSession(): Promise<boolean> { return true }
+  public async findActiveSession(token: string, userAgent: string): Promise<AuthUser | null> {
+    if (userAgent !== systemUserAgent) return null
+    if (token === adminToken) return systemAdmin
+    if (token === memberToken) return systemMember
+    return null
+  }
+}
 
 afterEach(async () => {
   await app?.close()
@@ -55,6 +74,37 @@ describe('legacy-compatible system routes', () => {
       mem_used_pct: expect.any(Number),
       timestamp: expect.any(Number)
     }))
+  })
+
+  it('clears registered Node runtime caches through the administrator-only legacy controller', async () => {
+    const clearRuntimeCache = vi.fn(() => true)
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(new SystemRouteAuthStore()),
+      clearRuntimeCache
+    })
+
+    const ok = await app.inject({ method: 'GET', url: `/clear-cache/?token=${adminToken}`, headers: { 'user-agent': systemUserAgent } })
+    expect(ok.statusCode).toBe(200)
+    expect(ok.headers['content-type']).toContain('text/plain')
+    expect(ok.headers['cache-control']).toBe('no-store')
+    expect(ok.body).toBe('ok')
+    expect(clearRuntimeCache).toHaveBeenCalledOnce()
+
+    const member = await app.inject({ method: 'GET', url: '/clear-cache', headers: { 'user-agent': systemUserAgent, cookie: `${AUTH_COOKIE_NAME}=${memberToken}` } })
+    const invalid = await app.inject({ method: 'GET', url: '/clear-cache/?token=invalid-token', headers: { 'user-agent': systemUserAgent } })
+    expect(member.body).toBe('fail')
+    expect(invalid.body).toBe('fail')
+    expect(clearRuntimeCache).toHaveBeenCalledOnce()
+  })
+
+  it('returns the supplied legacy fail marker when registered cache invalidation fails', async () => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(new SystemRouteAuthStore()),
+      clearRuntimeCache: async () => false
+    })
+    const response = await app.inject({ method: 'GET', url: '/clear-cache', headers: { 'user-agent': systemUserAgent, authorization: `Bearer ${adminToken}` } })
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toBe('fail')
   })
 
   it.each([

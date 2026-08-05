@@ -29,12 +29,14 @@ const admin: AuthUser = Object.freeze({
 class MemorySettingsStore implements SettingsAdminStore {
   public readonly values: Record<string, string>
   public readonly writes: SettingEntry[][] = []
+  public reads = 0
 
   public constructor(values: Record<string, string> = {}) {
     this.values = { ...values }
   }
 
   public async getAll(): Promise<Readonly<Record<string, string>>> {
+    this.reads += 1
     return Object.freeze({ ...this.values })
   }
 
@@ -393,6 +395,20 @@ describe('settings administration service', () => {
     expect(rules[0]).toEqual({ keywords: ['cdn.dzen.ru'], headers: { Referer: 'https://dzen.ru/' } })
     await expect(settings.customHeadersForUrl('https://CDN.DZEN.RU/video/master.m3u8')).resolves.toEqual({ Referer: 'https://dzen.ru/' })
     await expect(settings.customHeadersForUrl('https://unmatched.example/video.mp4')).resolves.toEqual({})
+  })
+
+  it('invalidates the active custom-header runtime cache without deleting stored settings', async () => {
+    const store = new MemorySettingsStore({ custom_headers: JSON.stringify([{ keywords: ['cdn.example'], headers: { Referer: 'https://app.example/' } }]) })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.customHeadersForUrl('https://cdn.example/video.mp4')).resolves.toEqual({ Referer: 'https://app.example/' })
+    await settings.customHeadersForUrl('https://cdn.example/second.mp4')
+    expect(store.reads).toBe(1)
+
+    settings.clearRuntimeCaches()
+    await expect(settings.customHeadersForUrl('https://cdn.example/third.mp4')).resolves.toEqual({ Referer: 'https://app.example/' })
+    expect(store.reads).toBe(2)
+    expect(store.values.custom_headers).toContain('cdn.example')
+    expect(store.writes).toEqual([])
   })
 
   it('loads and serializes the complete fifty-three-key Player Settings contract', async () => {

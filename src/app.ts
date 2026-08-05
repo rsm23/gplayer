@@ -54,6 +54,7 @@ export type AppDependencies = Readonly<{
   videoChecker?: VideoCheckerService
   videoTransfer?: VideoTransferService
   countryCodeLookup?: CountryCodeLookup
+  clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
 
 export async function buildApp(
@@ -79,6 +80,7 @@ export async function buildApp(
   await app.register(cookie)
 
   const authRuntime = createAuthRuntime(app, config)
+  const authService = dependencies.auth ?? authRuntime.auth
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
   const publicRoot = path.resolve(currentDirectory, '../public')
   const subtitlesRuntime = dependencies.subtitles ?? new SubtitleAdminService(
@@ -111,18 +113,22 @@ export async function buildApp(
     return Number.isSafeInteger(configured) && configured > 0 ? configured : 1024
   }
 
-  await registerSystemRoutes(app, config)
+  const clearRuntimeCache = dependencies.clearRuntimeCache ?? (() => {
+    settingsRuntime.clearRuntimeCaches()
+    return true
+  })
+  await registerSystemRoutes(app, config, authService, clearRuntimeCache)
   await registerAdminRoutes(
     app,
     config,
-    dependencies.auth ?? authRuntime.auth,
+    authService,
     dependencies.sessions ?? authRuntime.sessions,
     dependencies.users ?? authRuntime.users
   )
   await registerAdminSettingsRoutes(
     app,
     config,
-    dependencies.auth ?? authRuntime.auth,
+    authService,
     settingsRuntime,
     dependencies.users ?? authRuntime.users,
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
@@ -133,13 +139,13 @@ export async function buildApp(
   await registerSubtitleAdminRoutes(
     app,
     config,
-    dependencies.auth ?? authRuntime.auth,
+    authService,
     subtitlesRuntime
   )
   await registerVideoAdminRoutes(
     app,
     config,
-    dependencies.auth ?? authRuntime.auth,
+    authService,
     videosRuntime,
     videoTransferRuntime,
     subtitlesRuntime,
