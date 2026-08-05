@@ -2,6 +2,8 @@ import type { DriveAdminStore, DriveApiClient } from './drive-admin-service.js'
 import type { DriveRuntimeSettingsLoader } from './drive-media-service.js'
 import type { StatsWorker } from '../background/stats-worker.js'
 import type { GeneralWorker } from '../background/general-worker.js'
+import type { SourceRefreshWorker } from '../background/source-refresh-worker.js'
+import type { MediaDownloadWorker } from '../background/media-download-worker.js'
 
 export type DriveBackgroundResult = Readonly<{
   processed: number
@@ -68,6 +70,8 @@ export class DriveBackgroundCoordinator {
     private readonly workers: Readonly<{
       stats?: Pick<StatsWorker, 'runOnce'>
       general?: Pick<GeneralWorker, 'runOnce'>
+      sourceRefresh?: Pick<SourceRefreshWorker, 'runOnce'>
+      mediaDownload?: Pick<MediaDownloadWorker, 'runOnce'>
     }> = {}
   ) {}
 
@@ -77,6 +81,8 @@ export class DriveBackgroundCoordinator {
     }
     if (this.workers.stats !== undefined) jobs.bg_stats = this.triggerJob('bg_stats', async () => await this.workers.stats?.runOnce())
     if (this.workers.general !== undefined) jobs.bg_general = this.triggerJob('bg_general', async () => await this.workers.general?.runOnce())
+    if (this.workers.sourceRefresh !== undefined) jobs.bg_get = this.triggerJob('bg_get', async () => await this.workers.sourceRefresh?.runOnce())
+    if (this.workers.mediaDownload !== undefined) jobs.bg_download = this.triggerJob('bg_download', async () => await this.workers.mediaDownload?.runOnce())
     return Object.freeze({
       running: true,
       started: Object.values(jobs).some((job) => job.started),

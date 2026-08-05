@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import type { RowDataPacket } from 'mysql2/promise'
 import type { AppConfig } from '../config.js'
 import { emptyMediaResult, SourceResolver } from '../core/source-resolver.js'
 import { Database } from '../database/database.js'
@@ -11,6 +12,8 @@ import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
 const DEFAULT_LANGUAGE = 'en;q=0.9'
+
+type LoadBalancerRow = RowDataPacket & Readonly<{ id: string | number }>
 
 export function createSourceApiRuntime(
   app: FastifyInstance,
@@ -35,6 +38,7 @@ export function createSourceApiRuntime(
   const supportedHosts = new Set(extractors.supportedHosts())
   let database: Database | undefined
   let cache: MySqlSourceCacheRepository | undefined
+  let serverId: number | null | undefined
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -51,11 +55,20 @@ export function createSourceApiRuntime(
 
       database ??= new Database(config.database)
       cache ??= new MySqlSourceCacheRepository(database)
+      if (serverId === undefined) {
+        const rows = await database.read<LoadBalancerRow[]>(
+          'SELECT `id` FROM `tb_load_balancers` WHERE `link` = ? LIMIT 1',
+          [config.baseUrl.toString()]
+        )
+        const value = Number(rows[0]?.id ?? 0)
+        serverId = Number.isSafeInteger(value) && value > 0 ? value : null
+      }
       for (const candidate of candidates) {
         const result = await new SourceResolver({
           cache,
           extractors,
           clientIp: context.clientIp,
+          serverId,
           defaultUserAgent: DEFAULT_USER_AGENT,
           defaultLanguage: DEFAULT_LANGUAGE,
           requestUserAgent: context.userAgent,

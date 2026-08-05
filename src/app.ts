@@ -50,6 +50,10 @@ import { RemoteProviderHttpClient } from './hosting/provider-http.js'
 import { StatsWorker } from './background/stats-worker.js'
 import { createGeoIpDetailsLookup } from './security/geoip-details.js'
 import { GeneralWorker } from './background/general-worker.js'
+import { SourceRefreshWorker } from './background/source-refresh-worker.js'
+import { MediaDownloadWorker } from './background/media-download-worker.js'
+import { RemoteStream } from './stream/remote-stream.js'
+import { statfs } from 'node:fs/promises'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -75,6 +79,8 @@ export type AppDependencies = Readonly<{
   driveBackground?: Pick<DriveBackgroundCoordinator, 'trigger'>
   statsWorker?: StatsWorker
   generalWorker?: GeneralWorker
+  sourceRefreshWorker?: SourceRefreshWorker
+  mediaDownloadWorker?: MediaDownloadWorker
   recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
   clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
@@ -147,11 +153,6 @@ export async function buildApp(
       return Number.isSafeInteger(configured) && configured >= 0 ? configured : 10_800
     }
   })
-  const driveBackgroundRuntime = dependencies.driveBackground ?? new DriveBackgroundCoordinator(
-    new DriveBackgroundWorker(authRuntime.driveAdminStore, driveApi),
-    loadDriveSettings,
-    { stats: statsWorkerRuntime, general: generalWorkerRuntime }
-  )
   let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
   const hostingHosts = legacyHostingHosts()
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
@@ -159,9 +160,48 @@ export async function buildApp(
     loadHostingSettings,
     gdrive: { privateSources: driveMediaRuntime, loadSettings: loadDriveSettings }
   })
+  supportedHosts = sourceApiRuntime.supportedHosts ?? supportedHosts
+  const sourceRefreshRuntime = dependencies.sourceRefreshWorker ?? new SourceRefreshWorker(
+    authRuntime.sourceRefreshStore,
+    sourceApiRuntime.resolve
+  )
+  const cacheRoot = path.resolve(currentDirectory, '../cache')
+  const mediaDownloadRuntime = dependencies.mediaDownloadWorker ?? new MediaDownloadWorker(
+    authRuntime.mediaDownloadStore,
+    new RemoteStream(),
+    {
+      baseUrl: config.baseUrl,
+      cacheRoot,
+      bufferSize: config.bufferSize,
+      maxDownloadSpeed: config.maxDownloadSpeed,
+      freeSpace: async (target) => {
+        const details = await statfs(path.dirname(target))
+        return Number(details.bavail) * Number(details.bsize)
+      },
+      loadSettings: async () => {
+        const [general, misc] = await Promise.all([
+          settingsRuntime.general(config.baseUrl),
+          settingsRuntime.miscSettings(supportedHosts)
+        ])
+        return Object.freeze({
+          enabled: general.enable_cache_file === true && general.enable_bg_download === true,
+          bypassHosts: misc.bypass_host
+        })
+      }
+    }
+  )
+  const driveBackgroundRuntime = dependencies.driveBackground ?? new DriveBackgroundCoordinator(
+    new DriveBackgroundWorker(authRuntime.driveAdminStore, driveApi),
+    loadDriveSettings,
+    {
+      stats: statsWorkerRuntime,
+      general: generalWorkerRuntime,
+      sourceRefresh: sourceRefreshRuntime,
+      mediaDownload: mediaDownloadRuntime
+    }
+  )
   const videoBulkRuntime = dependencies.videoBulk ?? new VideoBulkService(videosRuntime, sourceApiRuntime.resolve)
   const videoCheckerRuntime = dependencies.videoChecker ?? new VideoCheckerService(videosRuntime, sourceApiRuntime.resolve)
-  supportedHosts = sourceApiRuntime.supportedHosts ?? supportedHosts
   const loadMiscSettings: MiscSettingsLoader = async () => await settingsRuntime.miscSettings(supportedHosts)
   const countryCodeLookup = dependencies.countryCodeLookup ?? createCountryCodeLookup(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
@@ -290,7 +330,9 @@ export async function buildApp(
   await registerDriveMediaRoutes(app, driveMediaRuntime)
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {
-    customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target)
+    customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target),
+    cacheRoot,
+    loadFileCacheEnabled: async () => (await settingsRuntime.general(config.baseUrl)).enable_cache_file === true
   })
 
   await app.register(fastifyStatic, {

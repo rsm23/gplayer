@@ -82,14 +82,18 @@ describe('Node-native Drive background queue', () => {
     const drive = { runOnce: vi.fn(async () => ({ processed: 0, deleted: 0, retained: 0 })) }
     const stats = { runOnce: vi.fn(async () => ({ acquired: true, cleaned: 0, processed: 0, enriched: 0 })) }
     const general = { runOnce: vi.fn(async () => ({ expiredSources: 0, normalizedSubtitles: 0, missingSubtitles: 0, temporaryEntries: 0, cacheCleared: false, lowSpace: false })) }
-    const coordinator = new DriveBackgroundCoordinator(drive, async () => ({ copy: false, copyAll: false }), { stats, general })
+    const sourceRefresh = { runOnce: vi.fn(async () => ({ pending: 0 })) }
+    const mediaDownload = { runOnce: vi.fn(async () => ({ scanned: 0 })) }
+    const coordinator = new DriveBackgroundCoordinator(drive, async () => ({ copy: false, copyAll: false }), { stats, general, sourceRefresh: sourceRefresh as never, mediaDownload: mediaDownload as never })
     expect(coordinator.trigger()).toEqual({
       running: true,
       started: true,
       jobs: {
         bg_gdrive: { running: true, started: true },
         bg_stats: { running: true, started: true },
-        bg_general: { running: true, started: true }
+        bg_general: { running: true, started: true },
+        bg_get: { running: true, started: true },
+        bg_download: { running: true, started: true }
       }
     })
     expect(coordinator.trigger()).toEqual({
@@ -98,13 +102,17 @@ describe('Node-native Drive background queue', () => {
       jobs: {
         bg_gdrive: { running: true, started: false },
         bg_stats: { running: true, started: false },
-        bg_general: { running: true, started: false }
+        bg_general: { running: true, started: false },
+        bg_get: { running: true, started: false },
+        bg_download: { running: true, started: false }
       }
     })
     await vi.waitFor(() => {
       expect(drive.runOnce).toHaveBeenCalledOnce()
       expect(stats.runOnce).toHaveBeenCalledOnce()
       expect(general.runOnce).toHaveBeenCalledOnce()
+      expect(sourceRefresh.runOnce).toHaveBeenCalledOnce()
+      expect(mediaDownload.runOnce).toHaveBeenCalledOnce()
     })
   })
 })

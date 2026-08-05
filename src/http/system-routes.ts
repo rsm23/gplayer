@@ -63,6 +63,8 @@ export async function registerSystemRoutes(
         bg_gdrive: (jobs?.bg_gdrive?.running ?? background.running) ? process.pid : false,
         ...(jobs?.bg_stats === undefined ? {} : { bg_stats: jobs.bg_stats.running ? process.pid : false }),
         ...(jobs?.bg_general === undefined ? {} : { bg_general: jobs.bg_general.running ? process.pid : false }),
+        ...(jobs?.bg_get === undefined ? {} : { bg_get: jobs.bg_get.running ? process.pid : false }),
+        ...(jobs?.bg_download === undefined ? {} : { bg_download: jobs.bg_download.running ? process.pid : false }),
         background_started: background.started
       })
     }

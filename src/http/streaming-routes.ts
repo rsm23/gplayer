@@ -1,12 +1,16 @@
+import { createReadStream } from 'node:fs'
+import { lstat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AppConfig } from '../config.js'
 import { Security } from '../security/security.js'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
+import { mediaCachePaths } from '../background/media-cache-path.js'
+import { parseByteRange } from '../background/media-download-worker.js'
 
 const MAX_MANIFEST_BYTES = 5 * 1_024 * 1_024
 const MAX_STREAM_URL_LENGTH = 16_384
-const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gd', 'gl', 'gx', 'gxr', 'gt'])
+const INTERNAL_QUERY_KEYS = new Set(['_', 'dl', 'gcl', 'gd', 'gl', 'gx', 'gxr', 'gt'])
 const binaryResponseHeaders = [
   'accept-ranges',
   'cache-control',
@@ -25,6 +29,7 @@ export type StreamingRoute = 'hls' | 'mpd' | 'stream-ts' | 'stream-seg' | 'strea
 export type StreamingIdentity = Readonly<{
   host: string
   id: string
+  label?: string
 }>
 
 export type StreamingRouteOptions = Readonly<{
@@ -32,6 +37,8 @@ export type StreamingRouteOptions = Readonly<{
   /** Integration-test escape hatch. Public deployments must keep this false. */
   allowPrivateNetworks?: boolean
   customHeaders?: (target: URL) => RequestInit['headers'] | Promise<RequestInit['headers']>
+  cacheRoot?: string
+  loadFileCacheEnabled?: () => boolean | Promise<boolean>
 }>
 
 export function createStreamingProxyPath(
@@ -42,13 +49,13 @@ export function createStreamingProxyPath(
   preserveTail = false
 ): string {
   const identityToken = security.encryptURL(`${identity.host}~${identity.id}`)
-  if (!preserveTail) return `/${route}/${identityToken}/${security.encryptURL(target.toString())}`
+  if (!preserveTail) return withCacheLabel(`/${route}/${identityToken}/${security.encryptURL(target.toString())}`, identity.label, security)
 
   const base = new URL('.', target)
   base.search = ''
   base.hash = ''
   const tail = target.pathname.slice(base.pathname.length) + target.search
-  return `/${route}/${identityToken}/${security.encryptURL(base.toString())}/${tail}`
+  return withCacheLabel(`/${route}/${identityToken}/${security.encryptURL(base.toString())}/${tail}`, identity.label, security)
 }
 
 export async function registerStreamingRoutes(
@@ -113,6 +120,11 @@ export async function registerStreamingRoutes(
   const binaryHandler = (kind: 'stream-ts' | 'stream-seg' | 'stream-vid') => async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const parsed = parseStreamingTarget(request.url, kind, security)
     if (parsed === null) return streamError(reply, 400, 'Invalid stream link')
+
+    if (kind === 'stream-vid' && options.cacheRoot !== undefined && parsed.identity.label !== undefined) {
+      const cacheEnabled = await Promise.resolve(options.loadFileCacheEnabled?.() ?? true).catch(() => false)
+      if (cacheEnabled && await sendCachedMedia(request, reply, options.cacheRoot, parsed.identity)) return reply
+    }
 
     try {
       const response = await remoteStream.open({
@@ -179,10 +191,12 @@ function parseStreamingTarget(requestUrl: string, route: StreamingRoute, securit
     }
     if ((target.protocol !== 'http:' && target.protocol !== 'https:') || target.username || target.password) return null
     if (target.toString().length > MAX_STREAM_URL_LENGTH) return null
+    const label = cacheLabel(request, security)
     return {
       identity: {
         host: identityValue.slice(0, separator),
-        id: identityValue.slice(separator + 1)
+        id: identityValue.slice(separator + 1),
+        ...(label === null ? {} : { label })
       },
       target
     }
@@ -263,6 +277,54 @@ function createStreamingBasePath(target: URL, security: Security, identity: Stre
   normalized.hash = ''
   const identityToken = security.encryptURL(`${identity.host}~${identity.id}`)
   return `/stream-seg/${identityToken}/${security.encryptURL(normalized.toString())}/`
+}
+
+function withCacheLabel(value: string, label: string | undefined, security: Security): string {
+  if (label === undefined || label.trim() === '') return value
+  return `${value}${value.includes('?') ? '&' : '?'}gcl=${encodeURIComponent(security.encryptURL(label))}`
+}
+
+function cacheLabel(request: URL, security: Security): string | null {
+  const token = request.searchParams.get('gcl') ?? ''
+  if (token === '' || token.length > 2_048) return null
+  const label = security.decryptURLStrict(token)?.trim() ?? ''
+  return label === '' || label.length > 120 ? null : label
+}
+
+async function sendCachedMedia(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  cacheRoot: string,
+  identity: StreamingIdentity
+): Promise<boolean> {
+  const paths = mediaCachePaths(cacheRoot, identity.host, identity.id, identity.label ?? 'Original')
+  const details = await lstat(paths.complete).catch(() => null)
+  if (details === null || !details.isFile() || details.isSymbolicLink() || details.size <= 0) return false
+  const rangeValue = typeof request.headers.range === 'string' ? request.headers.range : ''
+  const range = rangeValue === '' ? Object.freeze({ start: 0, end: Math.max(0, details.size - 1) }) : parseByteRange(rangeValue, details.size)
+  if (range === null) {
+    reply
+      .header('accept-ranges', 'bytes')
+      .header('content-range', `bytes */${details.size}`)
+      .header('cache-control', 'no-store')
+      .code(416)
+      .send()
+    return true
+  }
+  const partial = rangeValue !== ''
+  reply
+    .header('accept-ranges', 'bytes')
+    .header('content-type', 'video/mp4')
+    .header('content-length', Math.max(0, range.end - range.start + 1))
+    .header('last-modified', details.mtime.toUTCString())
+    .header('cache-control', 'public, max-age=300')
+    .header('content-disposition', 'inline')
+    .header('x-content-type-options', 'nosniff')
+    .header('referrer-policy', 'no-referrer')
+    .code(partial ? 206 : 200)
+  if (partial) reply.header('content-range', `bytes ${range.start}-${range.end}/${details.size}`)
+  reply.send(createReadStream(paths.complete, { start: range.start, end: range.end }))
+  return true
 }
 
 function resolveHttpResource(value: string, base: URL): URL | null {

@@ -401,7 +401,8 @@ function proxySource(
   }
 
   const route = streamingRoute(source, target)
-  const proxyPath = createStreamingProxyPath(route, target, security, identity)
+  const label = typeof source.label === 'string' ? source.label : 'Original'
+  const proxyPath = createStreamingProxyPath(route, target, security, { ...identity, label })
   return [{ ...publicSource, file: new URL(proxyPath, baseUrl).toString() }]
 }
 

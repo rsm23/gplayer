@@ -23,6 +23,10 @@ import { MySqlStatsWorkerStore } from '../background/mysql-stats-worker-store.js
 import type { StatsWorkerStore } from '../background/stats-worker.js'
 import { MySqlGeneralWorkerStore } from '../background/mysql-general-worker-store.js'
 import type { GeneralWorkerStore } from '../background/general-worker.js'
+import { MySqlSourceRefreshStore } from '../background/mysql-source-refresh-store.js'
+import type { SourceRefreshStore } from '../background/source-refresh-worker.js'
+import { MySqlMediaDownloadStore } from '../background/mysql-media-download-store.js'
+import type { MediaDownloadStore } from '../background/media-download-worker.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -36,6 +40,8 @@ export type AuthRuntime = Readonly<{
   driveAdminStore: DriveAdminStore
   statsWorkerStore: StatsWorkerStore
   generalWorkerStore: GeneralWorkerStore
+  sourceRefreshStore: SourceRefreshStore
+  mediaDownloadStore: MediaDownloadStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -51,6 +57,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let driveAdminStore: MySqlDriveAdminStore | undefined
   let statsWorkerStore: MySqlStatsWorkerStore | undefined
   let generalWorkerStore: MySqlGeneralWorkerStore | undefined
+  let sourceRefreshStore: MySqlSourceRefreshStore | undefined
+  let mediaDownloadStore: MySqlMediaDownloadStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -99,6 +107,14 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentGeneralWorkerStore = (): MySqlGeneralWorkerStore => {
     generalWorkerStore ??= new MySqlGeneralWorkerStore(currentDatabase())
     return generalWorkerStore
+  }
+  const currentSourceRefreshStore = (): MySqlSourceRefreshStore => {
+    sourceRefreshStore ??= new MySqlSourceRefreshStore(currentDatabase())
+    return sourceRefreshStore
+  }
+  const currentMediaDownloadStore = (): MySqlMediaDownloadStore => {
+    mediaDownloadStore ??= new MySqlMediaDownloadStore(currentDatabase())
+    return mediaDownloadStore
   }
 
   const lazyStore: AuthStore = {
@@ -197,6 +213,18 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     listManagedSubtitles: async (host, afterId, limit) => await currentGeneralWorkerStore().listManagedSubtitles(host, afterId, limit),
     deleteManagedSubtitle: async (id, host) => await currentGeneralWorkerStore().deleteManagedSubtitle(id, host)
   }
+  const lazySourceRefreshStore: SourceRefreshStore = {
+    maintainLegacyData: async () => await currentSourceRefreshStore().maintainLegacyData(),
+    getLastCleanup: async () => await currentSourceRefreshStore().getLastCleanup(),
+    truncatePendingSources: async () => await currentSourceRefreshStore().truncatePendingSources(),
+    saveLastCleanup: async (timestamp) => await currentSourceRefreshStore().saveLastCleanup(timestamp),
+    listPendingSources: async (limit) => await currentSourceRefreshStore().listPendingSources(limit),
+    deletePendingSource: async (id) => await currentSourceRefreshStore().deletePendingSource(id)
+  }
+  const lazyMediaDownloadStore: MediaDownloadStore = {
+    currentServerId: async (baseUrl) => await currentMediaDownloadStore().currentServerId(baseUrl),
+    listCandidates: async (afterId, limit, serverId) => await currentMediaDownloadStore().listCandidates(afterId, limit, serverId)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -213,6 +241,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     driveAccounts: new DriveAccountAdminService(lazyDriveAccountStore),
     driveAdminStore: lazyDriveAdminStore,
     statsWorkerStore: lazyStatsWorkerStore,
-    generalWorkerStore: lazyGeneralWorkerStore
+    generalWorkerStore: lazyGeneralWorkerStore,
+    sourceRefreshStore: lazySourceRefreshStore,
+    mediaDownloadStore: lazyMediaDownloadStore
   })
 }
