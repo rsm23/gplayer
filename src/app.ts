@@ -71,6 +71,7 @@ import { LoadBalancerAdminService } from './load-balancers/load-balancer-admin-s
 import { PluginAdminService } from './plugins/plugin-admin-service.js'
 import { PluginExtensionRuntime } from './plugins/plugin-extension-runtime.js'
 import { NodemailerAccountMailer, type AccountMailer } from './email/smtp-mailer.js'
+import { LogAdminService } from './logs/log-admin-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -106,6 +107,7 @@ export type AppDependencies = Readonly<{
   loadBalancers?: LoadBalancerAdminService
   plugins?: PluginAdminService
   pluginExtensions?: PluginExtensionRuntime
+  logs?: LogAdminService
 }>
 
 export async function buildApp(
@@ -308,6 +310,7 @@ export async function buildApp(
     authService,
     dependencies.sessions ?? authRuntime.sessions,
     dependencies.users ?? authRuntime.users,
+    dependencies.logs ?? new LogAdminService(path.resolve(currentDirectory, '../tmp/logs')),
     async () => (await loadAccountSettings()).enableRegistration
   )
   await registerAccountRoutes(app, config, authService, accountRuntime, {

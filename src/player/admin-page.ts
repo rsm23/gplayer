@@ -12,6 +12,7 @@ import type { StoredVideoDetail, VideoAdminRecord } from '../videos/video-admin-
 import type { DriveAccountAdminRecord } from '../drive/drive-account-admin-service.js'
 import type { DriveBackupRecord, DriveFileAdminRecord, DriveQueueRecord, DriveSharedDrive } from '../drive/drive-admin-service.js'
 import type { LoadBalancerAdminRecord } from '../load-balancers/load-balancer-admin-service.js'
+import type { LogFileRecord, LogReadResult } from '../logs/log-admin-service.js'
 import type { PluginAdminRecord } from '../plugins/plugin-admin-service.js'
 import type { PluginConfigField } from '../plugins/plugin-archive.js'
 
@@ -160,6 +161,87 @@ export function renderAdminDashboard(adminBase: string, user: AuthUser): string 
     <article><span>Account</span><strong>${escapeHtml(user.username)}</strong><p>${escapeHtml(user.email)}</p></article>
   </section>
   <section class="admin-next"><p class="section-index">Management</p><h2>Your media control plane is online.</h2><p>Create stable saved-video links, attach fallback sources and captions, and maintain uploaded subtitle assets from the authenticated Node.js administration surface.</p><div class="admin-next-actions"><a class="hero-link-primary" href="${escapeHtml(adminBase)}/videos/list/">Manage videos <span aria-hidden="true">↗</span></a><a class="admin-back-link" href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitle Manager</a>${user.role === 0 ? `<a class="admin-back-link" href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a>` : ''}</div></section>
+</main>`)
+}
+
+export function renderAdminProfile(input: Readonly<{
+  adminBase: string
+  user: AdminUserRecord
+  isAdmin: boolean
+  csrfToken: string
+  values?: Readonly<Record<string, string>>
+  message?: AdminMessage
+}>): string {
+  const name = input.values?.name ?? input.user.name
+  const username = input.values?.user ?? input.user.username
+  const email = input.values?.email ?? input.user.email
+  return adminDocument('My Account', `${adminHeader(input.adminBase, 'profile', input.isAdmin)}
+<main class="admin-dashboard admin-profile-page">
+  <p class="eyebrow"><span></span>Personal settings</p>
+  <div class="admin-dashboard-heading"><div><h1>My Account.</h1><p>Update your account identity or rotate your password. A username or email change signs this browser out.</p></div><span class="admin-role">${escapeHtml(userRoleLabel(input.user.role))}</span></div>
+  ${renderMessage(input.message)}
+  <form class="admin-settings-form admin-profile-form" action="${escapeHtml(input.adminBase)}/profile/" method="post" autocomplete="off">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="profile-identity-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Identity</p><h2 id="profile-identity-title">Account details</h2><p>These values are used by the administration interface and ownership records.</p></div>
+      <div class="settings-grid">
+        <div class="field"><label for="name">Full name</label><input id="name" name="name" type="text" value="${escapeHtml(name)}" maxlength="50" autocomplete="name" required></div>
+        <div class="field"><label for="email">Email address</label><input id="email" name="email" type="email" value="${escapeHtml(email)}" maxlength="254" autocomplete="email" required></div>
+        <div class="field"><label for="user">Username</label><input id="user" name="user" type="text" value="${escapeHtml(username)}" maxlength="50" autocomplete="username" required></div>
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="profile-password-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Security</p><h2 id="profile-password-title">New password</h2><p>Leave both fields blank to preserve the current password. New passwords require at least eight characters and no spaces.</p></div>
+      <div class="settings-grid">
+        <div class="field"><label for="password">New password</label><input id="password" name="password" type="password" value="" minlength="8" maxlength="1024" pattern="[^ ]{8,}" autocomplete="new-password"></div>
+        <div class="field"><label for="retype_password">Confirm new password</label><input id="retype_password" name="retype_password" type="password" value="" minlength="8" maxlength="1024" pattern="[^ ]{8,}" autocomplete="new-password"></div>
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update account</span><span aria-hidden="true">↗</span></button><p>Passwords are accepted only for this update and are never returned to the page.</p></div>
+  </form>
+</main>`)
+}
+
+export function renderAdminLogs(input: Readonly<{
+  adminBase: string
+  files: readonly LogFileRecord[]
+  selected?: LogReadResult
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.files.length === 0
+    ? '<tr><td colspan="4"><p class="log-empty">No log files are available.</p></td></tr>'
+    : input.files.map((file) => {
+        const encoded = encodeURIComponent(file.name)
+        return `<tr>
+    <td><a class="log-file-link" href="${escapeHtml(input.adminBase)}/log/?file=${encoded}&amp;action=read&amp;start=1"><strong>${escapeHtml(file.name)}</strong><span>Read log ↗</span></a></td>
+    <td>${file.sizeKb.toLocaleString('en-US')} KB</td>
+    <td>${renderTimestamp(file.modified, 'Unknown')}</td>
+    <td><div class="log-actions"><a href="${escapeHtml(input.adminBase)}/log/?file=${encoded}&amp;action=download">Download</a><form action="${escapeHtml(input.adminBase)}/log/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="clear"><input type="hidden" name="file" value="${escapeHtml(file.name)}"><button type="submit">Clear</button></form><form action="${escapeHtml(input.adminBase)}/log/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="delete"><input type="hidden" name="file" value="${escapeHtml(file.name)}"><button class="session-revoke" type="submit">Delete</button></form></div></td>
+  </tr>`
+      }).join('')
+  const viewer = input.selected === undefined ? '' : `<section class="log-viewer" aria-labelledby="log-viewer-title">
+    <div class="log-viewer-heading"><div><p class="panel-kicker">Selected log</p><h2 id="log-viewer-title">${escapeHtml(input.selected.name)}</h2></div><span>Lines ${input.selected.start}–${Math.max(input.selected.start, input.selected.start + input.selected.lines.length - 1)}</span></div>
+    <pre tabindex="0">${escapeHtml(input.selected.lines.join('\n'))}</pre>
+    ${input.selected.nextStart === null ? '<p class="log-end">End of file.</p>' : `<a class="admin-back-link" href="${escapeHtml(input.adminBase)}/log/?file=${encodeURIComponent(input.selected.name)}&amp;action=read&amp;start=${input.selected.nextStart}">Load the next 250 lines →</a>`}
+  </section>`
+  return adminDocument('System logs', `${adminHeader(input.adminBase, 'log')}
+<main class="admin-dashboard admin-log-page">
+  <p class="eyebrow"><span></span>Runtime diagnostics</p>
+  <div class="admin-dashboard-heading"><div><h1>System logs.</h1><p>Inspect, download, clear, or remove regular files from the application log directory.</p></div><span class="admin-role">${input.files.length} ${input.files.length === 1 ? 'file' : 'files'}</span></div>
+  ${renderMessage(input.message)}
+  <section class="session-table-shell log-table-shell"><div class="session-table-heading"><div><p class="panel-kicker">Local server</p><h2>Available files</h2></div><span>${input.files.length} indexed</span></div><div class="session-table-scroll"><table class="session-table log-table"><thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div></section>
+  ${viewer}
+</main>`)
+}
+
+export function renderAdminDmca(adminBase: string, isAdmin: boolean): string {
+  return adminDocument('DMCA Takedown', `${adminHeader(adminBase, 'dashboard', isAdmin)}
+<main class="admin-error-main admin-dmca-main">
+  <p class="eyebrow"><span></span>Content notice</p>
+  <h1>DMCA Takedown</h1>
+  <p>Content has been taken down.</p>
+  <a class="hero-link-primary" href="${escapeHtml(adminBase)}/videos/list/">Return to videos <span aria-hidden="true">↗</span></a>
 </main>`)
 }
 
@@ -1517,13 +1599,13 @@ function formFlag(value: unknown, fallback: number): boolean {
   return (Array.isArray(value) ? value : [value]).some((item) => item === '1' || item === 1 || item === true || item === 'true' || item === 'on')
 }
 
-function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles' | 'drive' | 'load-balancers' | 'plugins', isAdmin = true): string {
+function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles' | 'drive' | 'load-balancers' | 'plugins' | 'profile' | 'log', isAdmin = true): string {
   return `<header class="admin-bar">
   <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
     <span>G<span>PLAYER</span><small>NODE</small></span>
   </a>
-  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'drive' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/">Drive</a><a${current === 'load-balancers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/load-balancers/list/">Servers</a><a${current === 'plugins' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/plugins/list/">Plugins</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
+  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'drive' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/">Drive</a><a${current === 'load-balancers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/load-balancers/list/">Servers</a><a${current === 'plugins' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/plugins/list/">Plugins</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'log' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/log/">Logs</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}<a${current === 'profile' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/profile/">Profile</a></nav>
   <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
 </header>`
 }

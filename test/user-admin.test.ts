@@ -161,6 +161,22 @@ describe('user administration service', () => {
     await expect(users.editUsername(1, 'new-admin')).resolves.toEqual({ status: 'ok', id: '1', message: 'The username has been successfully updated. Please re-login' })
     expect(store.users[0]).toEqual(expect.objectContaining({ email: 'new@example.test', username: 'new-admin' }))
   })
+
+  it('updates the complete legacy profile contract without allowing role or status changes', async () => {
+    const store = new MemoryUserStore()
+    const users = service(store)
+    await expect(users.updateProfile(1, {
+      name: 'Administrator', user: 'admin', email: 'admin@gplayer.local',
+      role: '2', status: '9', password: 'newpassword', retype_password: 'newpassword'
+    })).resolves.toEqual({ status: 'ok', id: '1', identityChanged: false, message: 'The user details have been successfully updated' })
+    expect(store.writes[0]).toEqual(expect.objectContaining({ name: 'Administrator', role: 0, status: 1, passwordHash: 'hash:newpassword' }))
+    await expect(users.updateProfile(1, {
+      name: 'Administrator', user: 'new-admin', email: 'admin@gplayer.local', password: '', retype_password: ''
+    })).resolves.toEqual({ status: 'ok', id: '1', identityChanged: true, message: 'The user details have been successfully updated' })
+    await expect(users.updateProfile(1, {
+      name: 'Administrator', user: 'new-admin', email: 'broken', password: '', retype_password: ''
+    })).resolves.toEqual({ status: 'invalid', message: 'The email is invalid' })
+  })
 })
 
 describe('MySqlUserAdminStore', () => {
@@ -292,6 +308,37 @@ describe('user administration routes', () => {
     expect(response.json()).toEqual({ status: 'ok', message: 'The email address has been successfully updated. Please re-login', result: null })
     expect(routeAuth.revoked).toEqual([token])
     expect(String(response.headers['set-cookie'])).toContain(`${AUTH_COOKIE_NAME}=;`)
+  })
+
+  it('renders and submits the full signed profile form, preserving blank password fields', async () => {
+    const store = new MemoryUserStore()
+    const routeAuth = new RouteAuthStore()
+    app = await createApp(store, routeAuth)
+    const page = await app.inject({ method: 'GET', url: '/administrator/profile/', headers })
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('My Account.')
+    expect(page.body).toContain('value="admin@gplayer.local"')
+    expect(page.body).not.toContain(token)
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    const renamed = await app.inject({
+      method: 'POST', url: '/administrator/profile/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, name: 'Administrator', user: 'admin', email: 'admin@gplayer.local', password: '', retype_password: '' }).toString()
+    })
+    expect(renamed.statusCode).toBe(303)
+    expect(renamed.headers.location).toBe('/administrator/profile/?updated=1')
+    expect(store.writes.at(-1)).not.toHaveProperty('passwordHash')
+    expect(store.users[0]).toEqual(expect.objectContaining({ name: 'Administrator', role: 0, status: 1 }))
+
+    const changedIdentity = await app.inject({
+      method: 'POST', url: '/administrator/profile/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, name: 'Administrator', user: 'admin-two', email: 'admin@gplayer.local', password: '', retype_password: '' }).toString()
+    })
+    expect(changedIdentity.statusCode).toBe(303)
+    expect(changedIdentity.headers.location).toBe('/administrator/login/?account=profile-updated')
+    expect(routeAuth.revoked).toEqual([token])
+    expect(String(changedIdentity.headers['set-cookie'])).toContain(`${AUTH_COOKIE_NAME}=;`)
   })
 
   it('rejects cross-origin writes and invalid signed form submissions', async () => {

@@ -4,7 +4,8 @@ import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } fr
 import type { SessionAdminService } from '../auth/session-admin-service.js'
 import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminDashboard, renderAdminError, renderAdminLoginPage, renderAdminSessions, renderAdminUserForm, renderAdminUsers, type AdminMessage } from '../player/admin-page.js'
+import { LogAdminService, LogFileError } from '../logs/log-admin-service.js'
+import { renderAdminDashboard, renderAdminDmca, renderAdminError, renderAdminLoginPage, renderAdminLogs, renderAdminProfile, renderAdminSessions, renderAdminUserForm, renderAdminUsers, type AdminMessage } from '../player/admin-page.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const SESSION_DELETE_FAIL = 'The session failed to delete'
@@ -19,6 +20,7 @@ export async function registerAdminRoutes(
   auth: AuthService,
   sessions: SessionAdminService,
   users: UserAdminService,
+  logs: LogAdminService,
   loadRegistrationEnabled: () => Promise<boolean> = async () => false
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
@@ -30,6 +32,9 @@ export async function registerAdminRoutes(
   const userDeleteUrl = `${adminBase}/users/delete/`
   const userAjaxUrl = `${adminBase}/ajax/users/`
   const userListAjaxUrl = `${adminBase}/ajax/users-list/`
+  const profileUrl = `${adminBase}/profile/`
+  const logUrl = `${adminBase}/log/`
+  const dmcaUrl = `${adminBase}/dmca/`
   const sessionsUrl = `${adminBase}/users/sessions/`
   const sessionDeleteUrl = `${adminBase}/users/sessions/delete/`
   const sessionAjaxUrl = `${adminBase}/ajax/sessions/`
@@ -49,6 +54,13 @@ export async function registerAdminRoutes(
     return await reply.redirect(`${userEditUrl}${id === '' ? '' : `?id=${encodeURIComponent(id)}`}`, 308)
   })
   app.get(`${adminBase}/users/sessions`, async (_request, reply) => await reply.redirect(sessionsUrl, 308))
+  app.get(`${adminBase}/profile`, async (_request, reply) => await reply.redirect(profileUrl, 308))
+  app.get(`${adminBase}/log`, async (request, reply) => {
+    const query = objectValue(request.query)
+    const suffix = new URLSearchParams(Object.entries(query).flatMap(([key, value]) => typeof value === 'string' ? [[key, value]] : [])).toString()
+    return await reply.redirect(`${logUrl}${suffix === '' ? '' : `?${suffix}`}`, 308)
+  })
+  app.get(`${adminBase}/dmca`, async (_request, reply) => await reply.redirect(dmcaUrl, 308))
 
   app.get(loginUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -128,6 +140,155 @@ export async function registerAdminRoutes(
     }
     if (user === null) return await reply.redirect(loginUrl, 302)
     return reply.type('text/html; charset=utf-8').send(renderAdminDashboard(adminBase, user))
+  })
+
+  app.get(profileUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const current = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (current === null || reply.sent) return
+    try {
+      const record = await users.get(current.id)
+      if (record === null) return reply.code(404).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 404, 'The requested user was not found.'))
+      const message: AdminMessage | undefined = booleanValue(objectValue(request.query).updated)
+        ? { kind: 'success', text: 'The user details have been successfully updated' }
+        : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminProfile({
+        adminBase,
+        user: record,
+        isAdmin: current.role === 0,
+        csrfToken: csrfToken(config, tokenFor(request), 'profile-write'),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The user database is temporarily unavailable.'))
+    }
+  })
+
+  app.post(profileUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The profile request did not originate from this application.'))
+    }
+    const current = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (current === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'profile-write')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The profile request could not be verified.'))
+    }
+    try {
+      const record = await users.get(current.id)
+      if (record === null) return reply.code(404).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 404, 'The requested user was not found.'))
+      const result = await users.updateProfile(current.id, body)
+      if (result.status === 'ok') {
+        if (result.identityChanged) {
+          await auth.logout(tokenFor(request)).catch(() => false)
+          clearAuthCookie(reply, config)
+          return await reply.redirect(`${loginUrl}?account=profile-updated`, 303)
+        }
+        return await reply.redirect(`${profileUrl}?updated=1`, 303)
+      }
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminProfile({
+        adminBase,
+        user: record,
+        isAdmin: current.role === 0,
+        csrfToken: csrfToken(config, tokenFor(request), 'profile-write'),
+        values: profileFormValues(body),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The user database is temporarily unavailable.'))
+    }
+  })
+
+  app.get(dmcaUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const current = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (current === null || reply.sent) return
+    return reply.type('text/html; charset=utf-8').send(renderAdminDmca(adminBase, current.role === 0))
+  })
+
+  app.get(logUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const current = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (current === null || reply.sent) return
+    if (current.role !== 0) return await reply.redirect(`${adminBase}/403/`, 302)
+    const query = objectValue(request.query)
+    const action = stringValue(query.action)
+    const api = booleanValue(query.api)
+    try {
+      if (action === 'clear' || action === 'delete') {
+        return reply.code(405).type('application/json; charset=utf-8').send(legacyJson('fail', 'Use an authenticated POST request for destructive log actions'))
+      }
+      if (action === 'download') {
+        const download = await logs.download(query.file)
+        const fallback = download.name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
+        reply.header('content-disposition', `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(download.name)}`)
+        reply.header('content-length', String(download.size))
+        return reply.type('application/octet-stream').send(download.stream)
+      }
+      if (api && action === 'list') {
+        const files = await logs.list()
+        return reply.type('application/json; charset=utf-8').send(files.map((file) => ({ src: file.name, size: file.sizeKb })))
+      }
+      if (api && action === 'read') {
+        const selected = await logs.read(query.file, query.start)
+        return reply.type('text/plain; charset=utf-8').send(selected.lines.join('\n'))
+      }
+      const files = await logs.list()
+      const selected = action === 'read' && stringValue(query.file) !== ''
+        ? await logs.read(query.file, query.start)
+        : undefined
+      const message = logMessage(query)
+      return reply.type('text/html; charset=utf-8').send(renderAdminLogs({
+        adminBase,
+        files,
+        csrfToken: csrfToken(config, tokenFor(request), 'log-mutate'),
+        ...(selected === undefined ? {} : { selected }),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch (error) {
+      if (error instanceof LogFileError) {
+        if (api) return reply.code(error.code === 'not-found' ? 404 : 400).type('application/json; charset=utf-8').send(legacyJson('fail', error.message))
+        const files = await logs.list().catch(() => [])
+        return reply.code(error.code === 'not-found' ? 404 : 400).type('text/html; charset=utf-8').send(renderAdminLogs({
+          adminBase,
+          files,
+          csrfToken: csrfToken(config, tokenFor(request), 'log-mutate'),
+          message: { kind: 'error', text: error.message }
+        }))
+      }
+      if (api) return reply.code(503).type('application/json; charset=utf-8').send(legacyJson('fail', 'The log directory is temporarily unavailable'))
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The log directory is temporarily unavailable.'))
+    }
+  })
+
+  app.post(logUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) return reply.code(403).type('application/json; charset=utf-8').send(legacyJson('fail', 'The log request did not originate from this application'))
+    const current = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (current === null || reply.sent) return
+    if (current.role !== 0) return await reply.redirect(`${adminBase}/403/`, 302)
+    const body = objectValue(request.body)
+    const api = booleanValue(body.api)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'log-mutate')) {
+      if (api) return reply.code(403).type('application/json; charset=utf-8').send(legacyJson('fail', 'The log request could not be verified'))
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The log request could not be verified.'))
+    }
+    const action = stringValue(body.action)
+    if (action !== 'clear' && action !== 'delete') {
+      return reply.code(400).type('application/json; charset=utf-8').send(legacyJson('fail', 'Invalid parameters'))
+    }
+    try {
+      if (action === 'clear') await logs.clear(body.file)
+      else await logs.delete(body.file)
+      const message = action === 'clear' ? 'Log cleared successfully' : 'Log file deleted successfully'
+      if (api) return reply.type('application/json; charset=utf-8').send(legacyJson('ok', message))
+      return await reply.redirect(`${logUrl}?notice=${action}&success=1`, 303)
+    } catch (error) {
+      const message = error instanceof LogFileError ? error.message : 'The log action failed'
+      if (api) return reply.code(error instanceof LogFileError && error.code === 'not-found' ? 404 : 400).type('application/json; charset=utf-8').send(legacyJson('fail', message))
+      return await reply.redirect(`${logUrl}?notice=${encodeURIComponent(action)}&success=0`, 303)
+    }
   })
 
   app.get(usersUrl, async (request, reply) => {
@@ -490,6 +651,7 @@ function accountLoginMessage(value: string): AdminMessage | undefined {
   if (value === 'registered') return { kind: 'success', text: 'Registration has been successful! Now you can log in' }
   if (value === 'password-reset') return { kind: 'success', text: 'Reset password has been successful! Now you can log in' }
   if (value === 'invalid-token') return { kind: 'error', text: 'The token is invalid' }
+  if (value === 'profile-updated') return { kind: 'success', text: 'The user details have been successfully updated. Please re-login' }
   return undefined
 }
 
@@ -539,6 +701,22 @@ function userFormValues(body: Record<string, unknown>): Readonly<Record<string, 
     role: stringValue(body.role).slice(0, 1),
     status: stringValue(body.status).slice(0, 1)
   })
+}
+
+function profileFormValues(body: Record<string, unknown>): Readonly<Record<string, string>> {
+  return Object.freeze({
+    name: stringValue(body.name).slice(0, 50),
+    user: stringValue(body.user).slice(0, 50),
+    email: stringValue(body.email).slice(0, 254)
+  })
+}
+
+function logMessage(query: Record<string, unknown>): AdminMessage | undefined {
+  const notice = stringValue(query.notice)
+  if (notice !== 'clear' && notice !== 'delete') return undefined
+  const success = booleanValue(query.success)
+  if (notice === 'clear') return { kind: success ? 'success' : 'error', text: success ? 'Log cleared successfully' : 'The log failed to clear' }
+  return { kind: success ? 'success' : 'error', text: success ? 'Log file deleted successfully' : 'The log file failed to delete' }
 }
 
 function hasSameOrigin(request: FastifyRequest, config: AppConfig): boolean {

@@ -88,6 +88,10 @@ export type UserMutationResult =
   | Readonly<{ status: 'ok'; id: string; message: string }>
   | Readonly<{ status: 'invalid'; message: string }>
 
+export type ProfileMutationResult =
+  | Readonly<{ status: 'ok'; id: string; identityChanged: boolean; message: string }>
+  | Readonly<{ status: 'invalid'; message: string }>
+
 export type UserAdminServiceOptions = Readonly<{
   now?: () => number
   hashPassword?: (password: string) => Promise<string>
@@ -233,6 +237,39 @@ export class UserAdminService {
     return updated
       ? { status: 'ok', id: normalizedId, message: 'The username has been successfully updated. Please re-login' }
       : { status: 'invalid', message: 'The username failed to update' }
+  }
+
+  public async updateProfile(id: number | string, input: Record<string, unknown>): Promise<ProfileMutationResult> {
+    const normalizedId = userId(id)
+    if (normalizedId === null) return { status: 'invalid', message: 'The user details failed to update' }
+    const current = await this.store.getUser(normalizedId)
+    if (current === null) return { status: 'invalid', message: 'The user details failed to update' }
+
+    const fields = userFields({ ...input, role: current.role, status: current.status })
+    const error = validateFields(fields, false)
+    if (error !== null) return { status: 'invalid', message: error }
+    const conflict = await this.store.findConflict(fields.username, fields.email, normalizedId)
+    if (conflict.email) return { status: 'invalid', message: 'The email has been used by another user' }
+    if (conflict.username) return { status: 'invalid', message: 'The username has been used by another user' }
+
+    const passwordHash = fields.password === '' ? undefined : await this.hashPassword(fields.password)
+    const updated = await this.store.updateUser(normalizedId, {
+      name: fields.name,
+      username: fields.username,
+      email: fields.email,
+      role: current.role,
+      status: current.status,
+      created: 0,
+      updated: this.now(),
+      ...(passwordHash === undefined ? {} : { passwordHash })
+    })
+    if (!updated) return { status: 'invalid', message: 'The user details failed to update' }
+    return {
+      status: 'ok',
+      id: normalizedId,
+      identityChanged: fields.username !== current.username || fields.email !== current.email,
+      message: 'The user details have been successfully updated'
+    }
   }
 }
 
