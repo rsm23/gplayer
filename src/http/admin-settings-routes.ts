@@ -35,6 +35,7 @@ export async function registerAdminSettingsRoutes(
   const miscUrl = `${adminBase}/settings/misc/`
   const adsUrl = `${adminBase}/settings/ads/`
   const resetUrl = `${adminBase}/settings/reset/`
+  const syncUrl = `${adminBase}/settings/sync/`
   const vastCreateUrl = `${adsUrl}vast/create/`
   const vastDeleteUrl = `${adsUrl}vast/delete/`
   const settingsAjaxUrl = `${adminBase}/ajax/settings/`
@@ -485,6 +486,25 @@ export async function registerAdminSettingsRoutes(
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings could not be reset.'))
+    }
+  })
+
+  app.post(syncUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    let user: AuthUser | null
+    try {
+      user = await auth.authenticate(tokenFor(request), request.headers['user-agent'] ?? '')
+    } catch {
+      return reply.code(503).send({ status: 'fail', message: 'The authentication database is temporarily unavailable.' })
+    }
+    if (user === null || user.role !== 0) return reply.send({ status: 'fail', message: 'Access denied' })
+
+    try {
+      const result = await settings.synchronizeCacheMode(objectValue(request.body))
+      if (result.status === 'invalid') return reply.code(400).send({ status: 'fail', message: result.message })
+      return reply.send({ status: 'ok', message: result.message })
+    } catch {
+      return reply.code(503).send({ status: 'fail', message: 'The load balancer settings could not be synchronized.' })
     }
   })
 

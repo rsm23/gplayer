@@ -193,6 +193,23 @@ describe('settings administration service', () => {
     expect(store.values).toEqual({ '': 'reserved' })
   })
 
+  it('synchronizes only an allowlisted legacy cache mode', async () => {
+    const store = new MemorySettingsStore({ cache_mode: 'php', timezone: 'UTC' })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.synchronizeCacheMode({ cache_mode: 'shell', ignored: 'value' })).resolves.toEqual({
+      status: 'invalid',
+      message: 'The cache mode is invalid'
+    })
+    expect(store.values.cache_mode).toBe('php')
+
+    await expect(settings.synchronizeCacheMode({ cache_mode: 'nginx', ignored: 'value' })).resolves.toEqual({
+      status: 'ok',
+      message: 'Load balancer server config updated successfully.'
+    })
+    expect(store.writes.at(-1)).toEqual([{ key: 'cache_mode', value: 'nginx' }])
+    expect(store.values).toEqual({ cache_mode: 'nginx', timezone: 'UTC' })
+  })
+
   it('preserves the twelve-key public settings contract and validates ownership inputs', async () => {
     const store = new MemorySettingsStore({ anonymous_generator: 'true', public_video_user: '1', contact_page_link: 'https://example.test/contact' })
     const settings = new SettingsAdminService(store)
@@ -1120,6 +1137,43 @@ describe('general settings administration routes', () => {
 
     const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
     expect(updated.body).toContain('The Reset Settings have been successfully reset')
+  })
+
+  it('preserves the authenticated load-balancer Sync Settings JSON contract', async () => {
+    const store = new MemorySettingsStore({ cache_mode: 'php' })
+    app = await createApp(store)
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/sync/',
+      headers: { 'user-agent': userAgent, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'cache_mode=nginx'
+    })
+    expect(denied.statusCode).toBe(200)
+    expect(denied.json()).toEqual({ status: 'fail', message: 'Access denied' })
+    expect(store.values.cache_mode).toBe('php')
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/sync/',
+      headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'cache_mode=invalid'
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json()).toEqual({ status: 'fail', message: 'The cache mode is invalid' })
+    expect(store.values.cache_mode).toBe('php')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/sync/',
+      headers: { authorization: `Bearer ${token}`, 'user-agent': userAgent, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'cache_mode=litespeed'
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ status: 'ok', message: 'Load balancer server config updated successfully.' })
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(store.values.cache_mode).toBe('litespeed')
+    expect(store.writes.at(-1)).toEqual([{ key: 'cache_mode', value: 'litespeed' }])
   })
 
   it('renders and updates every Misc Settings field without exposing proxy credentials', async () => {

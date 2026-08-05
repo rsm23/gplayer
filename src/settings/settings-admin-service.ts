@@ -519,6 +519,13 @@ export class SettingsAdminService {
     return Object.freeze({ status: 'ok', message: 'The Reset Settings have been successfully reset' })
   }
 
+  public async synchronizeCacheMode(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const cacheMode = scalarValue(input.cache_mode)
+    if (!isCacheMode(cacheMode)) return invalid('The cache mode is invalid')
+    await this.store.upsertMany([{ key: 'cache_mode', value: cacheMode }])
+    return Object.freeze({ status: 'ok', message: 'Load balancer server config updated successfully.' })
+  }
+
   public async saveAds(input: Record<string, unknown>): Promise<SettingsMutationResult> {
     const entries: SettingEntry[] = []
     for (const key of ADS_BOOLEAN_KEYS) {
