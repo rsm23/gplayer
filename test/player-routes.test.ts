@@ -230,7 +230,7 @@ describe('player HTTP routes', () => {
     expect(redirectMedia(retainedSqidRequest.headers.location)).toMatchObject({ uid: 'ExistingSqid' })
   })
 
-  it('captures generated public videos under the configured account without changing the response contract', async () => {
+  it('defers public video persistence until successful source playback', async () => {
     const capturePublicVideo = vi.fn(async () => ({ status: 'ok', message: 'saved', id: '44' }))
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
       settings: new SettingsAdminService({
@@ -250,22 +250,16 @@ describe('player HTTP routes', () => {
     })
 
     expect(response.json()).toMatchObject({ status: 'ok', message: '', result: { embed_url: expect.any(String) } })
-    expect(capturePublicVideo).toHaveBeenCalledWith({
-      host: 'direct',
-      id: 'https://cdn.example/public.mp4',
-      poster: '',
-      sub: ['https://captions.example/en.vtt'],
-      lang: ['English']
-    }, '7')
+    expect(capturePublicVideo).not.toHaveBeenCalled()
 
-    capturePublicVideo.mockRejectedValueOnce(new Error('database unavailable'))
-    const isolatedFailure = await app.inject({
+    const secondGeneration = await app.inject({
       method: 'POST',
       url: '/ajax/public/',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'action=createPlayer&id=https%3A%2F%2Fcdn.example%2Fstill-plays.mp4'
     })
-    expect(isolatedFailure.json()).toMatchObject({ status: 'ok', message: '', result: { embed_url: expect.any(String) } })
+    expect(secondGeneration.json()).toMatchObject({ status: 'ok', message: '', result: { embed_url: expect.any(String) } })
+    expect(capturePublicVideo).not.toHaveBeenCalled()
   })
 
   it('captures signed playback views through both modern and legacy AJAX contracts', async () => {

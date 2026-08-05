@@ -351,6 +351,17 @@ export async function buildApp(
     return await authService.authenticate(token, request.headers['user-agent'] ?? '')
   }
   const sqids = new Sqids()
+  const decodedPublicUserId = (value: string | undefined): string | undefined => {
+    if (value === undefined || /^\d+$/u.test(value)) return undefined
+    try {
+      const [decoded] = sqids.decode(value)
+      return typeof decoded === 'number' && Number.isSafeInteger(decoded) && decoded >= 1 && decoded <= 4_294_967_295
+        ? String(decoded)
+        : undefined
+    } catch {
+      return undefined
+    }
+  }
   const isAuthenticated = async (request: FastifyRequest): Promise<boolean> => (await authenticateRequest(request))?.status === 1
   const isAdmin = async (request: FastifyRequest): Promise<boolean> => {
     const user = await authenticateRequest(request)
@@ -520,7 +531,6 @@ export async function buildApp(
       const general = await settingsRuntime.general(config.baseUrl)
       return String(general.recaptcha_site_key)
     },
-    capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId),
     captureView: async (input) => await viewCounterRuntime.capture(input),
     ...(sourceApiRuntime.invalidateSource === undefined ? {} : { invalidateSource: sourceApiRuntime.invalidateSource }),
     usernameExists: async (username, request) => {
@@ -547,11 +557,17 @@ export async function buildApp(
     supportedHosts,
     ...(selectDeliveryBaseUrl === undefined ? {} : { selectDeliveryBaseUrl }),
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
-    capturePublicVideo: async (media, result) => {
+    capturePublicVideo: async (media, result, request) => {
       const settings = await loadPublicSettings()
-      if (settings.save_public_video && settings.public_video_user !== '') {
-        await videosRuntime.capturePublicVideo(media, settings.public_video_user, result)
-      }
+      if (!settings.save_public_video) return
+      const linkedOwnerId = decodedPublicUserId(media.uid)
+      const user = linkedOwnerId === undefined
+        ? await authenticateRequest(request).catch(() => null)
+        : null
+      const ownerId = linkedOwnerId
+        ?? (user !== null && user.status === 1 ? String(user.id) : undefined)
+        ?? (settings.public_video_user.trim() || '1')
+      await videosRuntime.capturePublicVideo(media, ownerId, result)
     },
     filterResponse: async (response, query) => {
       const base = sourceApiRuntime.filterResponse === undefined ? response : await sourceApiRuntime.filterResponse(response, query)

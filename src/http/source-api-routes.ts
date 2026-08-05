@@ -57,7 +57,7 @@ export type SourceApiRouteOptions = Readonly<{
   loadGeneralSettings?: GeneralSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   filterResponse?: (response: unknown, query: Readonly<Record<string, unknown>>) => Promise<unknown>
-  capturePublicVideo?: (media: PlayerMediaQuery, result: MediaResult) => Promise<unknown>
+  capturePublicVideo?: (media: PlayerMediaQuery, result: MediaResult, request: FastifyRequest) => Promise<unknown>
   providerContexts?: ProviderStreamContextRegistry
   selectDeliveryBaseUrl?: DeliveryBaseUrlSelector
 }>
@@ -139,7 +139,7 @@ export async function registerSourceApiRoutes(
     const policy = accessPolicyFromMisc(misc)
     const resolvedTitle = result.title.length > 0 ? result.title : titleFromMedia(playableMedia)
     if (policy.isTitleBlacklisted(resolvedTitle)) return plaintextFailure(reply)
-    await options.capturePublicVideo?.(playableMedia, result).catch(() => undefined)
+    await options.capturePublicVideo?.(playableMedia, result, request).catch(() => undefined)
     result = Object.freeze({ ...result, sources: filterSourcesByResolution(result.sources, misc.disable_resolution) })
 
     const [player, general] = await Promise.all([

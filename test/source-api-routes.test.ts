@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
+import { AuthService, type AuthStore, type AuthUser } from '../src/auth/auth-service.js'
 import { loadConfig } from '../src/config.js'
 import { buildPlayerQuery, type PlayerMediaQuery } from '../src/core/player-query.js'
 import { emptyMediaResult, type MediaResult } from '../src/core/source-resolver.js'
@@ -417,10 +418,28 @@ describe('legacy player source API routes', () => {
     expect(JSON.stringify(tracks)).not.toContain('subtitle-secret')
   })
 
-  it('captures successfully played public media under the configured account', async () => {
+  it('captures successfully played public media under linked, authenticated, or configured ownership', async () => {
     await app.close()
+    const member: AuthUser = Object.freeze({
+      id: 7,
+      username: 'source-owner',
+      email: 'source-owner@example.test',
+      name: 'Source owner',
+      role: 1,
+      status: 1,
+      created: 1,
+      updated: 1
+    })
+    const authStore: AuthStore = {
+      findUserByIdentifier: async () => null,
+      findActiveSession: async (token, userAgent) => token === 'source-owner-session' && userAgent === 'Source owner browser' ? member : null,
+      createSession: async () => {},
+      recordFailedLogin: async () => {},
+      revokeSession: async () => true
+    }
     const capturePublicVideo = vi.fn(async () => ({ status: 'ok', message: 'saved', id: '55' }))
     app = await buildApp(config, {
+      auth: new AuthService(authStore),
       sourceApi: { resolve, supportedHosts: new Set(['direct']) },
       settings: new SettingsAdminService({
         getAll: async () => ({ save_public_video: 'true', public_video_user: '9' }),
@@ -428,20 +447,63 @@ describe('legacy player source API routes', () => {
       }),
       videos: { capturePublicVideo, savedQuery: async () => null } as never
     })
-    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/captured.mp4' })
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api?p=${request.passwordToken}`,
-      headers: { 'content-type': 'text/plain' },
-      payload: request.body
-    })
+    const play = async (media: PlayerMediaQuery, authenticated = false) => {
+      const request = authenticatedRequest(media)
+      return await app.inject({
+        method: 'POST',
+        url: `/api?p=${request.passwordToken}`,
+        headers: {
+          'content-type': 'text/plain',
+          ...(authenticated ? { authorization: 'Bearer source-owner-session', 'user-agent': 'Source owner browser' } : {})
+        },
+        payload: request.body
+      })
+    }
 
-    expect(response.headers['content-type']).toContain('text/plain')
-    expect(capturePublicVideo).toHaveBeenCalledWith(
-      { host: 'direct', id: 'https://cdn.example.test/captured.mp4' },
+    const linked = await play({ host: 'direct', id: 'https://cdn.example.test/linked.mp4', uid: 'Jg' }, true)
+    const authenticated = await play({ host: 'direct', id: 'https://cdn.example.test/authenticated.mp4' }, true)
+    const configured = await play({ host: 'direct', id: 'https://cdn.example.test/configured.mp4' })
+    await play({ host: 'direct', id: 'https://cdn.example.test/numeric.mp4', uid: '42' }, true)
+    await play({ host: 'direct', id: 'https://cdn.example.test/malformed.mp4', uid: '42-' })
+    await play({ host: 'direct', id: 'https://cdn.example.test/overflow.mp4', uid: 'ExistingSqid' })
+
+    expect(linked.headers['content-type']).toContain('text/plain')
+    expect(authenticated.headers['content-type']).toContain('text/plain')
+    expect(configured.headers['content-type']).toContain('text/plain')
+    expect(capturePublicVideo).toHaveBeenNthCalledWith(1,
+      { host: 'direct', id: 'https://cdn.example.test/linked.mp4', uid: 'Jg' },
+      '42',
+      expect.objectContaining({ title: 'Example title', sources: expect.any(Array) })
+    )
+    expect(capturePublicVideo).toHaveBeenNthCalledWith(2,
+      { host: 'direct', id: 'https://cdn.example.test/authenticated.mp4' },
+      '7',
+      expect.objectContaining({ title: 'Example title', sources: expect.any(Array) })
+    )
+    expect(capturePublicVideo).toHaveBeenNthCalledWith(3,
+      { host: 'direct', id: 'https://cdn.example.test/configured.mp4' },
       '9',
       expect.objectContaining({ title: 'Example title', sources: expect.any(Array) })
     )
+    expect(capturePublicVideo).toHaveBeenNthCalledWith(4,
+      { host: 'direct', id: 'https://cdn.example.test/numeric.mp4', uid: '42' },
+      '7',
+      expect.any(Object)
+    )
+    expect(capturePublicVideo).toHaveBeenNthCalledWith(5,
+      { host: 'direct', id: 'https://cdn.example.test/malformed.mp4', uid: '42-' },
+      '9',
+      expect.any(Object)
+    )
+    expect(capturePublicVideo).toHaveBeenNthCalledWith(6,
+      { host: 'direct', id: 'https://cdn.example.test/overflow.mp4', uid: 'ExistingSqid' },
+      '9',
+      expect.any(Object)
+    )
+
+    capturePublicVideo.mockRejectedValueOnce(new Error('database unavailable'))
+    const isolatedFailure = await play({ host: 'direct', id: 'https://cdn.example.test/still-plays.mp4' })
+    expect(isolatedFailure.headers['content-type']).toContain('text/plain')
   })
 
   it('keeps only the signed same-origin Drive media route out of the generic proxy', async () => {

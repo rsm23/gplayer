@@ -115,7 +115,6 @@ export type PlayerRouteOptions = Readonly<{
   publicGeneratorUploads?: PublicGeneratorUploads
   publicUserUid?: (request: FastifyRequest, fallbackUserId?: string) => Promise<string | undefined>
   loadRecaptchaSiteKey?: () => Promise<string>
-  capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
   captureView?: (input: ViewCounterCapture) => Promise<string | null>
   invalidateSource?: (identity: Readonly<{ host: string; id: string }>) => Promise<boolean>
   usernameExists?: (username: string, request: FastifyRequest) => Promise<boolean>
@@ -260,9 +259,6 @@ export async function registerPlayerRoutes(
         ...(sub.length > 0 ? { sub } : {}),
         ...(lang.length > 0 ? { lang } : {})
       })
-      if (publicSettings.save_public_video && publicSettings.public_video_user !== '') {
-        await options.capturePublicVideo?.(generated.query, publicSettings.public_video_user).catch(() => undefined)
-      }
       reply.code(200)
       return {
         status: 'ok',
