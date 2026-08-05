@@ -326,7 +326,7 @@ export function renderLandingSite(html: string, site: SiteSettings): string {
   const siteSlogan = escapeHtml(site.site_slogan)
   const siteDescription = escapeHtml(site.site_description)
   const title = `${site.site_name} | ${site.site_slogan}`
-  let rendered = replaceRuntimeMarker(html, 'title', escapeHtml(title))
+  let rendered = replaceRuntimeTitle(html, escapeHtml(title))
   rendered = replaceRuntimeMarker(rendered, 'name', siteName)
   rendered = replaceRuntimeMarker(rendered, 'slogan', siteSlogan)
   rendered = replaceRuntimeMarker(rendered, 'description', siteDescription)
@@ -342,6 +342,10 @@ export function renderLandingSite(html: string, site: SiteSettings): string {
 
 export function renderLandingNavigation(html: string, navigation: PublicNavigationOptions): string {
   return html.replace('<!-- runtime-public-navigation -->', renderPublicNavigationItems(navigation))
+}
+
+function replaceRuntimeTitle(html: string, value: string): string {
+  return html.replace(/<title\s+data-runtime-site-title>[^<]*<\/title>/iu, () => `<title>${value}</title>`)
 }
 
 function replaceRuntimeMarker(html: string, marker: string, value: string): string {
