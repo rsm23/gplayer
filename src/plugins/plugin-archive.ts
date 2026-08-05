@@ -13,8 +13,11 @@ export type NodePluginManifest = Readonly<{
   name: string
   folder: string
   version: string
+  useCli: boolean
+  iconUri: string
   keepFiles: ReadonlySet<string>
   background: string | null
+  config: Readonly<Record<string, unknown>>
 }>
 
 type ArchiveEntry = Readonly<{
@@ -185,7 +188,9 @@ export function parsePluginManifest(content: Buffer): NodePluginManifest {
   const folder = manifestString(value.folder, 'folder', 50)
   const version = manifestString(value.version, 'version', 100)
   if (path.basename(folder) !== folder || !/^[a-z0-9][a-z0-9._-]*$/i.test(folder)) throw new Error('Plugin manifest folder is invalid')
-  const forbidden = new Set(['includes', 'public', 'themes', 'resources', 'vendor', 'cache', 'tmp', 'plugins'])
+  const useCli = manifestBoolean(value.use_cli)
+  const forbidden = new Set(['cache', 'includes', 'public', 'resources', 'themes', 'tmp', 'vendor'])
+  if (useCli) for (const directory of ['coverage', 'dist', 'docs', 'node_modules', 'plugins', 'src', 'test', 'tests']) forbidden.add(directory)
   if (forbidden.has(folder.toLowerCase())) throw new Error('Plugin manifest targets a protected application directory')
   const keepFiles = new Set<string>()
   if (value.keep_files !== undefined) {
@@ -193,12 +198,15 @@ export function parsePluginManifest(content: Buffer): NodePluginManifest {
     for (const item of value.keep_files) keepFiles.add(safeEntryName(manifestString(item, 'keep_files entry', 1_024)).replace(/\/$/, ''))
   }
   const config = value.config !== null && typeof value.config === 'object' && !Array.isArray(value.config) ? value.config as Record<string, unknown> : {}
+  const iconUri = optionalManifestString(config.icon_uri ?? value.icon_uri, 2_048)
   const backgroundValue = config.background_node ?? config.background
   const background = typeof backgroundValue === 'string' && backgroundValue.trim() !== ''
     ? safeEntryName(backgroundValue.trim()).replace(/\/$/, '')
     : null
-  return Object.freeze({ name, folder, version, keepFiles, background })
+  return Object.freeze({ name, folder, version, useCli, iconUri, keepFiles, background, config: Object.freeze({ ...config }) })
 }
+
+function manifestBoolean(value: unknown): boolean { return value === true || value === 1 || value === '1' || value === 'true' }
 
 function manifestString(value: unknown, field: string, maximum: number): string {
   if (typeof value !== 'string' || value.trim() === '' || value.length > maximum || /[\u0000-\u001f\u007f]/.test(value)) {
@@ -206,6 +214,8 @@ function manifestString(value: unknown, field: string, maximum: number): string 
   }
   return value.trim()
 }
+
+function optionalManifestString(value: unknown, maximum: number): string { return typeof value === 'string' && value.length <= maximum && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : '' }
 
 async function ensureDirectoryWithoutLinks(directory: string, boundary: string = directory): Promise<void> {
   const root = path.resolve(boundary)

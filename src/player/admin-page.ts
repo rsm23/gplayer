@@ -11,6 +11,8 @@ import type { SubtitleAdminRecord } from '../subtitles/subtitle-admin-service.js
 import type { StoredVideoDetail, VideoAdminRecord } from '../videos/video-admin-service.js'
 import type { DriveAccountAdminRecord } from '../drive/drive-account-admin-service.js'
 import type { DriveBackupRecord, DriveFileAdminRecord, DriveQueueRecord, DriveSharedDrive } from '../drive/drive-admin-service.js'
+import type { LoadBalancerAdminRecord } from '../load-balancers/load-balancer-admin-service.js'
+import type { PluginAdminRecord } from '../plugins/plugin-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -554,6 +556,91 @@ export function renderAdminDriveQueue(input: Readonly<{
 }>): string {
   const rows = input.queue.map((item) => `<tr><td><code>${escapeHtml(item.gdrive_id)}</code></td><td><div class="user-actions"><form action="${escapeHtml(input.adminBase)}/gdrive/backup-queue/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="copy"><input type="hidden" name="id" value="${escapeHtml(item.gdrive_id)}"><button type="submit">Copy now</button></form><form action="${escapeHtml(input.adminBase)}/gdrive/backup-queue/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${escapeHtml(item.id)}"><button class="session-revoke" type="submit">Delete</button></form></div></td></tr>`).join('')
   return adminDocument('Google Drive Backup Queue', `${adminHeader(input.adminBase, 'drive')}<main class="admin-dashboard admin-users-page admin-drive-page"><p class="eyebrow"><span></span>Google Drive</p><div class="admin-dashboard-heading"><div><h1>Backup queue.</h1><p>Inspect queued source IDs, copy them immediately, or remove stale work.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>${renderMessage(input.message)}${driveSubnav(input.adminBase, 'queue')}<section class="user-toolbar"><form action="${escapeHtml(input.adminBase)}/gdrive/backup-queue/" method="get" role="search"><label class="sr-only" for="queue-search">Search queue</label><input id="queue-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search file ID"><button type="submit">Search</button></form></section><section class="session-table-shell user-table-shell" aria-labelledby="queue-title"><div class="session-table-heading"><div><p class="panel-kicker">Pending copies</p><h2 id="queue-title">Backup queue</h2></div><a href="${escapeHtml(input.adminBase)}/gdrive/backup-queue/">Reload</a></div><div class="session-table-scroll"><table class="session-table user-table drive-queue-table"><thead><tr><th>File ID</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="2">No queued files found.</td></tr>'}</tbody></table></div></section></main>`)
+}
+
+export function renderAdminLoadBalancers(input: Readonly<{
+  adminBase: string
+  loadBalancers: readonly LoadBalancerAdminRecord[]
+  recordsTotal: number
+  search: string
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.loadBalancers.map((server) => `<tr>
+    <td><a class="video-title-link" href="${escapeHtml(input.adminBase)}/load-balancers/edit/?id=${escapeHtml(server.id)}"><strong>${escapeHtml(server.name)}</strong><span>#${escapeHtml(server.id)}</span></a></td>
+    <td><a class="video-host-link" href="${escapeHtml(server.link)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(server.link)}</strong><span>Open server ↗</span></a></td>
+    <td>${server.connections.toLocaleString('en-US')}</td><td>${server.playbacks.toLocaleString('en-US')}</td>
+    <td><form action="${escapeHtml(input.adminBase)}/load-balancers/status/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(server.id)}"><input type="hidden" name="status" value="${server.status === 1 ? '0' : '1'}"><button class="user-state user-state-${server.status}" type="submit">${server.status === 1 ? 'Active' : 'Inactive'}</button></form></td>
+    <td>${renderTimestamp(server.created, 'Not recorded')}</td><td>${renderTimestamp(server.updated, 'Not updated')}</td>
+    <td><div class="user-actions"><a href="${escapeHtml(input.adminBase)}/load-balancers/edit/?id=${escapeHtml(server.id)}">Edit</a><form action="${escapeHtml(input.adminBase)}/load-balancers/delete/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(server.id)}"><button class="session-revoke" type="submit">Delete</button></form></div></td>
+  </tr>`).join('')
+  return adminDocument('Load Balancers', `${adminHeader(input.adminBase, 'load-balancers')}
+<main class="admin-dashboard admin-users-page admin-load-balancers-page">
+  <p class="eyebrow"><span></span>Distributed delivery</p>
+  <div class="admin-dashboard-heading"><div><h1>Load balancers.</h1><p>Control active peer servers, routing exclusions, and their live connection and playback counts.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
+  ${renderMessage(input.message)}
+  <section class="user-toolbar" aria-label="Load balancer controls"><a class="hero-link-primary" href="${escapeHtml(input.adminBase)}/load-balancers/new/">Add server <span aria-hidden="true">+</span></a><form action="${escapeHtml(input.adminBase)}/load-balancers/list/" method="get" role="search"><label class="sr-only" for="load-balancer-search">Search load balancers</label><input id="load-balancer-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search name or URL"><button type="submit">Search</button></form></section>
+  <section class="session-table-shell user-table-shell" aria-labelledby="load-balancer-table-title"><div class="session-table-heading"><div><p class="panel-kicker">Peer servers</p><h2 id="load-balancer-table-title">Configured servers</h2></div><a href="${escapeHtml(input.adminBase)}/load-balancers/list/">Reload</a></div><div class="session-table-scroll"><table class="session-table user-table"><thead><tr><th>Name</th><th>URL</th><th>Connections</th><th>Playbacks</th><th>Status</th><th>Created</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="8">No load balancers found.</td></tr>'}</tbody></table></div>${input.recordsTotal > input.loadBalancers.length ? `<p class="session-table-note">Showing ${input.loadBalancers.length} of ${input.recordsTotal} records. The legacy DataTables endpoint provides complete pagination.</p>` : ''}</section>
+</main>`)
+}
+
+export function renderAdminLoadBalancerForm(input: Readonly<{
+  adminBase: string
+  csrfToken: string
+  hosts: readonly Readonly<{ value: string; label: string }>[]
+  continents: Readonly<Record<string, string>>
+  loadBalancer?: LoadBalancerAdminRecord
+  values?: Readonly<Record<string, unknown>>
+  message?: AdminMessage
+}>): string {
+  const edit = input.loadBalancer !== undefined
+  const values = input.values ?? {}
+  const selectedHosts = formArray(values.disallow_hosts, input.loadBalancer?.disallowHosts ?? [])
+  const selectedContinents = formArray(values.disallow_continent, input.loadBalancer?.disallowContinents ?? [])
+  const hostOptions = input.hosts.map((host) => `<option value="${escapeHtml(host.value)}"${selectedHosts.has(host.value) ? ' selected' : ''}>${escapeHtml(host.label)}</option>`).join('')
+  const continentOptions = Object.entries(input.continents).sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => `<option value="${escapeHtml(value)}"${selectedContinents.has(value) ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')
+  const name = escapeHtml(stringFormValue(values.name, input.loadBalancer?.name ?? ''))
+  const link = escapeHtml(stringFormValue(values.link, input.loadBalancer?.link ?? ''))
+  const status = formFlag(values.status, input.loadBalancer?.status ?? 0)
+  const action = `${input.adminBase}/load-balancers/${edit ? 'edit' : 'new'}/`
+  return adminDocument(edit ? 'Edit Load Balancer' : 'New Load Balancer', `${adminHeader(input.adminBase, 'load-balancers')}
+<main class="admin-dashboard admin-user-form-page admin-load-balancers-page">
+  <p class="eyebrow"><span></span>${edit ? 'Peer server update' : 'Peer server creation'}</p>
+  <div class="admin-dashboard-heading"><div><h1>${edit ? 'Edit load balancer.' : 'New load balancer.'}</h1><p>Configure the peer origin and choose which source hosts or visitor continents should stay on the main server.</p></div><a class="admin-back-link" href="${escapeHtml(input.adminBase)}/load-balancers/list/">Back to servers</a></div>
+  <section class="admin-user-form-shell">${renderMessage(input.message)}<form class="admin-user-form" action="${escapeHtml(action)}" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">${edit ? `<input type="hidden" name="id" value="${escapeHtml(input.loadBalancer?.id ?? '')}">` : ''}<div class="settings-grid">
+    <div class="field"><label for="load-balancer-name">Name</label><input id="load-balancer-name" name="name" type="text" maxlength="50" value="${name}" placeholder="Edge server Paris" required></div>
+    <div class="field"><label for="load-balancer-link">Homepage URL</label><input id="load-balancer-link" name="link" type="url" maxlength="263" value="${link}" placeholder="https://edge.example/" required><p class="field-hint">Use an HTTP or HTTPS origin. A trailing slash is added automatically.</p></div>
+    <label class="settings-toggle settings-wide"><span><strong>Server status</strong><small>Make this load balancer eligible for distributed delivery.</small></span><span class="settings-switch"><input type="hidden" name="status" value="0"><input id="load-balancer-status" name="status" type="checkbox" value="1"${status ? ' checked' : ''}><i aria-hidden="true"></i></span></label>
+    <div class="field"><label for="disallow-hosts">Disabled hosts</label><select class="settings-multi-select" id="disallow-hosts" name="disallow_hosts[]" multiple size="14">${hostOptions}</select><p class="field-hint">These source hosts will not be sent through this load balancer.</p></div>
+    <div class="field"><label for="disallow-continents">Disallowed continents</label><select class="settings-multi-select" id="disallow-continents" name="disallow_continent[]" multiple size="7">${continentOptions}</select><p class="field-hint">Visitors in selected continents remain on another eligible server.</p></div>
+  </div><button class="generate-button" type="submit"><span>${edit ? 'Update server' : 'Save server'}</span><span aria-hidden="true">↗</span></button></form></section>
+  ${edit ? `<section class="settings-section"><div class="settings-section-heading"><p class="panel-kicker">Current counters</p><h2>Server activity</h2><p>Reported by the portable Node background worker.</p></div><div class="admin-status-grid"><article><span>Connections</span><strong>${input.loadBalancer?.connections.toLocaleString('en-US')}</strong></article><article><span>Playbacks</span><strong>${input.loadBalancer?.playbacks.toLocaleString('en-US')}</strong></article><article><span>Origin</span><strong><a href="${escapeHtml(input.loadBalancer?.link ?? '')}" target="_blank" rel="noopener noreferrer">Open server ↗</a></strong></article></div></section>` : ''}
+</main>`)
+}
+
+export function renderAdminPlugins(input: Readonly<{
+  adminBase: string
+  plugins: readonly PluginAdminRecord[]
+  recordsTotal: number
+  search: string
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.plugins.map((plugin) => `<tr>
+    <td><strong>${escapeHtml(plugin.name)}</strong><span class="user-email-mobile">${escapeHtml(plugin.folder)}</span></td>
+    <td><form action="${escapeHtml(input.adminBase)}/plugins/status/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(plugin.id)}"><input type="hidden" name="status" value="${plugin.status === 1 ? '0' : '1'}"><button class="user-state user-state-${plugin.status}" type="submit">${plugin.status === 1 ? 'Active' : 'Inactive'}</button></form></td>
+    <td>${renderTimestamp(plugin.created, 'Not recorded')}</td><td>${renderTimestamp(plugin.updated, 'Not updated')}</td>
+    <td><form action="${escapeHtml(input.adminBase)}/plugins/uninstall/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(plugin.id)}"><button class="session-revoke" type="submit">Uninstall</button></form></td>
+  </tr>`).join('')
+  return adminDocument('Plugins', `${adminHeader(input.adminBase, 'plugins')}
+<main class="admin-dashboard admin-users-page admin-plugins-page">
+  <p class="eyebrow"><span></span>Runtime extensions</p>
+  <div class="admin-dashboard-heading"><div><h1>Plugins.</h1><p>Install validated Node plugin packages and control their managed background lifecycle.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
+  ${renderMessage(input.message)}
+  <section class="settings-section" aria-labelledby="plugin-install-title"><div class="settings-section-heading"><p class="panel-kicker">Install or upgrade</p><h2 id="plugin-install-title">Plugin package</h2><p>Upload a ZIP with a root plugin.json. Packages are checksum validated and confined to their approved package directory.</p></div><form class="settings-grid" action="${escapeHtml(input.adminBase)}/plugins/install/" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="redirect" value="1"><div class="field"><label for="pluginZipFile">Plugin installation file</label><input id="pluginZipFile" name="pluginZipFile" type="file" accept=".zip,application/zip" required><p class="field-hint">Maximum 100 MiB compressed and 100 MiB extracted.</p></div><button class="generate-button" type="submit"><span>Install plugin</span><span aria-hidden="true">↗</span></button></form></section>
+  <section class="user-toolbar" aria-label="Plugin controls"><form action="${escapeHtml(input.adminBase)}/plugins/list/" method="get" role="search"><label class="sr-only" for="plugin-search">Search plugins</label><input id="plugin-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search plugin name"><button type="submit">Search</button></form></section>
+  <section class="session-table-shell user-table-shell" aria-labelledby="plugin-table-title"><div class="session-table-heading"><div><p class="panel-kicker">Installed packages</p><h2 id="plugin-table-title">Plugin list</h2></div><a href="${escapeHtml(input.adminBase)}/plugins/list/">Reload</a></div><div class="session-table-scroll"><table class="session-table user-table"><thead><tr><th>Name</th><th>Status</th><th>Created</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="5">No plugins installed.</td></tr>'}</tbody></table></div>${input.recordsTotal > input.plugins.length ? `<p class="session-table-note">Showing ${input.plugins.length} of ${input.recordsTotal} records.</p>` : ''}</section>
+</main>`)
 }
 
 export function renderAdminGeneralSettings(input: Readonly<{
@@ -1246,13 +1333,28 @@ function renderTimestamp(value: number, fallback: string): string {
   return `<time datetime="${iso}">${iso.slice(0, 16).replace('T', ' ')} UTC</time>`
 }
 
-function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles' | 'drive', isAdmin = true): string {
+function formArray(value: unknown, fallback: readonly string[]): ReadonlySet<string> {
+  if (value === undefined) return new Set(fallback)
+  const values = Array.isArray(value) ? value : [value]
+  return new Set(values.filter((item): item is string => typeof item === 'string' && item !== ''))
+}
+
+function stringFormValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function formFlag(value: unknown, fallback: number): boolean {
+  if (value === undefined) return fallback === 1
+  return (Array.isArray(value) ? value : [value]).some((item) => item === '1' || item === 1 || item === true || item === 'true' || item === 'on')
+}
+
+function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles' | 'drive' | 'load-balancers' | 'plugins', isAdmin = true): string {
   return `<header class="admin-bar">
   <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
     <span>G<span>PLAYER</span><small>NODE</small></span>
   </a>
-  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'drive' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/">Drive</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
+  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'drive' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/">Drive</a><a${current === 'load-balancers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/load-balancers/list/">Servers</a><a${current === 'plugins' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/plugins/list/">Plugins</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
   <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
 </header>`
 }

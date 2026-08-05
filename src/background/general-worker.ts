@@ -2,6 +2,7 @@ import path from 'node:path'
 import { lstat, mkdir, readdir, rm, stat, statfs } from 'node:fs/promises'
 import type { ProxyMaintenanceWorker } from './proxy-maintenance-worker.js'
 import type { PluginMaintenanceWorker } from '../plugins/plugin-maintenance-worker.js'
+import type { ActiveConnectionCounter } from './active-connections.js'
 
 const TEN_GIBIBYTES = 10 * 1_024 * 1_024 * 1_024
 
@@ -15,6 +16,7 @@ export interface LoadBalancerHealthProbe {
 export interface GeneralWorkerStore {
   deleteExpiredSources(now: number): Promise<number>
   normalizeSubtitleLanguages(): Promise<number>
+  saveActiveConnections(baseUrl: string, connections: number): Promise<void>
   listActiveLoadBalancers(baseUrl: string): Promise<readonly ActiveLoadBalancer[]>
   listManagedSubtitles(host: string, afterId: string, limit: number): Promise<readonly ManagedSubtitle[]>
   deleteManagedSubtitle(id: string, host: string): Promise<boolean>
@@ -38,6 +40,7 @@ export type GeneralWorkerResult = Readonly<{
   pluginsFailed: number
   pluginBackgroundsRunning: number
   phpPluginBackgroundsUnsupported: number
+  activeConnections: number | null
 }>
 
 export class GeneralWorker {
@@ -60,6 +63,7 @@ export class GeneralWorker {
       healthProbe?: LoadBalancerHealthProbe
       proxyMaintenance?: Pick<ProxyMaintenanceWorker, 'runOnce'>
       pluginMaintenance?: Pick<PluginMaintenanceWorker, 'runOnce'>
+      activeConnectionCounter?: ActiveConnectionCounter
       now?: () => number
       freeSpace?: (target: string) => Promise<number>
       batchSize?: number
@@ -78,6 +82,7 @@ export class GeneralWorker {
 
   public async runOnce(): Promise<GeneralWorkerResult> {
     const now = this.now()
+    const activeConnections = await this.recordActiveConnections()
     const expiredSources = await this.store.deleteExpiredSources(now)
     const normalizedSubtitles = await this.store.normalizeSubtitleLanguages()
     const lowSpace = await this.freeSpace(this.options.cacheRoot).then((bytes) => bytes < TEN_GIBIBYTES).catch(() => false)
@@ -119,8 +124,17 @@ export class GeneralWorker {
       pluginsSynchronized: plugins?.synchronized ?? 0,
       pluginsFailed: plugins?.failed ?? 0,
       pluginBackgroundsRunning: plugins?.backgrounds.running ?? 0,
-      phpPluginBackgroundsUnsupported: plugins?.backgrounds.unsupportedPhp ?? 0
+      phpPluginBackgroundsUnsupported: plugins?.backgrounds.unsupportedPhp ?? 0,
+      activeConnections
     })
+  }
+
+  private async recordActiveConnections(): Promise<number | null> {
+    if (this.options.activeConnectionCounter === undefined) return null
+    const count = await this.options.activeConnectionCounter.count().catch(() => null)
+    if (count === null || !Number.isSafeInteger(count) || count < 0) return null
+    await this.store.saveActiveConnections(this.options.baseUrl.toString(), count)
+    return count
   }
 
   private async checkLoadBalancers(now: number): Promise<Readonly<{ checked: number; failed: number }>> {

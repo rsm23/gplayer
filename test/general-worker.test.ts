@@ -5,13 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GeneralWorker, type ActiveLoadBalancer, type GeneralWorkerStore, type ManagedSubtitle } from '../src/background/general-worker.js'
 import { RemoteLoadBalancerHealthProbe } from '../src/background/load-balancer-health-probe.js'
 import { MySqlGeneralWorkerStore } from '../src/background/mysql-general-worker-store.js'
+import { countLinuxEstablished, countNetstatEstablished } from '../src/background/active-connections.js'
 
 class MemoryGeneralStore implements GeneralWorkerStore {
   public rows: ManagedSubtitle[] = []
   public loadBalancers: ActiveLoadBalancer[] = []
   public deleted: string[] = []
+  public activeConnections: Array<Readonly<{ baseUrl: string; count: number }>> = []
   public async deleteExpiredSources(): Promise<number> { return 4 }
   public async normalizeSubtitleLanguages(): Promise<number> { return 2 }
+  public async saveActiveConnections(baseUrl: string, count: number): Promise<void> { this.activeConnections.push({ baseUrl, count }) }
   public async listActiveLoadBalancers(): Promise<readonly ActiveLoadBalancer[]> { return this.loadBalancers }
   public async listManagedSubtitles(_host: string, afterId: string, limit: number): Promise<readonly ManagedSubtitle[]> {
     return this.rows.filter((row) => Number(row.id) > Number(afterId)).slice(0, limit)
@@ -83,7 +86,8 @@ describe('general maintenance worker', () => {
       pluginsSynchronized: 0,
       pluginsFailed: 0,
       pluginBackgroundsRunning: 0,
-      phpPluginBackgroundsUnsupported: 0
+      phpPluginBackgroundsUnsupported: 0,
+      activeConnections: null
     })
     expect(store.deleted).toEqual(['2', '3', '4'])
     await expect(readFile(path.join(subtitlesRoot, 'kept.vtt'), 'utf8')).resolves.toBe('WEBVTT')
@@ -146,6 +150,30 @@ describe('general maintenance worker', () => {
     await expect(worker.runOnce()).resolves.toMatchObject({ loadBalancersChecked: 2, loadBalancersFailed: 2 })
     expect(status).toHaveBeenCalledTimes(4)
   })
+
+  it('records a portable system connection count under the current server scope', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'gplayer-general-connections-'))
+    const store = new MemoryGeneralStore()
+    const worker = new GeneralWorker(store, {
+      baseUrl: new URL('https://player.example/'),
+      cacheRoot: path.join(root, 'cache'),
+      temporaryRoot: path.join(root, 'tmp'),
+      uploadsRoot: path.join(root, 'uploads'),
+      loadCacheMaxAge: async () => 10_800,
+      freeSpace: async () => 20 * 1_024 * 1_024 * 1_024,
+      activeConnectionCounter: { count: async () => 12 }
+    })
+
+    await expect(worker.runOnce()).resolves.toMatchObject({ activeConnections: 12 })
+    expect(store.activeConnections).toEqual([{ baseUrl: 'https://player.example/', count: 12 }])
+  })
+})
+
+describe('active connection accounting', () => {
+  it('counts Linux TCP state 01 and portable netstat ESTABLISHED rows', () => {
+    expect(countLinuxEstablished('  sl  local_address rem_address   st\n   0: 0100007F:0050 00000000:0000 0A\n   1: 0100007F:0050 0100007F:1234 01\n   2: 0100007F:0050 0100007F:1235 01')).toBe(2)
+    expect(countNetstatEstablished('tcp4  0  0  127.0.0.1.80  127.0.0.1.1 ESTABLISHED\r\nTCP 10.0.0.1:443 10.0.0.2:2 ESTABLISHED\r\nTCP 0.0.0.0:80 LISTENING')).toBe(2)
+  })
 })
 
 describe('load-balancer health transport', () => {
@@ -199,6 +227,7 @@ describe('MySQL general maintenance store', () => {
       proxies: ['198.51.100.8:8080', '198.51.100.9:443,https']
     })
     await store.saveProxyList(['198.51.100.8:8080'])
+    await store.saveActiveConnections('https://player.example/', 17)
 
     expect(writes[0]).toEqual(['DELETE FROM `tb_videos_sources` WHERE `expired` <= ?', [1_700_000_000]])
     expect(writes[1]).toEqual(['UPDATE `tb_subtitle_manager` SET `language` = ? WHERE `language` = ?', ['Unknown CC', '']])
@@ -215,6 +244,14 @@ describe('MySQL general maintenance store', () => {
     expect(writes[3]).toEqual([
       'INSERT INTO `tb_settings` (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
       ['proxy_list', '198.51.100.8:8080']
+    ])
+    expect(reads[3]).toEqual([
+      'SELECT `id`, `link` FROM `tb_loadbalancers` WHERE `link` = ? LIMIT 1',
+      ['https://player.example/']
+    ])
+    expect(writes[4]).toEqual([
+      'INSERT INTO `tb_settings` (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+      ['active_connections_8', '17']
     ])
     expect([...reads, ...writes].every(([sql]) => !sql.includes('player.example'))).toBe(true)
   })

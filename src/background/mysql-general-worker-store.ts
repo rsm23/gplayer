@@ -20,6 +20,19 @@ export class MySqlGeneralWorkerStore implements GeneralWorkerStore, ProxyMainten
     return result.affectedRows
   }
 
+  public async saveActiveConnections(baseUrl: string, connections: number): Promise<void> {
+    const rows = await this.database.read<LoadBalancerRow[]>(
+      'SELECT `id`, `link` FROM `tb_loadbalancers` WHERE `link` = ? LIMIT 1',
+      [baseUrl]
+    )
+    const id = rows[0]?.id
+    const key = id === undefined ? 'active_connections' : `active_connections_${String(id)}`
+    await this.database.write(
+      'INSERT INTO `tb_settings` (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+      [key, String(connections)]
+    )
+  }
+
   public async listActiveLoadBalancers(baseUrl: string): Promise<readonly ActiveLoadBalancer[]> {
     const rows = await this.database.read<LoadBalancerRow[]>(
       'SELECT `id`, `link` FROM `tb_loadbalancers` WHERE `status` = ? AND `link` <> ? ORDER BY `id` ASC',

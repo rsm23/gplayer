@@ -34,7 +34,7 @@ describe('Node plugin archive', () => {
       'state.json': '{"source":"upgrade"}'
     }, true)
     const archive = PluginArchive.fromBuffer(upgrade)
-    expect(archive.manifest).toMatchObject({ name: 'Sample', folder: 'sample', version: '2.0.0', background: 'background.mjs' })
+    expect(archive.manifest).toMatchObject({ name: 'Sample', folder: 'sample', version: '2.0.0', useCli: false, background: 'background.mjs' })
     await archive.extract(destination, true, root)
 
     await expect(readFile(path.join(destination, 'state.json'), 'utf8')).resolves.toBe('{"local":true}')
@@ -113,7 +113,7 @@ describe('plugin maintenance worker', () => {
     root = await mkdtemp(path.join(tmpdir(), 'gplayer-plugin-retain-'))
     await mkdir(path.join(root, 'sample'), { recursive: true })
     await writeFile(path.join(root, 'sample/keep.txt'), 'preserved')
-    const records = [{ id: '7', name: 'Sample', folder: 'sample/', active: true }]
+    const records = [{ id: '7', name: 'Sample', folder: 'plugins/sample/', active: true }]
     const store = { listPlugins: vi.fn(async () => records) }
     const backgrounds = { reconcile: vi.fn(async () => ({ started: 0, stopped: 0, running: 0, unsupportedPhp: 0, invalid: 1 })) }
     const failedClient = { ping: vi.fn(async () => true), download: vi.fn(async () => Buffer.from('not-a-zip')) }
@@ -158,10 +158,34 @@ describe('Node plugin background lifecycle', () => {
     await manager.close()
   })
 
+  it('restarts an active Node background when its module content changes at the same path', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'gplayer-plugin-background-restart-'))
+    await mkdir(path.join(root, 'node-plugin'), { recursive: true })
+    await writeFile(path.join(root, 'node-plugin/plugin.json'), JSON.stringify({ name: 'Node', folder: 'node-plugin', version: '1', config: { background_node: 'background.mjs' } }))
+    const entry = path.join(root, 'node-plugin/background.mjs')
+    await writeFile(entry, 'export default async function () { return 1 }')
+    const workers: Array<{ once: ReturnType<typeof vi.fn>; terminate: ReturnType<typeof vi.fn> }> = []
+    const manager = new PluginBackgroundManager(root, { workerFactory: () => {
+      const worker = { once: vi.fn(), terminate: vi.fn(async () => 0) }
+      workers.push(worker)
+      return worker as never
+    } })
+    const records = [{ id: '1', name: 'Node', folder: 'plugins/node-plugin/', active: true }]
+
+    await expect(manager.reconcile(records)).resolves.toEqual({ started: 1, stopped: 0, running: 1, unsupportedPhp: 0, invalid: 0 })
+    await writeFile(entry, 'export default async function () { return 2 }')
+    await expect(manager.reconcile(records)).resolves.toEqual({ started: 1, stopped: 1, running: 1, unsupportedPhp: 0, invalid: 0 })
+    expect(workers).toHaveLength(2)
+    expect(workers[0]?.terminate).toHaveBeenCalledOnce()
+    await manager.close()
+  })
+
   it('rejects stored folders outside the dedicated plugins root', () => {
     expect(() => safePluginDirectory('/srv/app/plugins', '../outside')).toThrow('invalid')
     expect(() => safePluginDirectory('/srv/app/plugins', 'public/evil')).toThrow('outside')
     expect(safePluginDirectory('/srv/app/plugins', 'plugins/valid-one/')).toBe('/srv/app/plugins/valid-one')
+    expect(safePluginDirectory('/srv/app/plugins', 'valid-cli/')).toBe('/srv/app/valid-cli')
+    expect(() => safePluginDirectory('/srv/app/plugins', 'src/')).toThrow('protected')
   })
 })
 

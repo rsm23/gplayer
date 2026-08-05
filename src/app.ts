@@ -26,11 +26,14 @@ import { FileSystemSiteAssetManager, type SiteAssetManager } from './settings/si
 import { FileSystemVastAssetManager, type VastAssetManager } from './settings/vast-assets-service.js'
 import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/source-api-routes.js'
 import { registerStreamingRoutes } from './http/streaming-routes.js'
+import { registerLoadBalancerAdminRoutes } from './http/load-balancer-admin-routes.js'
+import { registerPluginAdminRoutes } from './http/plugin-admin-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
 import { publicErrors, renderPublicError } from './player/public-page.js'
 import { createCountryCodeLookup, type CountryCodeLookup } from './security/geoip-country.js'
 import { ShortlinkService, type ShortlinkTransformer } from './shortlinks/shortlink-service.js'
 import type { MiscSettingsLoader } from './settings/misc-runtime.js'
+import { miscHostOptions } from './settings/misc-settings.js'
 import type { HostingSettingsLoader } from './settings/hosting-runtime.js'
 import { legacyHostingHosts } from './settings/hosting-settings.js'
 import { SubtitleAdminService } from './subtitles/subtitle-admin-service.js'
@@ -60,6 +63,9 @@ import { statfs } from 'node:fs/promises'
 import { PluginBackgroundManager } from './plugins/plugin-background-manager.js'
 import { PluginMaintenanceWorker } from './plugins/plugin-maintenance-worker.js'
 import { PluginSyncClient } from './plugins/plugin-sync-client.js'
+import { SystemActiveConnectionCounter } from './background/active-connections.js'
+import { LoadBalancerAdminService } from './load-balancers/load-balancer-admin-service.js'
+import { PluginAdminService } from './plugins/plugin-admin-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -89,6 +95,8 @@ export type AppDependencies = Readonly<{
   mediaDownloadWorker?: MediaDownloadWorker
   recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
   clearRuntimeCache?: () => boolean | Promise<boolean>
+  loadBalancers?: LoadBalancerAdminService
+  plugins?: PluginAdminService
 }>
 
 export async function buildApp(
@@ -174,6 +182,7 @@ export async function buildApp(
       new NodeProxyProbe()
     ),
     pluginMaintenance,
+    activeConnectionCounter: new SystemActiveConnectionCounter(),
     loadCacheMaxAge: async () => {
       const settings = await settingsRuntime.general(config.baseUrl)
       const configured = Number(settings.cache_file_timeout)
@@ -308,6 +317,13 @@ export async function buildApp(
     dependencies.driveAccounts ?? authRuntime.driveAccounts,
     driveAdminRuntime
   )
+  const loadBalancerRuntime = dependencies.loadBalancers ?? new LoadBalancerAdminService(authRuntime.loadBalancerAdminStore, {
+    hosts: supportedHosts,
+    mainSite: async () => new URL(String((await settingsRuntime.general(config.baseUrl)).main_site))
+  })
+  await registerLoadBalancerAdminRoutes(app, config, authService, loadBalancerRuntime, miscHostOptions(supportedHosts))
+  const pluginAdminRuntime = dependencies.plugins ?? new PluginAdminService(authRuntime.pluginAdminStore, pluginsRoot, pluginBackgrounds)
+  await registerPluginAdminRoutes(app, config, authService, pluginAdminRuntime)
   await registerVideoAdminRoutes(
     app,
     config,

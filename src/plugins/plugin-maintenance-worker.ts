@@ -56,10 +56,12 @@ export class PluginMaintenanceWorker {
           if (!ready) await this.delay(2_000)
           const data = await this.syncClient.download(configuration.mainSite, record.id, this.timeout)
           const archive = PluginArchive.fromBuffer(data)
+          const storedAsCli = !record.folder.trim().replaceAll('\\', '/').replace(/^\/+/, '').toLowerCase().startsWith('plugins/')
+          if (archive.manifest.useCli !== storedAsCli) throw new Error('Plugin package storage mode does not match its database record')
           const destination = safePluginDirectory(this.pluginsRoot, record.folder)
           const status = await lstat(destination).catch(() => null)
           if (status !== null && (!status.isDirectory() || status.isSymbolicLink())) throw new Error('Plugin destination is not a safe directory')
-          await archive.extract(destination, status !== null, this.pluginsRoot)
+          await archive.extract(destination, status !== null, path.dirname(path.resolve(this.pluginsRoot)))
           await saveArchive(this.pluginsRoot, path.basename(destination), data)
           synchronized += 1
         } catch {

@@ -30,6 +30,10 @@ import { MySqlMediaDownloadStore } from '../background/mysql-media-download-stor
 import type { MediaDownloadStore } from '../background/media-download-worker.js'
 import { MySqlPluginMaintenanceStore } from '../plugins/mysql-plugin-maintenance-store.js'
 import type { PluginMaintenanceStore } from '../plugins/plugin-maintenance-worker.js'
+import { MySqlLoadBalancerAdminStore } from '../load-balancers/mysql-load-balancer-admin-store.js'
+import type { LoadBalancerAdminStore } from '../load-balancers/load-balancer-admin-service.js'
+import { MySqlPluginAdminStore } from '../plugins/mysql-plugin-admin-store.js'
+import type { PluginAdminStore } from '../plugins/plugin-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -47,6 +51,8 @@ export type AuthRuntime = Readonly<{
   pluginMaintenanceStore: PluginMaintenanceStore
   sourceRefreshStore: SourceRefreshStore
   mediaDownloadStore: MediaDownloadStore
+  loadBalancerAdminStore: LoadBalancerAdminStore
+  pluginAdminStore: PluginAdminStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -65,6 +71,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let pluginMaintenanceStore: MySqlPluginMaintenanceStore | undefined
   let sourceRefreshStore: MySqlSourceRefreshStore | undefined
   let mediaDownloadStore: MySqlMediaDownloadStore | undefined
+  let loadBalancerAdminStore: MySqlLoadBalancerAdminStore | undefined
+  let pluginAdminStore: MySqlPluginAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -125,6 +133,14 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentMediaDownloadStore = (): MySqlMediaDownloadStore => {
     mediaDownloadStore ??= new MySqlMediaDownloadStore(currentDatabase())
     return mediaDownloadStore
+  }
+  const currentLoadBalancerAdminStore = (): MySqlLoadBalancerAdminStore => {
+    loadBalancerAdminStore ??= new MySqlLoadBalancerAdminStore(currentDatabase())
+    return loadBalancerAdminStore
+  }
+  const currentPluginAdminStore = (): MySqlPluginAdminStore => {
+    pluginAdminStore ??= new MySqlPluginAdminStore(currentDatabase())
+    return pluginAdminStore
   }
 
   const lazyStore: AuthStore = {
@@ -220,6 +236,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const lazyGeneralWorkerStore: GeneralWorkerStore = {
     deleteExpiredSources: async (now) => await currentGeneralWorkerStore().deleteExpiredSources(now),
     normalizeSubtitleLanguages: async () => await currentGeneralWorkerStore().normalizeSubtitleLanguages(),
+    saveActiveConnections: async (baseUrl, connections) => await currentGeneralWorkerStore().saveActiveConnections(baseUrl, connections),
     listActiveLoadBalancers: async (baseUrl) => await currentGeneralWorkerStore().listActiveLoadBalancers(baseUrl),
     listManagedSubtitles: async (host, afterId, limit) => await currentGeneralWorkerStore().listManagedSubtitles(host, afterId, limit),
     deleteManagedSubtitle: async (id, host) => await currentGeneralWorkerStore().deleteManagedSubtitle(id, host)
@@ -243,6 +260,25 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     currentServerId: async (baseUrl) => await currentMediaDownloadStore().currentServerId(baseUrl),
     listCandidates: async (afterId, limit, serverId) => await currentMediaDownloadStore().listCandidates(afterId, limit, serverId)
   }
+  const lazyLoadBalancerAdminStore: LoadBalancerAdminStore = {
+    listLoadBalancers: async (query) => await currentLoadBalancerAdminStore().listLoadBalancers(query),
+    getLoadBalancer: async (id) => await currentLoadBalancerAdminStore().getLoadBalancer(id),
+    linkExists: async (link, excludeId) => await currentLoadBalancerAdminStore().linkExists(link, excludeId),
+    createLoadBalancer: async (value) => await currentLoadBalancerAdminStore().createLoadBalancer(value),
+    updateLoadBalancer: async (id, value) => await currentLoadBalancerAdminStore().updateLoadBalancer(id, value),
+    deleteLoadBalancer: async (id) => await currentLoadBalancerAdminStore().deleteLoadBalancer(id),
+    updateStatus: async (id, status, updated) => await currentLoadBalancerAdminStore().updateStatus(id, status, updated)
+  }
+  const lazyPluginAdminStore: PluginAdminStore = {
+    listPlugins: async (query) => await currentPluginAdminStore().listPlugins(query),
+    listPluginRecords: async () => await currentPluginAdminStore().listPluginRecords(),
+    getPlugin: async (id) => await currentPluginAdminStore().getPlugin(id),
+    findPlugin: async (name, folder) => await currentPluginAdminStore().findPlugin(name, folder),
+    createPlugin: async (value) => await currentPluginAdminStore().createPlugin(value),
+    updatePlugin: async (id, value) => await currentPluginAdminStore().updatePlugin(id, value),
+    updateStatus: async (id, status, updated) => await currentPluginAdminStore().updateStatus(id, status, updated),
+    deletePlugin: async (id) => await currentPluginAdminStore().deletePlugin(id)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -263,6 +299,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     proxyMaintenanceStore: lazyProxyMaintenanceStore,
     pluginMaintenanceStore: lazyPluginMaintenanceStore,
     sourceRefreshStore: lazySourceRefreshStore,
-    mediaDownloadStore: lazyMediaDownloadStore
+    mediaDownloadStore: lazyMediaDownloadStore,
+    loadBalancerAdminStore: lazyLoadBalancerAdminStore,
+    pluginAdminStore: lazyPluginAdminStore
   })
 }
