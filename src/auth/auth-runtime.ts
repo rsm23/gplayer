@@ -38,6 +38,8 @@ import { MySqlAccountLifecycleStore } from './mysql-account-lifecycle-store.js'
 import type { AccountLifecycleStore } from './account-lifecycle-service.js'
 import { MySqlDashboardAdminStore } from '../dashboard/mysql-dashboard-admin-store.js'
 import type { DashboardAdminStore } from '../dashboard/dashboard-admin-service.js'
+import { MySqlPrivateAdminStore } from '../system/mysql-private-admin-store.js'
+import type { PrivateAdminStore } from '../system/private-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -59,6 +61,7 @@ export type AuthRuntime = Readonly<{
   pluginAdminStore: PluginAdminStore
   accountLifecycleStore: AccountLifecycleStore
   dashboardStore: DashboardAdminStore
+  privateAdminStore: PrivateAdminStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -81,6 +84,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let pluginAdminStore: MySqlPluginAdminStore | undefined
   let accountLifecycleStore: MySqlAccountLifecycleStore | undefined
   let dashboardStore: MySqlDashboardAdminStore | undefined
+  let privateAdminStore: MySqlPrivateAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -157,6 +161,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentDashboardStore = (): MySqlDashboardAdminStore => {
     dashboardStore ??= new MySqlDashboardAdminStore(currentDatabase())
     return dashboardStore
+  }
+  const currentPrivateAdminStore = (): MySqlPrivateAdminStore => {
+    privateAdminStore ??= new MySqlPrivateAdminStore(currentDatabase())
+    return privateAdminStore
   }
 
   const lazyStore: AuthStore = {
@@ -313,6 +321,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     popularAsns: async (range, ownerId, start, limit) => await currentDashboardStore().popularAsns(range, ownerId, start, limit),
     serverUsage: async () => await currentDashboardStore().serverUsage()
   }
+  const lazyPrivateAdminStore: PrivateAdminStore = {
+    clearVideoSources: async (id) => await currentPrivateAdminStore().clearVideoSources(id),
+    clearLoadBalancerSources: async (link) => await currentPrivateAdminStore().clearLoadBalancerSources(link)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -337,6 +349,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     loadBalancerAdminStore: lazyLoadBalancerAdminStore,
     pluginAdminStore: lazyPluginAdminStore,
     accountLifecycleStore: lazyAccountLifecycleStore,
-    dashboardStore: lazyDashboardStore
+    dashboardStore: lazyDashboardStore,
+    privateAdminStore: lazyPrivateAdminStore
   })
 }

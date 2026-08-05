@@ -16,6 +16,7 @@ import type { LogFileRecord, LogReadResult } from '../logs/log-admin-service.js'
 import type { PluginAdminRecord } from '../plugins/plugin-admin-service.js'
 import type { PluginConfigField } from '../plugins/plugin-archive.js'
 import type { DashboardNamedAggregate, DashboardSnapshot, DashboardVideo } from '../dashboard/dashboard-admin-service.js'
+import type { RuntimeServiceStatus, SystemStatusSnapshot } from '../system/system-inspector.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -150,7 +151,7 @@ export function renderAdminResetPasswordPage(input: AccountPageInput & Readonly<
 </main>`)
 }
 
-export function renderAdminDashboard(adminBase: string, user: AuthUser, dashboard: DashboardSnapshot, timezone = 'UTC'): string {
+export function renderAdminDashboard(adminBase: string, user: AuthUser, dashboard: DashboardSnapshot, timezone = 'UTC', systemStatus?: SystemStatusSnapshot): string {
   const role = ['Admin', 'User', 'Premium'][user.role] ?? 'User'
   const metrics: Array<readonly [string, number, string]> = [
     ['Total videos', dashboard.status.total_videos, 'All saved media records'],
@@ -165,7 +166,7 @@ export function renderAdminDashboard(adminBase: string, user: AuthUser, dashboar
   const metricCards = metrics.map(([label, value, description]) => `<article><span>${escapeHtml(label)}</span><strong>${value.toLocaleString('en-US')}</strong><p>${escapeHtml(description)}</p></article>`).join('')
   const maxViews = Math.max(1, ...dashboard.views.map((row) => row.value))
   const viewBars = dashboard.views.length === 0
-    ? '<p class="dashboard-empty">No playback views were recorded during this range.</p>'
+    ? '<p class="dashboard-empty" role="listitem">No playback views were recorded during this range.</p>'
     : dashboard.views.map((row) => {
         const level = Math.max(1, Math.ceil(row.value / maxViews * 10))
         const date = dashboardDate(row.timestamp, timezone)
@@ -191,8 +192,52 @@ export function renderAdminDashboard(adminBase: string, user: AuthUser, dashboar
     ${dashboardAggregatePanel('Networks', 'Top ASNs', dashboard.asns, 'Network')}
   </div>
   ${user.role === 0 ? `<section class="dashboard-panel dashboard-server-panel" aria-labelledby="dashboard-server-title"><div class="dashboard-panel-heading"><div><p class="panel-kicker">Source distribution</p><h2 id="dashboard-server-title">Server usage</h2></div><a href="${escapeHtml(adminBase)}/load-balancers/list/">Manage servers</a></div><div class="dashboard-table-scroll" tabindex="0"><table class="dashboard-table"><thead><tr><th>Server</th><th>Cached sources</th></tr></thead><tbody>${serverRows || '<tr><td colspan="2">No servers found.</td></tr>'}</tbody></table></div></section>` : ''}
+  ${user.role === 0 && systemStatus !== undefined ? dashboardSystemStatus(systemStatus) : ''}
   <div class="admin-next-actions dashboard-actions"><a class="hero-link-primary" href="${escapeHtml(adminBase)}/videos/list/">Manage videos <span aria-hidden="true">↗</span></a><a class="admin-back-link" href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitle Manager</a>${user.role === 0 ? `<a class="admin-back-link" href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a>` : ''}</div>
 </main>`)
+}
+
+function dashboardSystemStatus(status: SystemStatusSnapshot): string {
+  const node = status.services.node
+  const services = Object.entries(status.services).map(([key, service]) => systemService(key, service)).join('')
+  return `<section class="dashboard-panel dashboard-system-panel" aria-labelledby="dashboard-system-title">
+    <div class="dashboard-panel-heading"><div><p class="panel-kicker">Node-native diagnostics</p><h2 id="dashboard-system-title">System status</h2></div><span>${escapeHtml(node?.version === undefined ? 'Node.js' : `Node.js ${node.version}`)}</span></div>
+    <div class="system-status-layout">
+      <section class="system-usage-grid" aria-label="Resource usage">
+        ${systemUsage('CPU load', status.cpu, `${status.cpu.toLocaleString('en-US')}%`, 'Normalized across logical CPUs')}
+        ${systemUsage('RAM', status.ram.percent, `${status.ram.percent.toLocaleString('en-US')}%`, `${formatSystemBytes(status.ram.used)} / ${formatSystemBytes(status.ram.total)}`)}
+        ${systemUsage('Disk', status.disk.percent, `${status.disk.percent.toLocaleString('en-US')}%`, `${formatSystemBytes(status.disk.used)} / ${formatSystemBytes(status.disk.total)}`)}
+      </section>
+      <section class="system-service-grid" aria-label="Runtime services">${services}</section>
+    </div>
+    <div class="system-status-footer"><span><strong>OS</strong>${escapeHtml(status.os)}</span><span><strong>Uptime</strong>${escapeHtml(formatUptime(status.uptime))}</span><span><strong>Runtime</strong>Node.js only · PHP not used</span></div>
+  </section>`
+}
+
+function systemUsage(label: string, percent: number, value: string, description: string): string {
+  const level = Math.max(0, Math.min(10, Math.ceil(percent / 10)))
+  return `<article><div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div><div class="system-meter" role="meter" aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(percent)}"><i class="system-level-${level}"></i></div><p>${escapeHtml(description)}</p></article>`
+}
+
+function systemService(key: string, service: RuntimeServiceStatus): string {
+  const state = service.status ? 'Running' : key === 'php' ? 'Not used' : 'Stopped'
+  const detail = service.version === undefined ? '' : `<small>${escapeHtml(service.version)}</small>`
+  return `<article><div><strong>${escapeHtml(service.name)}</strong>${detail}</div><span class="system-service-state ${service.status ? 'is-running' : 'is-stopped'}">${escapeHtml(state)}</span></article>`
+}
+
+function formatSystemBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const
+  const exponent = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1_024)))
+  return `${Math.round(bytes / 1_024 ** exponent * 10) / 10} ${units[exponent]}`
+}
+
+function formatUptime(seconds: number): string {
+  const safe = Math.max(0, Math.trunc(seconds))
+  const days = Math.floor(safe / 86_400)
+  const hours = Math.floor(safe % 86_400 / 3_600)
+  const minutes = Math.floor(safe % 3_600 / 60)
+  return days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`
 }
 
 function dashboardVideoPanel(kicker: string, title: string, videos: readonly DashboardVideo[], adminBase: string): string {

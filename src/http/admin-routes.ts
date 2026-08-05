@@ -7,6 +7,7 @@ import type { AppConfig } from '../config.js'
 import { LogAdminService, LogFileError } from '../logs/log-admin-service.js'
 import { renderAdminDashboard, renderAdminDmca, renderAdminError, renderAdminLoginPage, renderAdminLogs, renderAdminProfile, renderAdminSessions, renderAdminUserForm, renderAdminUsers, type AdminMessage } from '../player/admin-page.js'
 import { DashboardAdminService, type DashboardAccess } from '../dashboard/dashboard-admin-service.js'
+import type { SystemStatusSnapshot } from '../system/system-inspector.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const SESSION_DELETE_FAIL = 'The session failed to delete'
@@ -24,7 +25,8 @@ export async function registerAdminRoutes(
   logs: LogAdminService,
   dashboard: DashboardAdminService,
   loadRegistrationEnabled: () => Promise<boolean> = async () => false,
-  loadDashboardTimezone: () => Promise<string> = async () => 'UTC'
+  loadDashboardTimezone: () => Promise<string> = async () => 'UTC',
+  loadSystemStatus?: () => Promise<SystemStatusSnapshot>
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
   const loginUrl = `${adminBase}/login/`
@@ -146,7 +148,8 @@ export async function registerAdminRoutes(
     try {
       const timezone = await loadDashboardTimezone().catch(() => 'UTC')
       const snapshot = await dashboard.snapshot(dashboardAccess(user), timezone)
-      return reply.type('text/html; charset=utf-8').send(renderAdminDashboard(adminBase, user, snapshot, timezone))
+      const systemStatus = user.role === 0 ? await loadSystemStatus?.().catch(() => undefined) : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminDashboard(adminBase, user, snapshot, timezone, systemStatus))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The dashboard database is temporarily unavailable.'))
     }

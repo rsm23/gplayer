@@ -73,6 +73,10 @@ import { PluginExtensionRuntime } from './plugins/plugin-extension-runtime.js'
 import { NodemailerAccountMailer, type AccountMailer } from './email/smtp-mailer.js'
 import { LogAdminService } from './logs/log-admin-service.js'
 import { DashboardAdminService, EMPTY_DASHBOARD_ADMIN_STORE } from './dashboard/dashboard-admin-service.js'
+import { NodeSystemInspector } from './system/system-inspector.js'
+import { FileSystemPrivateCacheManager } from './system/private-cache-manager.js'
+import { PrivateAdminService } from './system/private-admin-service.js'
+import { registerPrivateAdminRoutes } from './http/private-admin-routes.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -110,6 +114,7 @@ export type AppDependencies = Readonly<{
   pluginExtensions?: PluginExtensionRuntime
   logs?: LogAdminService
   dashboard?: DashboardAdminService
+  privateAdmin?: PrivateAdminService
 }>
 
 export async function buildApp(
@@ -138,6 +143,7 @@ export async function buildApp(
   const authService = dependencies.auth ?? authRuntime.auth
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
   const publicRoot = path.resolve(currentDirectory, '../public')
+  const cacheRoot = path.resolve(currentDirectory, '../cache')
   const subtitlesRuntime = dependencies.subtitles ?? new SubtitleAdminService(
     authRuntime.subtitleStore,
     new FileSystemSubtitleAssetManager(path.join(publicRoot, 'uploads/subtitles'), config.baseUrl),
@@ -217,7 +223,6 @@ export async function buildApp(
     authRuntime.sourceRefreshStore,
     sourceApiRuntime.resolve
   )
-  const cacheRoot = path.resolve(currentDirectory, '../cache')
   const mediaDownloadRuntime = dependencies.mediaDownloadWorker ?? new MediaDownloadWorker(
     authRuntime.mediaDownloadStore,
     new RemoteStream(),
@@ -273,6 +278,16 @@ export async function buildApp(
     settingsRuntime.clearRuntimeCaches()
     return true
   })
+  const privateAdminRuntime = dependencies.privateAdmin ?? new PrivateAdminService(
+    authRuntime.privateAdminStore,
+    new NodeSystemInspector(path.resolve(currentDirectory, '..')),
+    new FileSystemPrivateCacheManager(cacheRoot),
+    {
+      baseUrl: config.baseUrl,
+      loadMainSite: async () => new URL(String((await settingsRuntime.general(config.baseUrl)).main_site)),
+      clearRuntimeCache
+    }
+  )
   const authenticateRequest = async (request: FastifyRequest): Promise<AuthUser | null> => {
     const token = authTokenFromRequest({
       authorization: request.headers.authorization,
@@ -291,6 +306,7 @@ export async function buildApp(
     isAuthenticated,
     background: driveBackgroundRuntime
   })
+  await registerPrivateAdminRoutes(app, config, authService, privateAdminRuntime)
   const loadAccountSettings: AccountSettingsLoader = dependencies.accountSettings ?? (
     config.nodeEnv === 'test'
       ? async () => DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS
@@ -320,7 +336,8 @@ export async function buildApp(
     dependencies.logs ?? new LogAdminService(path.resolve(currentDirectory, '../tmp/logs')),
     dashboardRuntime,
     async () => (await loadAccountSettings()).enableRegistration,
-    async () => config.nodeEnv === 'test' ? 'UTC' : String((await settingsRuntime.general(config.baseUrl)).timezone)
+    async () => config.nodeEnv === 'test' ? 'UTC' : String((await settingsRuntime.general(config.baseUrl)).timezone),
+    async () => await privateAdminRuntime.systemStatus()
   )
   await registerAccountRoutes(app, config, authService, accountRuntime, {
     verifyRecaptcha: async (secret, responseToken, remoteIp) => await recaptchaVerifier.verify(secret, responseToken, remoteIp)
