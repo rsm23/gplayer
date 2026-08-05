@@ -6,6 +6,7 @@ import {
   buildSchemaMigrationPlan,
   parseSchemaInventory,
   type ActualColumn,
+  type ActualForeignKey,
   type ActualIndex,
   type SchemaExecutor,
   type SchemaSnapshot,
@@ -25,12 +26,24 @@ function snapshot(input: Partial<SchemaSnapshot> = {}): SchemaSnapshot {
   })
 }
 
-function column(tableName: string, name: string, columnType: string, collation: string | null = null): ActualColumn {
-  return Object.freeze({ tableName, name, columnType, collation })
+function column(tableName: string, name: string, columnType: string, collation: string | null = null, input: Partial<ActualColumn> = {}): ActualColumn {
+  return Object.freeze({ tableName, name, columnType, collation, ...input })
 }
 
 function index(tableName: string, name: string, columnName: string, input: Partial<ActualIndex> = {}): ActualIndex {
   return Object.freeze({ tableName, name, columnName, nonUnique: input.nonUnique ?? 1, indexType: input.indexType ?? 'BTREE', sequence: input.sequence ?? 1, subPart: input.subPart ?? null })
+}
+
+function foreignKey(input: Partial<ActualForeignKey> = {}): ActualForeignKey {
+  return Object.freeze({
+    tableName: input.tableName ?? 'tb_videos',
+    name: input.name ?? 'FK_tb_videos_uid_tb_users_id',
+    columns: input.columns ?? 'uid',
+    referencedTable: input.referencedTable ?? 'tb_users',
+    referencedColumns: input.referencedColumns ?? 'id',
+    updateRule: input.updateRule ?? 'RESTRICT',
+    deleteRule: input.deleteRule ?? 'CASCADE'
+  })
 }
 
 describe('schema inventory parser', () => {
@@ -97,7 +110,8 @@ describe('schema migration planner', () => {
       indexes: Object.freeze([
         index('tb_settings', 'PRIMARY', 'id', { nonUnique: 0 }),
         index('tb_settings', 'key_idx', 'key', { nonUnique: 1 })
-      ])
+      ]),
+      version: 101
     }), 101)
     expect(replacement.replacedIndexes).toBe(1)
     expect(replacement.statements).toContain('ALTER TABLE `tb_settings` DROP INDEX `key_idx`, ADD UNIQUE KEY `key_idx` (`key`)')
@@ -105,8 +119,134 @@ describe('schema migration planner', () => {
     expect(() => buildSchemaMigrationPlan(schemaSql, viewsSql, snapshot({
       tables: new Map([['tb_settings', 'utf8mb4_unicode_ci']]),
       columns: baseColumns,
-      indexes: Object.freeze([index('tb_settings', 'PRIMARY', 'key', { nonUnique: 0 })])
+      indexes: Object.freeze([index('tb_settings', 'PRIMARY', 'key', { nonUnique: 0 })]),
+      version: 101
     }), 101)).toThrow('primary key')
+  })
+
+  it('orders legacy data preservation and cleanup before rebuilding constraints', () => {
+    const legacyColumns = Object.freeze([
+      column('tb_settings', 'id', 'int unsigned'),
+      column('tb_settings', 'key', 'varchar(150)', 'latin1_swedish_ci'),
+      column('tb_settings', 'value', 'mediumtext', 'latin1_swedish_ci'),
+      column('tb_users', 'id', 'int unsigned'),
+      column('tb_users', 'user', 'varchar(50)', 'utf8mb4_unicode_ci'),
+      column('tb_videos', 'id', 'bigint unsigned'),
+      column('tb_videos', 'title', 'text', 'utf8mb4_unicode_ci'),
+      column('tb_videos', 'host', 'varchar(50)', 'utf8mb4_unicode_ci'),
+      column('tb_videos', 'host_id', 'text', 'utf8mb4_unicode_ci'),
+      column('tb_videos', 'poster', 'text', 'utf8mb4_unicode_ci'),
+      column('tb_videos', 'uid', 'int unsigned'),
+      column('tb_videos_short', 'vid', 'bigint unsigned'),
+      column('tb_videos_short', 'key', 'varchar(150)', 'utf8mb4_unicode_ci'),
+      column('tb_stats', 'id', 'bigint unsigned'),
+      column('tb_stats', 'ua', 'varchar(500)', 'utf8mb4_unicode_ci'),
+      column('tb_stats_ua', 'id', 'int unsigned'),
+      column('tb_stats_ua', 'ua', 'varchar(500)', 'utf8mb4_unicode_ci')
+    ])
+    const plan = buildSchemaMigrationPlan(schemaSql, viewsSql, snapshot({
+      tables: new Map([
+        ['tb_settings', 'latin1_swedish_ci'],
+        ['tb_users', 'utf8mb4_unicode_ci'],
+        ['tb_videos', 'utf8mb4_unicode_ci'],
+        ['tb_videos_short', 'utf8mb4_unicode_ci'],
+        ['tb_stats', 'utf8mb4_unicode_ci'],
+        ['tb_stats_ua', 'utf8mb4_unicode_ci']
+      ]),
+      columns: legacyColumns,
+      indexes: Object.freeze([
+        index('tb_settings', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_settings', 'key_idx', 'key', { nonUnique: 0 }),
+        index('tb_videos', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_stats', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_stats_ua', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_stats_ua', 'ua_idx', 'ua', { nonUnique: 0 })
+      ]),
+      version: 84
+    }), 101)
+    const sql = plan.statements.join('\n')
+    expect(plan.dataUpgradeStatements).toBeGreaterThan(10)
+    expect(plan.cleanupStatements).toBeGreaterThan(2)
+    expect(plan.removedLegacyArtifacts).toBeGreaterThan(1)
+    expect(sql).toContain('LEFT JOIN `tb_videos_short` legacy')
+    expect(sql).toContain('CREATE TEMPORARY TABLE `gplayer_stats_ua_upgrade`')
+    expect(sql).toContain("UPDATE `tb_videos` SET `host` = 'earnvids'")
+    expect(sql).toContain('DROP TABLE IF EXISTS `tb_videos_short`')
+    expect(sql).not.toContain('INSERT IGNORE INTO `tb_users`')
+    const captureStats = plan.statements.findIndex((statement) => statement.startsWith('INSERT INTO `gplayer_stats_ua_upgrade`'))
+    const modifyStats = plan.statements.findIndex((statement) => statement.startsWith('ALTER TABLE `tb_stats` MODIFY COLUMN `ua`'))
+    const restoreStats = plan.statements.findIndex((statement) => statement.startsWith('UPDATE `tb_stats` stat JOIN `gplayer_stats_ua_upgrade`'))
+    const removeLegacyShort = plan.statements.indexOf('DROP TABLE IF EXISTS `tb_videos_short`')
+    const addVideoForeignKey = plan.statements.findIndex((statement) => statement.startsWith('ALTER TABLE `tb_videos` ADD CONSTRAINT'))
+    expect(captureStats).toBeLessThan(modifyStats)
+    expect(modifyStats).toBeLessThan(restoreStats)
+    expect(restoreStats).toBeLessThan(addVideoForeignKey)
+    expect(addVideoForeignKey).toBeLessThan(removeLegacyShort)
+  })
+
+  it('does not rerun versioned data cleanup on an already-current database', () => {
+    const plan = buildSchemaMigrationPlan(schemaSql, viewsSql, snapshot({
+      tables: new Map([['tb_settings', 'utf8mb4_unicode_ci']]),
+      columns: Object.freeze([
+        column('tb_settings', 'id', 'int unsigned'),
+        column('tb_settings', 'key', 'varchar(150)', 'utf8mb4_unicode_ci'),
+        column('tb_settings', 'value', 'mediumtext', 'utf8mb4_unicode_ci')
+      ]),
+      indexes: Object.freeze([
+        index('tb_settings', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_settings', 'key_idx', 'key', { nonUnique: 0 })
+      ]),
+      version: 101
+    }), 101)
+    expect(plan.dataUpgradeStatements).toBe(0)
+    expect(plan.cleanupStatements).toBe(0)
+    expect(plan.removedLegacyArtifacts).toBe(0)
+  })
+
+  it('reconciles nullability, defaults, and auto-increment metadata when introspection provides it', () => {
+    const plan = buildSchemaMigrationPlan(schemaSql, viewsSql, snapshot({
+      tables: new Map([['tb_settings', 'utf8mb4_unicode_ci']]),
+      columns: Object.freeze([
+        column('tb_settings', 'id', 'int unsigned', null, { isNullable: 'YES', columnDefault: null, extra: '' }),
+        column('tb_settings', 'key', 'varchar(150)', 'utf8mb4_unicode_ci', { isNullable: 'YES', columnDefault: null, extra: '' }),
+        column('tb_settings', 'value', 'mediumtext', 'utf8mb4_unicode_ci', { isNullable: 'YES', columnDefault: null, extra: '' })
+      ]),
+      indexes: Object.freeze([
+        index('tb_settings', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_settings', 'key_idx', 'key', { nonUnique: 0 })
+      ]),
+      version: 101
+    }), 101)
+    expect(plan.modifiedColumns).toBe(3)
+    expect(plan.statements).toEqual(expect.arrayContaining([
+      'ALTER TABLE `tb_settings` MODIFY COLUMN `id` int(10) unsigned NOT NULL AUTO_INCREMENT',
+      'ALTER TABLE `tb_settings` MODIFY COLUMN `key` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL',
+      'ALTER TABLE `tb_settings` MODIFY COLUMN `value` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL'
+    ]))
+  })
+
+  it('drops a conflicting current foreign key before restoring the supplied rule', () => {
+    const plan = buildSchemaMigrationPlan(schemaSql, viewsSql, snapshot({
+      tables: new Map([
+        ['tb_users', 'utf8mb4_unicode_ci'],
+        ['tb_videos', 'utf8mb4_unicode_ci']
+      ]),
+      columns: Object.freeze([
+        column('tb_users', 'id', 'int unsigned'),
+        column('tb_videos', 'id', 'bigint unsigned'),
+        column('tb_videos', 'uid', 'int unsigned')
+      ]),
+      indexes: Object.freeze([
+        index('tb_users', 'PRIMARY', 'id', { nonUnique: 0 }),
+        index('tb_videos', 'PRIMARY', 'id', { nonUnique: 0 })
+      ]),
+      foreignKeys: Object.freeze([foreignKey({ updateRule: 'CASCADE' })]),
+      version: 101
+    }), 101)
+    const drop = plan.statements.indexOf('ALTER TABLE `tb_videos` DROP FOREIGN KEY `FK_tb_videos_uid_tb_users_id`')
+    const add = plan.statements.findIndex((statement) => statement.startsWith('ALTER TABLE `tb_videos` ADD CONSTRAINT `FK_tb_videos_uid_tb_users_id`'))
+    expect(drop).toBeGreaterThanOrEqual(0)
+    expect(add).toBeGreaterThan(drop)
   })
 
   it('refuses to downgrade a newer database version', () => {

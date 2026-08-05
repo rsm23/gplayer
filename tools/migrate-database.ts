@@ -33,7 +33,7 @@ try {
     }
   }, databaseName, schemaSql, viewsSql, targetVersion)
   const result = await migrator.migrate()
-  process.stdout.write(`Database migration completed: version ${result.previousVersion || 'unversioned'} -> ${result.targetVersion}; ${result.executedStatements} statements, ${result.createdTables} tables created, ${result.addedColumns} columns added, ${result.modifiedColumns} columns normalized, ${result.addedIndexes + result.replacedIndexes} indexes reconciled, ${result.addedForeignKeys} foreign keys added, and ${result.replacedViews} views replaced. ${result.retainedExtraColumns} extra columns were retained.\n`)
+  process.stdout.write(`Database migration completed: version ${result.previousVersion || 'unversioned'} -> ${result.targetVersion}; ${result.executedStatements} statements, ${result.createdTables} tables created, ${result.addedColumns} columns added, ${result.modifiedColumns} columns normalized, ${result.addedIndexes + result.replacedIndexes} indexes reconciled, ${result.addedForeignKeys} foreign keys added, ${result.dataUpgradeStatements} versioned data transformations, ${result.cleanupStatements} integrity cleanups, ${result.removedLegacyArtifacts} obsolete artifacts removed, and ${result.replacedViews} views replaced. ${result.retainedExtraColumns} extra columns were retained.\n`)
 } finally {
   await connection.end()
 }

@@ -27,7 +27,13 @@ pnpm db:migrate
 pnpm audit:schema
 ```
 
-The migrator uses an advisory database lock, adds or reconciles the 20 tables and four views without loading the dump's demo accounts, and retains unknown extension columns. It is an explicit deployment command rather than an automatic server-start mutation. Back up an existing database before any schema migration. Local socket-authenticated installations can set `DB_MASTER_SOCKET` (for example, `/tmp/mysql.sock`) for these database utilities.
+The migrator uses an advisory database lock, adds or reconciles the 20 tables and four views without loading the dump's demo accounts, and retains unknown extension columns. Older databases also receive the recovered data upgrades before constraints are rebuilt: legacy slugs and raw statistics user agents are preserved, renamed hosting identifiers are normalized, duplicate keys are consolidated, and rows that cannot satisfy the supplied foreign-key relationships are removed. It is an explicit deployment command rather than an automatic server-start mutation. Back up an existing database before any schema migration. Local socket-authenticated installations can set `DB_MASTER_SOCKET` (for example, `/tmp/mysql.sock`) for these database utilities.
+
+The version-84 compatibility fixture can be exercised against a disposable local MySQL/MariaDB database with:
+
+```bash
+GPLAYER_TEST_MYSQL_SOCKET=/tmp/mysql.sock pnpm vitest run test/schema-migrator-mysql.test.ts
+```
 
 Refresh the supplied-source inventory and non-PHP assets:
 

@@ -9,6 +9,9 @@ export type ActualColumn = Readonly<{
   name: string
   columnType: string
   collation: string | null
+  isNullable?: string | boolean
+  columnDefault?: string | number | null
+  extra?: string
 }>
 
 export type ActualIndex = Readonly<{
@@ -50,6 +53,9 @@ export type SchemaMigrationPlan = Readonly<{
   addedForeignKeys: number
   replacedViews: number
   retainedExtraColumns: number
+  dataUpgradeStatements: number
+  cleanupStatements: number
+  removedLegacyArtifacts: number
   previousVersion: number
   targetVersion: number
 }>
@@ -67,6 +73,12 @@ type TableContract = Readonly<{
   createWithoutForeignKeys: string
 }>
 type ViewContract = Readonly<{ name: string; createOrReplace: string }>
+type DataUpgradePlan = Readonly<{
+  beforeColumnChanges: readonly string[]
+  afterColumnChanges: readonly string[]
+  cleanup: readonly string[]
+  removeArtifacts: readonly string[]
+}>
 
 export class SchemaMigrator {
   public constructor(
@@ -102,8 +114,8 @@ export class SchemaMigrator {
       "SELECT `TABLE_NAME` AS `name`, `TABLE_COLLATION` AS `collation` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND `TABLE_TYPE` = 'BASE TABLE'",
       [this.databaseName]
     )
-    const columns = await this.executor.execute<Array<{ tableName: string; name: string; columnType: string; collation: string | null }>>(
-      'SELECT `TABLE_NAME` AS `tableName`, `COLUMN_NAME` AS `name`, `COLUMN_TYPE` AS `columnType`, `COLLATION_NAME` AS `collation` FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` = ?',
+    const columns = await this.executor.execute<Array<{ tableName: string; name: string; columnType: string; collation: string | null; isNullable: string; columnDefault: string | number | null; extra: string }>>(
+      'SELECT `TABLE_NAME` AS `tableName`, `COLUMN_NAME` AS `name`, `COLUMN_TYPE` AS `columnType`, `COLLATION_NAME` AS `collation`, `IS_NULLABLE` AS `isNullable`, `COLUMN_DEFAULT` AS `columnDefault`, `EXTRA` AS `extra` FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` = ?',
       [this.databaseName]
     )
     const indexes = await this.executor.execute<Array<{ tableName: string; name: string; nonUnique: number; indexType: string; sequence: number; columnName: string; subPart: number | null }>>(
@@ -145,6 +157,19 @@ export function buildSchemaMigrationPlan(
   if (!tables.some((table) => table.name === 'tb_settings')) throw new Error('The schema does not contain the settings version table')
   const statements: string[] = []
   const missingTables = new Set(tables.filter((table) => !snapshot.tables.has(table.name)).map((table) => table.name))
+  const upgradeExistingDatabase = snapshot.tables.size > 0 && snapshot.version < targetVersion
+  const actualColumns = groupedColumns(snapshot.columns)
+  const columnsNeedingModification = new Set<string>()
+  for (const table of tables) {
+    const columns = actualColumns.get(table.name)
+    if (columns === undefined) continue
+    for (const expected of table.columns) {
+      const actual = columns.get(expected.name)
+      if (actual !== undefined && columnRequiresModification(expected, actual)) columnsNeedingModification.add(`${table.name}:${expected.name}`)
+    }
+  }
+  const droppedIndexes = new Set<string>()
+  const droppedForeignKeys = new Set<string>()
   let convertedTables = 0
   let addedColumns = 0
   let modifiedColumns = 0
@@ -152,6 +177,35 @@ export function buildSchemaMigrationPlan(
   let replacedIndexes = 0
   let addedForeignKeys = 0
   let retainedExtraColumns = 0
+
+  for (const table of tables) {
+    if (missingTables.has(table.name)) continue
+    const expectedForeignKeyNames = new Set(table.foreignKeys.map((foreignKey) => foreignKey.name))
+    const expectedForeignKeyColumns = new Set(table.foreignKeys.map((foreignKey) => foreignKeyLocalColumns(foreignKey.definition)))
+    for (const foreignKey of snapshot.foreignKeys) {
+      if (foreignKey.tableName !== table.name) continue
+      const localColumns = normalizedFields(foreignKey.columns)
+      if (!expectedForeignKeyNames.has(foreignKey.name) && !expectedForeignKeyColumns.has(localColumns)) continue
+      const exact = table.foreignKeys.some((expected) => `${table.name}:${expected.signature}` === foreignKeySignature(foreignKey))
+      const touchesModifiedColumn = localColumns.split(',').some((column) => columnsNeedingModification.has(`${table.name}:${column}`)) || normalizedFields(foreignKey.referencedColumns).split(',').some((column) => columnsNeedingModification.has(`${foreignKey.referencedTable}:${column}`))
+      if (!upgradeExistingDatabase && exact && !touchesModifiedColumn) continue
+      statements.push(`ALTER TABLE ${identifier(table.name)} DROP FOREIGN KEY ${identifier(foreignKey.name)}`)
+      droppedForeignKeys.add(`${foreignKey.tableName}:${foreignKey.name}`)
+    }
+  }
+
+  if (upgradeExistingDatabase) {
+    const actualIndexes = groupedIndexes(snapshot.indexes)
+    for (const table of tables) {
+      if (missingTables.has(table.name)) continue
+      const indexes = actualIndexes.get(table.name) ?? new Map<string, string>()
+      for (const index of table.indexes) {
+        if (index.primary || !indexes.has(index.name)) continue
+        statements.push(`ALTER TABLE ${identifier(table.name)} DROP INDEX ${identifier(index.name)}`)
+        droppedIndexes.add(`${table.name}:${index.name}`)
+      }
+    }
+  }
 
   for (const table of tables) {
     if (missingTables.has(table.name)) {
@@ -164,7 +218,6 @@ export function buildSchemaMigrationPlan(
     }
   }
 
-  const actualColumns = groupedColumns(snapshot.columns)
   const actualIndexes = groupedIndexes(snapshot.indexes)
   for (const table of tables) {
     if (missingTables.has(table.name)) continue
@@ -176,18 +229,38 @@ export function buildSchemaMigrationPlan(
       if (actual === undefined) {
         statements.push(`ALTER TABLE ${identifier(table.name)} ADD COLUMN ${identifier(column.name)} ${column.definition}`)
         addedColumns += 1
-      } else if (columnRequiresModification(column, actual)) {
+      }
+    }
+  }
+
+  const dataUpgrade = buildDataUpgradePlan(snapshot, targetVersion)
+  statements.push(...dataUpgrade.beforeColumnChanges)
+
+  for (const table of tables) {
+    if (missingTables.has(table.name)) continue
+    const columns = actualColumns.get(table.name) ?? new Map<string, ActualColumn>()
+    for (const column of table.columns) {
+      const actual = columns.get(column.name)
+      if (actual !== undefined && columnRequiresModification(column, actual)) {
         statements.push(`ALTER TABLE ${identifier(table.name)} MODIFY COLUMN ${identifier(column.name)} ${column.definition}`)
         modifiedColumns += 1
       }
     }
+  }
 
+  statements.push(...dataUpgrade.afterColumnChanges)
+  statements.push(...dataUpgrade.cleanup)
+
+  for (const table of tables) {
+    if (missingTables.has(table.name)) continue
     const indexes = actualIndexes.get(table.name) ?? new Map<string, string>()
     for (const index of table.indexes) {
-      const actualSignature = indexes.get(index.name)
+      const wasDropped = droppedIndexes.has(`${table.name}:${index.name}`)
+      const actualSignature = wasDropped ? undefined : indexes.get(index.name)
       if (actualSignature === undefined) {
         statements.push(`ALTER TABLE ${identifier(table.name)} ADD ${index.definition}`)
-        addedIndexes += 1
+        if (wasDropped) replacedIndexes += 1
+        else addedIndexes += 1
       } else if (actualSignature !== index.signature) {
         if (index.primary) throw new Error(`The primary key for ${table.name} does not match the expected schema`)
         statements.push(`ALTER TABLE ${identifier(table.name)} DROP INDEX ${identifier(index.name)}, ADD ${index.definition}`)
@@ -196,7 +269,7 @@ export function buildSchemaMigrationPlan(
     }
   }
 
-  const actualForeignKeys = new Set(snapshot.foreignKeys.map(foreignKeySignature))
+  const actualForeignKeys = new Set(snapshot.foreignKeys.filter((foreignKey) => !droppedForeignKeys.has(`${foreignKey.tableName}:${foreignKey.name}`)).map(foreignKeySignature))
   for (const table of tables) {
     for (const foreignKey of table.foreignKeys) {
       if (actualForeignKeys.has(`${table.name}:${foreignKey.signature}`)) continue
@@ -205,6 +278,7 @@ export function buildSchemaMigrationPlan(
     }
   }
 
+  statements.push(...dataUpgrade.removeArtifacts)
   for (const view of views) statements.push(view.createOrReplace)
   statements.push("INSERT IGNORE INTO `tb_settings` (`key`, `value`) VALUES ('updated', ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)".replace('?', String(targetVersion)))
 
@@ -219,8 +293,109 @@ export function buildSchemaMigrationPlan(
     addedForeignKeys,
     replacedViews: views.length,
     retainedExtraColumns,
+    dataUpgradeStatements: dataUpgrade.beforeColumnChanges.length + dataUpgrade.afterColumnChanges.length,
+    cleanupStatements: dataUpgrade.cleanup.length,
+    removedLegacyArtifacts: dataUpgrade.removeArtifacts.length,
     previousVersion: snapshot.version,
     targetVersion
+  })
+}
+
+function buildDataUpgradePlan(snapshot: SchemaSnapshot, targetVersion: number): DataUpgradePlan {
+  const empty = Object.freeze({
+    beforeColumnChanges: Object.freeze([]),
+    afterColumnChanges: Object.freeze([]),
+    cleanup: Object.freeze([]),
+    removeArtifacts: Object.freeze([])
+  })
+  if (snapshot.tables.size === 0 || snapshot.version >= targetVersion) return empty
+
+  const columns = groupedColumns(snapshot.columns)
+  const hasTable = (table: string): boolean => snapshot.tables.has(table)
+  const hasColumn = (table: string, column: string): boolean => columns.get(table)?.has(column) === true
+  const beforeColumnChanges: string[] = []
+  const afterColumnChanges: string[] = []
+  const cleanup: string[] = []
+  const removeArtifacts: string[] = []
+
+  if (hasTable('tb_settings') && hasColumn('tb_settings', 'key') && hasColumn('tb_settings', 'value')) {
+    beforeColumnChanges.push("UPDATE `tb_settings` SET `value` = 'jwplayer' WHERE `key` LIKE 'jwplayer-%'")
+    cleanup.push("DELETE FROM `tb_settings` WHERE `key` IN ('custom-hostnames', 'download-urls', 'update_vw_videos', 'update_indexes_constraits')")
+    cleanup.push('DELETE newer FROM `tb_settings` newer JOIN `tb_settings` keeper ON newer.`key` = keeper.`key` AND newer.`id` > keeper.`id`')
+  }
+
+  if (hasTable('tb_videos') && hasColumn('tb_videos', 'id')) {
+    if (hasColumn('tb_videos', 'title')) beforeColumnChanges.push('UPDATE `tb_videos` SET `title` = LEFT(`title`, 255) WHERE CHAR_LENGTH(`title`) > 255')
+    if (hasColumn('tb_videos', 'host_id')) beforeColumnChanges.push('UPDATE `tb_videos` SET `host_id` = LEFT(`host_id`, 2048) WHERE CHAR_LENGTH(`host_id`) > 2048')
+    if (hasColumn('tb_videos', 'poster')) beforeColumnChanges.push('UPDATE `tb_videos` SET `poster` = LEFT(`poster`, 2048) WHERE CHAR_LENGTH(`poster`) > 2048')
+    if (hasColumn('tb_videos', 'host')) {
+      beforeColumnChanges.push("UPDATE `tb_videos` SET `host` = 'earnvids' WHERE `host` IN ('vidhide', 'filelions')")
+      beforeColumnChanges.push("UPDATE `tb_videos` SET `host` = 'goodstream' WHERE `host` = 'goodstream1'")
+      beforeColumnChanges.push("UPDATE `tb_videos` SET `host` = 'streamhg' WHERE `host` = 'streamwish'")
+    }
+    if (hasTable('tb_videos_short') && hasColumn('tb_videos_short', 'vid') && hasColumn('tb_videos_short', 'key')) {
+      beforeColumnChanges.push("UPDATE `tb_videos` video LEFT JOIN `tb_videos_short` legacy ON legacy.`vid` = video.`id` SET video.`slug` = COALESCE(NULLIF(LEFT(legacy.`key`, 150), ''), CAST(UUID() AS CHAR(36))) WHERE video.`slug` IS NULL OR video.`slug` = ''")
+    } else {
+      beforeColumnChanges.push("UPDATE `tb_videos` SET `slug` = CAST(UUID() AS CHAR(36)) WHERE `slug` IS NULL OR `slug` = ''")
+    }
+    beforeColumnChanges.push('DROP TEMPORARY TABLE IF EXISTS `gplayer_duplicate_slugs`')
+    beforeColumnChanges.push("CREATE TEMPORARY TABLE `gplayer_duplicate_slugs` (`slug` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL, `keep_id` bigint(20) unsigned NOT NULL, PRIMARY KEY (`slug`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci AS SELECT `slug`, MIN(`id`) AS `keep_id` FROM `tb_videos` WHERE `slug` IS NOT NULL AND `slug` <> '' GROUP BY `slug` HAVING COUNT(*) > 1")
+    beforeColumnChanges.push('UPDATE `tb_videos` video JOIN `gplayer_duplicate_slugs` duplicate ON duplicate.`slug` = video.`slug` AND duplicate.`keep_id` <> video.`id` SET video.`slug` = CAST(UUID() AS CHAR(36))')
+    beforeColumnChanges.push('DROP TEMPORARY TABLE `gplayer_duplicate_slugs`')
+  }
+
+  const statsUaColumn = columns.get('tb_stats_ua')?.get('ua')
+  const statsColumn = columns.get('tb_stats')?.get('ua')
+  const rawStatsUserAgent = statsColumn !== undefined && !isNumericColumnType(statsColumn.columnType)
+  if (hasTable('tb_stats_ua') && statsUaColumn !== undefined) {
+    beforeColumnChanges.push('UPDATE `tb_stats_ua` SET `ua` = LEFT(`ua`, 255) WHERE CHAR_LENGTH(`ua`) > 255')
+    if (!rawStatsUserAgent && hasTable('tb_stats') && statsColumn !== undefined) {
+      beforeColumnChanges.push('UPDATE `tb_stats` stat JOIN `tb_stats_ua` duplicate ON duplicate.`id` = stat.`ua` JOIN (SELECT `ua`, MIN(`id`) AS `keep_id` FROM `tb_stats_ua` GROUP BY `ua` HAVING COUNT(*) > 1) keeper ON keeper.`ua` = duplicate.`ua` SET stat.`ua` = keeper.`keep_id` WHERE stat.`ua` <> keeper.`keep_id`')
+    }
+    beforeColumnChanges.push('DELETE duplicate FROM `tb_stats_ua` duplicate JOIN `tb_stats_ua` keeper ON duplicate.`ua` = keeper.`ua` AND duplicate.`id` > keeper.`id`')
+  }
+
+  if (rawStatsUserAgent && hasTable('tb_stats') && hasColumn('tb_stats', 'id')) {
+    beforeColumnChanges.push('DROP TEMPORARY TABLE IF EXISTS `gplayer_stats_ua_upgrade`')
+    beforeColumnChanges.push('CREATE TEMPORARY TABLE `gplayer_stats_ua_upgrade` (`id` bigint(20) unsigned NOT NULL, `ua` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci')
+    beforeColumnChanges.push('INSERT INTO `gplayer_stats_ua_upgrade` (`id`, `ua`) SELECT `id`, LEFT(CAST(`ua` AS CHAR), 255) FROM `tb_stats`')
+    beforeColumnChanges.push("INSERT INTO `tb_stats_ua` (`ua`) SELECT legacy.`ua` FROM (SELECT DISTINCT `ua` FROM `gplayer_stats_ua_upgrade` WHERE `ua` <> '') legacy LEFT JOIN `tb_stats_ua` existing ON existing.`ua` = legacy.`ua` WHERE existing.`id` IS NULL")
+    beforeColumnChanges.push("UPDATE `tb_stats` SET `ua` = '0'")
+    afterColumnChanges.push('UPDATE `tb_stats` stat JOIN `gplayer_stats_ua_upgrade` legacy ON legacy.`id` = stat.`id` JOIN `tb_stats_ua` user_agent ON user_agent.`ua` = legacy.`ua` SET stat.`ua` = user_agent.`id`')
+    afterColumnChanges.push("DELETE stat FROM `tb_stats` stat JOIN `gplayer_stats_ua_upgrade` legacy ON legacy.`id` = stat.`id` WHERE legacy.`ua` = ''")
+    afterColumnChanges.push('DROP TEMPORARY TABLE `gplayer_stats_ua_upgrade`')
+  }
+
+  if (hasTable('tb_videos_hash') && hasColumn('tb_videos_hash', 'data')) {
+    beforeColumnChanges.push("UPDATE `tb_videos_hash` SET `data` = '' WHERE `data` IS NULL OR `data` = '{}'")
+  }
+
+  if (hasTable('tb_maxmind') && hasColumn('tb_maxmind', 'id') && hasColumn('tb_maxmind', 'ip')) {
+    cleanup.push('DELETE duplicate FROM `tb_maxmind` duplicate JOIN `tb_maxmind` keeper ON duplicate.`ip` = keeper.`ip` AND duplicate.`id` > keeper.`id`')
+  }
+
+  if (hasTable('tb_gdrive_duplicate') && hasTable('tb_gdrive_auth')) cleanup.push('DELETE duplicate FROM `tb_gdrive_duplicate` duplicate LEFT JOIN `tb_gdrive_auth` account ON duplicate.`gdrive_email` = account.`email` WHERE account.`email` IS NULL')
+  if (hasTable('tb_gdrive_mirrors') && hasTable('tb_gdrive_auth')) cleanup.push('DELETE mirror FROM `tb_gdrive_mirrors` mirror LEFT JOIN `tb_gdrive_auth` account ON mirror.`mirror_email` = account.`email` WHERE account.`email` IS NULL')
+  if (hasTable('tb_subtitle_manager') && hasTable('tb_users')) cleanup.push('DELETE subtitle FROM `tb_subtitle_manager` subtitle LEFT JOIN `tb_users` user ON subtitle.`uid` = user.`id` WHERE user.`id` IS NULL')
+  if (hasTable('tb_subtitles') && hasTable('tb_users')) cleanup.push('DELETE subtitle FROM `tb_subtitles` subtitle LEFT JOIN `tb_users` user ON subtitle.`uid` = user.`id` WHERE user.`id` IS NULL')
+  if (hasTable('tb_sessions') && hasTable('tb_users')) cleanup.push('DELETE session FROM `tb_sessions` session LEFT JOIN `tb_users` user ON session.`username` = user.`user` WHERE user.`user` IS NULL')
+  if (hasTable('tb_videos') && hasTable('tb_users')) cleanup.push('DELETE video FROM `tb_videos` video LEFT JOIN `tb_users` user ON video.`uid` = user.`id` WHERE user.`id` IS NULL')
+  if (hasTable('tb_subtitles') && hasTable('tb_videos')) cleanup.push('DELETE subtitle FROM `tb_subtitles` subtitle LEFT JOIN `tb_videos` video ON subtitle.`vid` = video.`id` WHERE video.`id` IS NULL')
+  if (hasTable('tb_videos_alternatives') && hasTable('tb_videos')) cleanup.push('DELETE alternative FROM `tb_videos_alternatives` alternative LEFT JOIN `tb_videos` video ON alternative.`vid` = video.`id` WHERE video.`id` IS NULL')
+  if (hasTable('tb_stats') && hasTable('tb_videos')) cleanup.push('DELETE stat FROM `tb_stats` stat LEFT JOIN `tb_videos` video ON stat.`vid` = video.`id` WHERE video.`id` IS NULL')
+  if (hasTable('tb_stats') && hasTable('tb_stats_ua')) cleanup.push('DELETE stat FROM `tb_stats` stat LEFT JOIN `tb_stats_ua` user_agent ON stat.`ua` = user_agent.`id` WHERE user_agent.`id` IS NULL')
+  if (hasTable('tb_videos_sources') && hasTable('tb_loadbalancers')) cleanup.push('UPDATE `tb_videos_sources` source LEFT JOIN `tb_loadbalancers` server ON source.`sid` = server.`id` SET source.`sid` = NULL WHERE source.`sid` IS NOT NULL AND server.`id` IS NULL')
+
+  for (const table of ['bk_videos', 'bk_videos_short', 'bk_maxmind', 'bk_stats', 'bk_stats_ua', 'tb_videos_short', 'tb_stats_recap', 'tb_tmp_videos_sources', 'tb_plugins2']) {
+    if (hasTable(table)) removeArtifacts.push(`DROP TABLE IF EXISTS ${identifier(table)}`)
+  }
+  removeArtifacts.push('DROP VIEW IF EXISTS `vw_stats`')
+
+  return Object.freeze({
+    beforeColumnChanges: Object.freeze(beforeColumnChanges),
+    afterColumnChanges: Object.freeze(afterColumnChanges),
+    cleanup: Object.freeze(cleanup),
+    removeArtifacts: Object.freeze(removeArtifacts)
   })
 }
 
@@ -342,11 +517,37 @@ function columnRequiresModification(expected: ColumnContract, actual: ActualColu
   if (!['tinyint', 'smallint', 'mediumint', 'int', 'bigint'].includes(String(type[1] ?? '')) && String(type[2] ?? '') !== String(current[2] ?? '')) return true
   if (desired.includes(' unsigned') && !actualType.includes(' unsigned')) return true
   const desiredCollation = desired.match(/collate\s+([a-z0-9_]+)/)?.[1]
-  return desiredCollation !== undefined && desiredCollation !== String(actual.collation ?? '').toLowerCase()
+  if (desiredCollation !== undefined && desiredCollation !== String(actual.collation ?? '').toLowerCase()) return true
+  if (actual.isNullable !== undefined) {
+    const nullable = String(actual.isNullable).toUpperCase() === 'YES' || actual.isNullable === true
+    const expectedNullable = /(?:^|\s)NULL(?:\s|$)/i.test(expected.definition) && !/(?:^|\s)NOT NULL(?:\s|$)/i.test(expected.definition)
+    if (nullable !== expectedNullable) return true
+  }
+  if ('columnDefault' in actual) {
+    const expectedDefault = expected.definition.match(/DEFAULT\s+(NULL|'(?:''|[^'])*'|"(?:""|[^"])*"|[^\s]+)/i)?.[1]
+    const normalizedExpectedDefault = expectedDefault === undefined || expectedDefault.toUpperCase() === 'NULL'
+      ? null
+      : expectedDefault.replace(/^(['"])(.*)\1$/, '$2').replaceAll("''", "'").replaceAll('""', '"')
+    const actualDefault = actual.columnDefault === null || actual.columnDefault === undefined ? null : String(actual.columnDefault)
+    const normalizedActualDefault = actualDefault?.toUpperCase() === 'NULL' ? null : actualDefault
+    if (normalizedActualDefault !== normalizedExpectedDefault) return true
+  }
+  if (actual.extra !== undefined && /\bauto_increment\b/i.test(expected.definition) !== /\bauto_increment\b/i.test(actual.extra)) return true
+  return false
 }
 
 function foreignKeySignature(value: ActualForeignKey): string {
   return `${value.tableName}:${normalizedFields(value.columns)}->${validatedName(value.referencedTable)}(${normalizedFields(value.referencedColumns)}):${normalizedRule(value.updateRule)}:${normalizedRule(value.deleteRule)}`
+}
+
+function foreignKeyLocalColumns(definition: string): string {
+  const fields = definition.match(/FOREIGN KEY\s+\(([^)]+)\)/i)?.[1]
+  if (fields === undefined) throw new Error('A foreign-key definition is invalid')
+  return normalizedFields(fields)
+}
+
+function isNumericColumnType(columnType: string): boolean {
+  return /^(?:tinyint|smallint|mediumint|int|bigint)(?:\(|\s|$)/i.test(columnType.trim())
 }
 
 function normalizedFields(value: string): string {
