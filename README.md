@@ -34,3 +34,5 @@ pnpm inspect:legacy-php -- /absolute/path/to/File.php methodName
 ```
 
 The Node runtime never loads PHP. PHP files remain only in the external source snapshot used to derive behavior and parity fixtures.
+
+When the server is deployed behind a reverse proxy, set `TRUST_PROXY` to that proxy's explicit IP address or CIDR range (comma-separated for multiple proxies). It defaults to `false`; setting it to `true` trusts arbitrary forwarding chains and should only be used in a fully isolated proxy topology.

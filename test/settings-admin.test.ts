@@ -1007,6 +1007,78 @@ describe('general settings administration routes', () => {
     expect(updated.body).toContain('The Player Settings have been successfully updated')
   })
 
+  it('renders and updates every Misc Settings field without exposing proxy credentials', async () => {
+    const store = new MemorySettingsStore({
+      bypass_host: '["gdrive"]',
+      proxy_list: '203.0.113.8:1080,route-user:never-render,socks5',
+      banned_countries: '["FR"]'
+    })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/misc/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Misc settings.')
+    expect(page.body).toContain('13 keys')
+    expect(page.body).toContain('1 stored endpoint')
+    expect(page.body).toContain('<option value="gdrive" selected>Google Drive</option>')
+    expect(page.body).toContain('<option value="FR" selected>France</option>')
+    expect(page.body).not.toContain('never-render')
+    expect(page.body).not.toContain('route-user')
+
+    const names = new Set([...page.body.matchAll(/name="([^"]+)"/g)].map((match) => match[1] ?? '').filter((name) => name !== 'csrf' && name !== 'clear_proxy_list'))
+    expect([...names].filter((name) => [
+      'bypass_host[]', 'disable_host[]', 'disable_resolution[]', 'disable_proxy', 'free_proxy', 'proxy_list',
+      'domain_whitelisted', 'domain_blacklisted', 'link_blacklisted', 'word_blacklisted', 'banned_countries[]',
+      'block_vpn', 'block_vpn_list'
+    ].includes(name))).toHaveLength(13)
+
+    const payload = new URLSearchParams({
+      csrf,
+      disable_proxy: 'false',
+      free_proxy: 'true',
+      proxy_list: '198.51.100.8:443,https',
+      clear_proxy_list: 'false',
+      domain_whitelisted: 'allowed.example',
+      domain_blacklisted: 'blocked.example',
+      link_blacklisted: 'blocked.example/watch',
+      word_blacklisted: 'forbidden',
+      block_vpn: 'true',
+      block_vpn_list: '203.0.113.0/24'
+    })
+    payload.append('bypass_host[]', '')
+    payload.append('bypass_host[]', 'gdrive')
+    payload.append('disable_host[]', '')
+    payload.append('disable_host[]', 'youtube')
+    payload.append('disable_resolution[]', '')
+    payload.append('disable_resolution[]', '700')
+    payload.append('banned_countries[]', '')
+    payload.append('banned_countries[]', 'DE')
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/misc/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: payload.toString()
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/misc/?updated=1')
+    expect(store.writes.at(-1)).toHaveLength(13)
+    expect(store.values).toEqual(expect.objectContaining({
+      bypass_host: '["gdrive"]',
+      disable_host: '["youtube"]',
+      disable_resolution: '["700"]',
+      disable_proxy: 'false',
+      free_proxy: 'true',
+      proxy_list: '198.51.100.8:443,https',
+      domain_whitelisted: 'allowed.example',
+      banned_countries: '["DE"]',
+      block_vpn: 'true'
+    }))
+
+    const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
+    expect(updated.body).toContain('The Misc Settings have been successfully updated')
+    expect(updated.body).not.toContain('198.51.100.8')
+  })
+
   it('renders and updates Ads Settings with paired dynamic VAST schedule rows', async () => {
     const store = new MemorySettingsStore({
       vast_xml: '["https://ads.example/original.xml"]',

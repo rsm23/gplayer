@@ -800,6 +800,17 @@
   padding: 0 13px;
 }
 
+.settings-grid select.settings-multi-select {
+  height: auto;
+  min-height: 240px;
+  padding: 8px;
+}
+
+.settings-grid select.settings-multi-select option {
+  padding: 7px 9px;
+  border-radius: 6px;
+}
+
 .settings-grid textarea {
   min-height: 144px;
   padding: 13px 14px;

@@ -11,6 +11,7 @@ import type { AuthService } from './auth/auth-service.js'
 import type { SessionAdminService } from './auth/session-admin-service.js'
 import type { UserAdminService } from './auth/user-admin-service.js'
 import { loadConfig, type AppConfig } from './config.js'
+import { ExtractorFactory } from './hosting/extractor-factory.js'
 import { registerAdminRoutes } from './http/admin-routes.js'
 import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
@@ -23,6 +24,8 @@ import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/sour
 import { registerStreamingRoutes } from './http/streaming-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
 import { publicErrors, renderPublicError } from './player/public-page.js'
+import { createCountryCodeLookup, type CountryCodeLookup } from './security/geoip-country.js'
+import type { MiscSettingsLoader } from './settings/misc-runtime.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -34,6 +37,7 @@ export type AppDependencies = Readonly<{
   settings?: SettingsAdminService
   siteAssets?: SiteAssetManager
   vastAssets?: VastAssetManager
+  countryCodeLookup?: CountryCodeLookup
 }>
 
 export async function buildApp(
@@ -42,7 +46,7 @@ export async function buildApp(
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: config.nodeEnv !== 'test',
-    trustProxy: true,
+    trustProxy: typeof config.trustProxy === 'boolean' ? config.trustProxy : [...config.trustProxy],
     requestIdHeader: 'x-request-id'
   })
 
@@ -61,6 +65,12 @@ export async function buildApp(
   const authRuntime = createAuthRuntime(app, config)
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
   const publicRoot = path.resolve(currentDirectory, '../public')
+  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config)
+  const supportedHosts = sourceApiRuntime.supportedHosts ?? new Set(new ExtractorFactory().supportedHosts())
+  const loadMiscSettings: MiscSettingsLoader = async () => await settingsRuntime.miscSettings(supportedHosts)
+  const countryCodeLookup = dependencies.countryCodeLookup ?? createCountryCodeLookup(
+    path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
+  )
 
   await registerSystemRoutes(app, config)
   await registerAdminRoutes(
@@ -77,16 +87,19 @@ export async function buildApp(
     settingsRuntime,
     dependencies.users ?? authRuntime.users,
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
-    dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl)
+    dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl),
+    supportedHosts
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
-  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings })
-  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config)
+  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, countryCodeLookup, supportedHosts })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
     loadAdsSettings,
-    loadPlayerSettings
+    loadPlayerSettings,
+    loadMiscSettings,
+    countryCodeLookup,
+    supportedHosts
   })
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {

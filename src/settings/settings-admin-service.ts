@@ -1,6 +1,7 @@
 import { customHeadersForUrl, decodeCustomHeaderRules, defaultCustomHeaderRules, parseCustomHeaderSubmission, type CustomHeaderRule } from './custom-headers.js'
 import { isSafeVastAssetName } from './vast-assets-service.js'
 import { parsePlayerSettingsSubmission, playerSettings, type PlayerSettings, type PlayerSettingsDefaults } from './player-settings.js'
+import { miscSettings, parseMiscSettingsSubmission, type MiscSettings } from './misc-settings.js'
 
 const BOOLEAN_KEYS = [
   'production_mode',
@@ -467,6 +468,21 @@ export class SettingsAdminService {
     if (result.status === 'invalid') return result
     await this.store.upsertMany(result.entries)
     return Object.freeze({ status: 'ok', message: 'The Player Settings have been successfully updated' })
+  }
+
+  public async miscSettings(supportedHosts: ReadonlySet<string>): Promise<MiscSettings> {
+    return miscSettings(await this.store.getAll(), supportedHosts)
+  }
+
+  public async saveMisc(
+    input: Record<string, unknown>,
+    supportedHosts: ReadonlySet<string>
+  ): Promise<SettingsMutationResult> {
+    const raw = await this.store.getAll()
+    const result = parseMiscSettingsSubmission(input, raw, supportedHosts)
+    if (result.status === 'invalid') return result
+    await this.store.upsertMany(result.entries)
+    return Object.freeze({ status: 'ok', message: 'The Misc Settings have been successfully updated' })
   }
 
   public async saveAds(input: Record<string, unknown>): Promise<SettingsMutationResult> {

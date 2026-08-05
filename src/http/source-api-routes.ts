@@ -11,7 +11,9 @@ import type { MediaResult, MediaSource, MediaTrack } from '../core/source-resolv
 import { createMediaProxyPath } from './media-routes.js'
 import { createStreamingProxyPath, type StreamingRoute } from './streaming-routes.js'
 import { Security } from '../security/security.js'
+import type { CountryCodeLookup } from '../security/geoip-country.js'
 import { legacyVastConfiguration, loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
+import { accessPolicyFromMisc, accessPolicyRejects, filterSourcesByResolution, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
@@ -40,6 +42,8 @@ export type SourceApiRouteOptions = Readonly<{
   supportedHosts?: ReadonlySet<string>
   loadAdsSettings?: AdsSettingsLoader
   loadPlayerSettings?: PlayerSettingsLoader
+  loadMiscSettings?: MiscSettingsLoader
+  countryCodeLookup?: CountryCodeLookup
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -65,10 +69,13 @@ export async function registerSourceApiRoutes(
     const parsed = queryToken.length === 0
       ? null
       : parsePlayerQuery(queryToken, security, { secureSalt: config.secureSalt }).media
-    const [ads, player] = await Promise.all([
+    const [ads, player, misc, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
-      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      countryCodeForRequest(request, options.countryCodeLookup)
     ])
+    if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(parsed, misc.disable_host)) return plaintextFailure(reply)
     const output = isDownloadConfigRequest(request)
       ? createDownloadConfiguration(config, parsed, ads)
       : createEmbedConfiguration(config, parsed, request.headers['user-agent'] ?? '', ads, player)
@@ -83,6 +90,12 @@ export async function registerSourceApiRoutes(
     const envelope = parseApiRequest(request, security, config)
     if (envelope === null) return plaintextFailure(reply)
 
+    const [misc, countryCode] = await Promise.all([
+      loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      countryCodeForRequest(request, options.countryCodeLookup)
+    ])
+    if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(envelope.media, misc.disable_host)) return plaintextFailure(reply)
+
     let result: MediaResult
     try {
       result = await options.resolve(envelope.media, {
@@ -95,6 +108,10 @@ export async function registerSourceApiRoutes(
       return plaintextFailure(reply, 'Server Error')
     }
     if (result.sources.length === 0) return plaintextFailure(reply)
+    const policy = accessPolicyFromMisc(misc)
+    const resolvedTitle = result.title.length > 0 ? result.title : titleFromMedia(envelope.media)
+    if (policy.isTitleBlacklisted(resolvedTitle)) return plaintextFailure(reply)
+    result = Object.freeze({ ...result, sources: filterSourcesByResolution(result.sources, misc.disable_resolution) })
 
     const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
     const output = createSourceResponse(
@@ -115,6 +132,32 @@ export async function registerSourceApiRoutes(
   app.get('/api-config/*', apiConfig)
   app.route({ method: ['GET', 'POST'], url: '/api', handler: api })
   app.route({ method: ['GET', 'POST'], url: '/api/', handler: api })
+}
+
+async function countryCodeForRequest(request: FastifyRequest, lookup: CountryCodeLookup | undefined): Promise<string> {
+  if (lookup === undefined) return ''
+  try {
+    return await lookup(request.ip)
+  } catch {
+    return ''
+  }
+}
+
+function networkAccessRejected(
+  request: FastifyRequest,
+  settings: Awaited<ReturnType<typeof loadRuntimeMiscSettings>>,
+  countryCode: string
+): boolean {
+  return accessPolicyRejects(accessPolicyFromMisc(settings), {
+    clientIp: request.ip,
+    countryCode,
+    referer: '',
+    userAgent: request.headers['user-agent'] ?? ''
+  })
+}
+
+function mediaHostDisabled(media: PlayerMediaQuery | null, disabledHosts: readonly string[]): boolean {
+  return media?.host !== undefined && disabledHosts.includes(media.host)
 }
 
 function parseApiRequest(

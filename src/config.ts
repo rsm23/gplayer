@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { isIP } from 'node:net'
 import { z } from 'zod'
 
 const environmentSchema = z.object({
@@ -14,6 +15,7 @@ const environmentSchema = z.object({
   BUFFER_SIZE: z.coerce.number().int().positive().default(1_024_000),
   SMALL_BUFFER_SIZE: z.coerce.number().int().positive().default(512_000),
   MAX_DOWNLOAD_SPEED: z.coerce.number().int().nonnegative().default(0),
+  TRUST_PROXY: z.string().default('false'),
   DB_MASTER_HOST: z.string().min(1).default('127.0.0.1'),
   DB_MASTER_PORT: z.coerce.number().int().min(1).max(65_535).default(3_306),
   DB_MASTER_NAME: z.string().min(1).default('gplayer'),
@@ -51,6 +53,7 @@ export type AppConfig = Readonly<{
   bufferSize: number
   smallBufferSize: number
   maxDownloadSpeed: number
+  trustProxy: boolean | readonly string[]
   database: Readonly<{
     master: DatabaseEndpointConfig
     replica: DatabaseEndpointConfig
@@ -81,6 +84,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     bufferSize: parsed.BUFFER_SIZE,
     smallBufferSize: parsed.SMALL_BUFFER_SIZE,
     maxDownloadSpeed: parsed.MAX_DOWNLOAD_SPEED,
+    trustProxy: parseTrustedProxies(parsed.TRUST_PROXY),
     database: Object.freeze({
       master: Object.freeze({
         host: parsed.DB_MASTER_HOST,
@@ -100,4 +104,24 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
       connectionLimit: parsed.DB_CONNECTION_LIMIT
     })
   })
+}
+
+function parseTrustedProxies(value: string): boolean | readonly string[] {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === '' || normalized === 'false') return false
+  if (normalized === 'true') return true
+  const entries = [...new Set(value.split(',').map((entry) => entry.trim()).filter(Boolean))]
+  if (entries.length === 0 || entries.some((entry) => !validProxyAddress(entry))) {
+    throw new Error('TRUST_PROXY must be true, false, or a comma-separated list of IP addresses/CIDR ranges')
+  }
+  return Object.freeze(entries)
+}
+
+function validProxyAddress(value: string): boolean {
+  if (!value.includes('/')) return isIP(value) !== 0
+  const [address, prefix, ...remainder] = value.split('/')
+  const version = isIP(address ?? '')
+  if (version === 0 || remainder.length > 0 || !/^\d+$/.test(prefix ?? '')) return false
+  const bits = Number(prefix)
+  return Number.isInteger(bits) && bits >= 0 && bits <= (version === 4 ? 32 : 128)
 }

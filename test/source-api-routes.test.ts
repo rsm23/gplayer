@@ -316,6 +316,113 @@ describe('legacy player source API routes', () => {
     expect(invalidConfig.json()).toEqual({ status: 'fail', message: 'Not Found' })
   })
 
+  it('enforces disabled hosts, country bans, VPN ranges, and the legacy browser policy before extraction', async () => {
+    await app.close()
+    const values = {
+      disable_host: '["direct"]',
+      banned_countries: '["FR"]',
+      block_vpn: 'true',
+      block_vpn_list: '127.0.0.0/8'
+    }
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      countryCodeLookup: async () => 'FR'
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
+
+    const source = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain', 'user-agent': 'VLC/3.0' },
+      payload: request.body
+    })
+    expect(source.json()).toEqual({ status: 'fail', message: 'Not Found' })
+    expect(resolve).not.toHaveBeenCalled()
+
+    const configuration = await app.inject({
+      method: 'GET',
+      url: `/api-config/${request.queryToken}?p=${request.passwordToken}`
+    })
+    expect(configuration.json()).toEqual({ status: 'fail', message: 'Not Found' })
+  })
+
+  it('rejects blacklisted resolved titles and applies legacy resolution buckets before proxying', async () => {
+    await app.close()
+    const values = { disable_resolution: '["1000","700"]', word_blacklisted: 'forbidden' }
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
+    resolve.mockResolvedValueOnce({
+      ...mediaResult(),
+      title: 'Allowed title',
+      sources: [
+        { file: 'https://cdn.example.test/1080.mp4', type: 'video/mp4', label: '1080p' },
+        { file: 'https://cdn.example.test/720.mp4', type: 'video/mp4', label: '720p' },
+        { file: 'https://cdn.example.test/480.mp4', type: 'video/mp4', label: '480p' }
+      ]
+    })
+    const filtered = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const output = decryptJson(filtered.body, request.password)
+    expect(output.sources).toHaveLength(1)
+    expect(output.sources[0]).toMatchObject({ label: '480p', type: 'video/mp4' })
+
+    resolve.mockResolvedValueOnce({ ...mediaResult(), title: 'A forbidden title' })
+    const blocked = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    expect(blocked.json()).toEqual({ status: 'fail', message: 'Not Found' })
+  })
+
+  it('does not trust spoofed forwarding headers unless TRUST_PROXY is configured', async () => {
+    await app.close()
+    const values = { block_vpn: 'true', block_vpn_list: '203.0.113.0/24' }
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain', 'x-forwarded-for': '203.0.113.9' },
+      payload: request.body
+    })
+    expect(response.headers['content-type']).toContain('text/plain')
+    expect(resolve).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ clientIp: '127.0.0.1' }))
+
+    await app.close()
+    resolve.mockClear()
+    const trustedConfig = loadConfig({
+      NODE_ENV: 'test',
+      SECURE_SALT: secureSalt,
+      BASE_URL: 'https://player.example/',
+      TRUST_PROXY: '127.0.0.1'
+    })
+    app = await buildApp(trustedConfig, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const blocked = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain', 'x-forwarded-for': '203.0.113.9' },
+      payload: request.body
+    })
+    expect(blocked.json()).toEqual({ status: 'fail', message: 'Not Found' })
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
   function authenticatedRequest(media: PlayerMediaQuery) {
     const password = '1700000000'
     const queryToken = security.encryptURL(buildPlayerQuery(media))

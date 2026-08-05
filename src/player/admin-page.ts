@@ -2,6 +2,7 @@ import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
 import type { CustomHeaderRule } from '../settings/custom-headers.js'
+import { MISC_COUNTRY_OPTIONS, MISC_RESOLUTION_OPTIONS, miscHostOptions, type MiscSettings } from '../settings/misc-settings.js'
 import { PLAYER_CHOICES, PLAYER_EDGE_STYLES, PLAYER_FONTS, PLAYER_LANGUAGE_OPTIONS, PLAYER_LOADERS, PLAYER_LOGO_POSITIONS, PLAYER_PRELOAD, PLAYER_RESOLUTIONS, PLAYER_SKINS, PLAYER_STRETCHING, type PlayerSettings } from '../settings/player-settings.js'
 import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 import type { VastAsset } from '../settings/vast-assets-service.js'
@@ -584,6 +585,76 @@ export function renderAdminPlayerSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminMiscSettings(input: Readonly<{
+  adminBase: string
+  values: MiscSettings
+  supportedHosts: ReadonlySet<string>
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const checked = (value: boolean): string => value ? ' checked' : ''
+  const bypassed = new Set(input.values.bypass_host)
+  const disabled = new Set(input.values.disable_host)
+  const disabledResolutions = new Set(input.values.disable_resolution)
+  const bannedCountries = new Set(input.values.banned_countries)
+  const hosts = miscHostOptions(input.supportedHosts)
+  const hostOptions = (selected: ReadonlySet<string>): string => hosts
+    .map(({ value, label }) => `<option value="${escapeHtml(value)}"${selected.has(value) ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('')
+  const resolutionOptions = MISC_RESOLUTION_OPTIONS
+    .map((value) => `<option value="${escapeHtml(value)}"${disabledResolutions.has(value) ? ' selected' : ''}>${escapeHtml(/^\d+$/.test(value) ? `${value}p+` : value)}</option>`)
+    .join('')
+  const countryOptions = MISC_COUNTRY_OPTIONS
+    .map(({ code, name }) => `<option value="${escapeHtml(code)}"${bannedCountries.has(code) ? ' selected' : ''}>${escapeHtml(name)}</option>`)
+    .join('')
+
+  return adminDocument('Misc settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Delivery policy</p>
+  <div class="admin-dashboard-heading"><div><h1>Misc settings.</h1><p>Control host availability, source quality, outbound proxies, embed access, geography, and VPN ranges through the complete legacy contract.</p></div><span class="admin-role">13 keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'misc')}
+  <form class="admin-settings-form misc-settings-editor" action="${escapeHtml(input.adminBase)}/settings/misc/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="misc-hosts-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Sources</p><h2 id="misc-hosts-title">Hosts and resolutions</h2><p>Bypassed hosts retain their legacy routing preference. Disabled hosts are rejected before extraction; quality filters use the supplied resolution buckets.</p></div>
+      <div class="settings-grid">
+        <div class="field"><label for="bypass_host">Bypassed hosts</label><input type="hidden" name="bypass_host[]" value=""><select class="settings-multi-select" id="bypass_host" name="bypass_host[]" multiple size="10">${hostOptions(bypassed)}</select><p class="field-hint">Selected providers are stored for VPS-bandwidth bypass routing.</p></div>
+        <div class="field"><label for="disable_host">Disabled hosts</label><input type="hidden" name="disable_host[]" value=""><select class="settings-multi-select" id="disable_host" name="disable_host[]" multiple size="10">${hostOptions(disabled)}</select><p class="field-hint">Selected providers cannot resolve or play.</p></div>
+        <div class="field"><label for="disable_resolution">Disabled video resolutions</label><input type="hidden" name="disable_resolution[]" value=""><select class="settings-multi-select" id="disable_resolution" name="disable_resolution[]" multiple size="8">${resolutionOptions}</select><p class="field-hint">Matching is bucketed (for example, 1080p is in the 1000p+ bucket). As in the supplied runtime, a sole source is retained.</p></div>
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="misc-proxy-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Proxy</p><h2 id="misc-proxy-title">Outbound proxy pool</h2><p>Proxy endpoints and credentials are write-only. Saving a blank field preserves the current list; use the explicit clear control to remove it.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('disable_proxy', 'Disable proxy', 'Do not use a configured outbound proxy for provider requests.', checked(input.values.disable_proxy))}
+        ${settingsToggle('free_proxy', 'Disable free proxy', 'Do not add endpoints from the legacy free-proxy source.', checked(input.values.free_proxy))}
+        <div class="field settings-wide"><label for="proxy_list">Replacement proxy list</label><textarea id="proxy_list" name="proxy_list" rows="7" maxlength="1000000" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="203.0.113.10:1080,socks5"></textarea><p class="field-hint">${input.values.proxy_list_configured ? `${input.values.proxy_count} stored ${input.values.proxy_count === 1 ? 'endpoint' : 'endpoints'}; values are not returned to this page.` : 'No proxy endpoints are stored.'} Formats: IP:PORT[,TYPE] or IP:PORT,USERNAME:PASSWORD[,TYPE]. Types: socks4, socks4a, socks5, https.</p></div>
+        ${settingsToggle('clear_proxy_list', 'Clear stored proxy list', 'Delete every stored endpoint when this form is submitted.', '')}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="misc-embed-title">
+      <div class="settings-section-heading"><p class="panel-kicker">03 / Embeds</p><h2 id="misc-embed-title">Referer access rules</h2><p>Allow or deny embed origins and exact referer paths. Empty allowlists permit every origin; direct visits without a referer remain available for legacy compatibility.</p></div>
+      <div class="settings-grid">
+        ${settingsTextarea('domain_whitelisted', 'Allowed embed domains/IPs', input.values.domain_whitelisted, 'trusted.example', 'One hostname or IP per line. Schemes are normalized away.')}
+        ${settingsTextarea('domain_blacklisted', 'Blacklisted domains/IPs', input.values.domain_blacklisted, 'blocked.example', 'One hostname or IP per line.')}
+        ${settingsTextarea('link_blacklisted', 'Blacklisted referer URLs', input.values.link_blacklisted, 'blocked.example/watch/video', 'One exact normalized referer URL or path per line.')}
+        ${settingsTextarea('word_blacklisted', 'Blacklisted title words', input.values.word_blacklisted, 'prohibited phrase', 'Resolved source titles containing these case-insensitive words are rejected.')}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="misc-network-title">
+      <div class="settings-section-heading"><p class="panel-kicker">04 / Network</p><h2 id="misc-network-title">Countries and VPN ranges</h2><p>Country decisions use the bundled MaxMind database. Client IP forwarding is accepted only from proxies explicitly configured with TRUST_PROXY.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        <div class="field"><label for="banned_countries">Banned countries</label><input type="hidden" name="banned_countries[]" value=""><select class="settings-multi-select" id="banned_countries" name="banned_countries[]" multiple size="12">${countryOptions}</select><p class="field-hint">Hold Command or Control to select multiple countries.</p></div>
+        ${settingsToggle('block_vpn', 'Block proxy/VPN ranges', 'Reject client IPs matching the configured prefix or CIDR list.', checked(input.values.block_vpn))}
+        <div class="field settings-wide"><label for="block_vpn_list">IP prefixes or IPv4/IPv6 ranges</label><textarea id="block_vpn_list" name="block_vpn_list" rows="7" maxlength="1000000" spellcheck="false" placeholder="203.0.113.0/24&#10;2001:db8::/32">${escapeHtml(input.values.block_vpn_list)}</textarea><p class="field-hint">One full IP, dotted/IPv6 prefix, or CIDR range per line. When empty, the supplied default data-center prefixes apply.</p></div>
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update misc settings</span><span aria-hidden="true">↗</span></button><p>Host blocks, quality filters, embed policies, title rules, country bans, and VPN ranges are enforced by the Node runtime.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminAdsSettings(input: Readonly<{
   adminBase: string
   values: AdsSettings
@@ -753,8 +824,8 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'ads'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'misc' | 'ads'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'misc' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/misc/">Misc</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
 }
 
 function playerSettingLabel(value: string): string {
@@ -785,6 +856,10 @@ function vastScheduleRow(offset: string, url: string, index: number | string): s
 
 function adsTextarea(name: string, label: string, value: string): string {
   return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><textarea id="${name}" name="${name}" maxlength="100000" rows="5" placeholder="HTML tags are retained for the page runtime.">${escapeHtml(value)}</textarea></div>`
+}
+
+function settingsTextarea(name: string, label: string, value: string, placeholder: string, hint: string): string {
+  return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><textarea id="${name}" name="${name}" maxlength="1000000" rows="7" spellcheck="false" placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea><p class="field-hint">${escapeHtml(hint)}</p></div>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {

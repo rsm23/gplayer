@@ -13,6 +13,8 @@ import { renderDownloadError, renderDownloadPage } from '../player/download-page
 import { renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
 import { PlayerLinkGenerator } from '../player/link-generator.js'
 import { Security } from '../security/security.js'
+import type { CountryCodeLookup } from '../security/geoip-country.js'
+import { accessPolicyFromMisc, accessPolicyRejects, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -33,6 +35,9 @@ const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1H
 export type PlayerRouteOptions = Readonly<{
   loadAdsSettings?: AdsSettingsLoader
   loadPlayerSettings?: PlayerSettingsLoader
+  loadMiscSettings?: MiscSettingsLoader
+  countryCodeLookup?: CountryCodeLookup
+  supportedHosts?: ReadonlySet<string>
 }>
 
 export async function registerPlayerRoutes(
@@ -51,7 +56,12 @@ export async function registerPlayerRoutes(
     }
 
     try {
-      const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+      const [player, misc, countryCode] = await Promise.all([
+        loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+        loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+        countryCodeForRequest(request, options.countryCodeLookup)
+      ])
+      if (networkAccessRejected(request, misc, countryCode, false)) throw new Error('Access denied')
       const generator = new PlayerLinkGenerator(security, {
         baseUrl: config.baseUrl,
         embedSlug: player.slug_embed,
@@ -71,6 +81,7 @@ export async function registerPlayerRoutes(
         ...(parsed.data.subs !== undefined ? { subs: parsed.data.subs } : {}),
         ...(parsed.data.uid !== undefined ? { uid: parsed.data.uid } : {})
       })
+      if (mediaContainsDisabledHost(generated.query, misc.disable_host)) throw new Error('This video host is disabled')
       reply.code(200)
       return {
         status: 'ok',
@@ -114,7 +125,11 @@ export async function registerPlayerRoutes(
   })
 
   const redirectPlaintextRequest = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    const [player, misc, countryCode] = await Promise.all([
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      countryCodeForRequest(request, options.countryCodeLookup)
+    ])
     const rawQuery = rawQueryFromUrl(request.url)
     const parsed = parsePlayerQuery(rawQuery, security, {
       secureSalt: config.secureSalt,
@@ -124,6 +139,12 @@ export async function registerPlayerRoutes(
       reply.code(400).type('application/json; charset=utf-8')
       return { status: 'fail', message: parsed.errors[0] ?? 'Bad Request', result: null }
     }
+    if (networkAccessRejected(request, misc, countryCode, true, config.baseUrl.origin) ||
+      mediaHostDisabled(parsed.media, misc.disable_host) ||
+      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(parsed.media))) {
+      reply.code(403).type('application/json; charset=utf-8')
+      return { status: 'fail', message: 'Access denied', result: null }
+    }
     const token = security.encryptURL(buildPlayerQuery(parsed.media))
     return reply.redirect(routePath(player.slug_embed, token))
   }
@@ -132,9 +153,11 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.request}/`, redirectPlaintextRequest)
 
   const showEmbed = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player] = await Promise.all([
+    const [ads, player, misc, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
-      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      countryCodeForRequest(request, options.countryCodeLookup)
     ])
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
       secureSalt: config.secureSalt,
@@ -149,12 +172,13 @@ export async function registerPlayerRoutes(
       reply.code(400).type('text/html; charset=utf-8')
       return renderEmbedError(parsed.errors[0] ?? 'The player link is invalid.')
     }
-    reply
-      .header('cache-control', 'private, no-store')
-      .header('content-security-policy', embedContentSecurityPolicy(ads))
-      .header('x-content-type-options', 'nosniff')
-      .header('referrer-policy', 'strict-origin-when-cross-origin')
-      .type('text/html; charset=utf-8')
+    applyEmbedHeaders(reply, ads)
+    if (networkAccessRejected(request, misc, countryCode, true, config.baseUrl.origin) ||
+      mediaHostDisabled(parsed.media, misc.disable_host) ||
+      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(parsed.media))) {
+      reply.code(403)
+      return renderEmbedError('You are not allowed to access this player.')
+    }
     const media = proxyPlayerMedia(withDefaultPoster(parsed.media, player), security)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
@@ -166,9 +190,11 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.embed}/`, showEmbed)
 
   const showDownload = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player] = await Promise.all([
+    const [ads, player, misc, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
-      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+      loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
+      loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      countryCodeForRequest(request, options.countryCodeLookup)
     ])
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
       secureSalt: config.secureSalt
@@ -177,6 +203,12 @@ export async function registerPlayerRoutes(
     if (parsed.media === null) {
       reply.code(400).type('text/html; charset=utf-8')
       return renderDownloadError(parsed.errors[0] ?? 'The download link is invalid.')
+    }
+    if (networkAccessRejected(request, misc, countryCode, false) ||
+      mediaHostDisabled(parsed.media, misc.disable_host) ||
+      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(parsed.media))) {
+      reply.code(403).type('text/html; charset=utf-8')
+      return renderDownloadError('You are not allowed to access this download.')
     }
     const embedUrl = routePath(player.slug_embed, parsed.token)
     const alternativeUrl = createAlternativeDownloadUrl(parsed.media, security, player.slug_download)
@@ -204,6 +236,72 @@ export async function registerPlayerRoutes(
 
   app.get('/:playerSlug', dispatchConfiguredPlayerRoute)
   app.get('/:playerSlug/', dispatchConfiguredPlayerRoute)
+}
+
+async function countryCodeForRequest(request: FastifyRequest, lookup: CountryCodeLookup | undefined): Promise<string> {
+  if (lookup === undefined) return ''
+  try {
+    return await lookup(request.ip)
+  } catch {
+    return ''
+  }
+}
+
+function networkAccessRejected(
+  request: FastifyRequest,
+  settings: Awaited<ReturnType<typeof loadRuntimeMiscSettings>>,
+  countryCode: string,
+  includeReferer: boolean,
+  selfOrigin = ''
+): boolean {
+  const referer = includeReferer ? request.headers.referer ?? '' : ''
+  return accessPolicyRejects(accessPolicyFromMisc(settings), {
+    clientIp: request.ip,
+    countryCode,
+    referer: sameOrigin(referer, selfOrigin) ? '' : referer,
+    userAgent: request.headers['user-agent'] ?? ''
+  })
+}
+
+function sameOrigin(referer: string, origin: string): boolean {
+  if (referer === '' || origin === '') return false
+  try {
+    return new URL(referer).origin === origin
+  } catch {
+    return false
+  }
+}
+
+function mediaHostDisabled(media: PlayerMediaQuery, disabledHosts: readonly string[]): boolean {
+  return media.host !== undefined && disabledHosts.includes(media.host)
+}
+
+function mediaContainsDisabledHost(media: PlayerMediaQuery, disabledHosts: readonly string[]): boolean {
+  return [media.host, media.ahost].some((host) => host !== undefined && disabledHosts.includes(host))
+}
+
+function playerMediaTitle(media: PlayerMediaQuery): string {
+  if (media.host === 'direct' && media.id !== undefined) {
+    try {
+      const filename = decodeURIComponent(new URL(media.id).pathname.split('/').filter(Boolean).at(-1) ?? '')
+      if (filename.trim().length > 0) return filename
+    } catch {
+      // The renderer falls back to the provider label for invalid URL/escape input.
+    }
+  }
+  return `${(media.host ?? 'video').replaceAll(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} video`
+}
+
+function applyEmbedHeaders(
+  reply: Parameters<FastifyRequest['routeOptions']['handler']>[1],
+  ads: AdsSettings
+): void {
+  reply
+    .header('cache-control', 'private, no-store')
+    .header('content-security-policy', embedContentSecurityPolicy(ads))
+    .header('x-content-type-options', 'nosniff')
+    .header('referrer-policy', 'strict-origin-when-cross-origin')
+    .type('text/html; charset=utf-8')
 }
 
 function embedAdsOptions(ads: AdsSettings): EmbedAdsOptions {

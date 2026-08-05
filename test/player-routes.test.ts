@@ -237,6 +237,73 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain('sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"')
   })
 
+  it('enforces misc host and embed-origin policies while retaining direct no-referer compatibility', async () => {
+    const values = {
+      disable_host: '["youtube"]',
+      domain_whitelisted: 'allowed.example',
+      domain_blacklisted: 'blocked.example',
+      link_blacklisted: 'allowed.example/blocked-path',
+      word_blacklisted: 'forbidden'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const security = new Security(secureSalt)
+    const direct = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+    const youtube = security.encryptURL('host=youtube&id=video-id&poster=')
+
+    const allowed = await app.inject({ method: 'GET', url: `/e/?${direct}`, headers: { referer: 'https://allowed.example/watch' } })
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.body).toContain('<video id="media-player"')
+
+    const missingReferer = await app.inject({ method: 'GET', url: `/e/?${direct}` })
+    expect(missingReferer.statusCode).toBe(200)
+
+    const internalRedirect = await app.inject({ method: 'GET', url: `/e/?${direct}`, headers: { referer: 'https://player.example/request-player/?host=direct' } })
+    expect(internalRedirect.statusCode).toBe(200)
+
+    const disabledAlternative = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&ahost=youtube&aid=video-id&poster=')
+    const mainStillAvailable = await app.inject({ method: 'GET', url: `/e/?${disabledAlternative}`, headers: { referer: 'https://allowed.example/watch' } })
+    expect(mainStillAvailable.statusCode).toBe(200)
+
+    for (const referer of ['https://unknown.example/watch', 'https://blocked.example/watch', 'https://allowed.example/blocked-path/']) {
+      const blocked = await app.inject({ method: 'GET', url: `/e/?${direct}`, headers: { referer } })
+      expect(blocked.statusCode).toBe(403)
+      expect(blocked.body).toContain('not allowed')
+    }
+
+    const disabled = await app.inject({ method: 'GET', url: `/e/?${youtube}`, headers: { referer: 'https://allowed.example/watch' } })
+    expect(disabled.statusCode).toBe(403)
+
+    const forbiddenTitle = security.encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fforbidden-movie.mp4&poster=')
+    expect((await app.inject({ method: 'GET', url: `/e/?${forbiddenTitle}`, headers: { referer: 'https://allowed.example/watch' } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: `/d/?${forbiddenTitle}` })).statusCode).toBe(403)
+
+    const generator = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=createPlayer&id=https%3A%2F%2Fyoutube.com%2Fwatch%3Fv%3Dvideo-id'
+    })
+    expect(generator.json()).toMatchObject({ status: 'fail', message: 'This video host is disabled' })
+  })
+
+  it('enforces country, VPN, and blocked-browser policy on public player routes', async () => {
+    const values = {
+      banned_countries: '["FR"]',
+      block_vpn: 'true',
+      block_vpn_list: '198.51.100.0/24'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      countryCodeLookup: async () => 'FR'
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+    const response = await app.inject({ method: 'GET', url: `/e/?${token}`, headers: { 'user-agent': 'VLC/3.0' } })
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toContain('not allowed')
+  })
+
   it('routes MPEG-DASH manifests through the authenticated proxy and loads Shaka Player', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Flive%2Fmanifest.mpd&poster=')
