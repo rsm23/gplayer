@@ -7,10 +7,12 @@ import mysql from 'mysql2/promise'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(await fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8'))
 const database = process.env.DB_MASTER_NAME ?? 'gplayer'
+const socketPath = process.env.DB_MASTER_SOCKET?.trim()
 
 const connection = await mysql.createConnection({
-  host: process.env.DB_MASTER_HOST ?? '127.0.0.1',
-  port: Number(process.env.DB_MASTER_PORT ?? 3306),
+  ...(socketPath
+    ? { socketPath }
+    : { host: process.env.DB_MASTER_HOST ?? '127.0.0.1', port: Number(process.env.DB_MASTER_PORT ?? 3306) }),
   database,
   user: process.env.DB_MASTER_USER ?? 'root',
   password: process.env.DB_MASTER_PASSWORD ?? '',

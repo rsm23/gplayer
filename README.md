@@ -20,6 +20,15 @@ Validation:
 pnpm check
 ```
 
+Create or converge the configured MySQL/MariaDB schema to the manifest version, then audit it:
+
+```bash
+pnpm db:migrate
+pnpm audit:schema
+```
+
+The migrator uses an advisory database lock, adds or reconciles the 20 tables and four views without loading the dump's demo accounts, and retains unknown extension columns. It is an explicit deployment command rather than an automatic server-start mutation. Back up an existing database before any schema migration. Local socket-authenticated installations can set `DB_MASTER_SOCKET` (for example, `/tmp/mysql.sock`) for these database utilities.
+
 Refresh the supplied-source inventory and non-PHP assets:
 
 ```bash

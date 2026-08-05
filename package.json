@@ -17,6 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "audit:schema": "node tools/audit-schema.mjs",
+    "db:migrate": "tsx tools/migrate-database.ts",
     "inspect:legacy-php": "node tools/inspect-yakpro-php.mjs",
     "inventory:legacy": "node tools/inventory-legacy.mjs",
     "sync:legacy-assets": "node tools/sync-legacy-assets.mjs"
