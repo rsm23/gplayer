@@ -9,10 +9,11 @@ import { Security } from '../security/security.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import type { SubtitleAdminService } from '../subtitles/subtitle-admin-service.js'
 import { parseBulkSubtitleLines, type StoredVideoDetail, type VideoAccess, type VideoAdminService, type VideoFormSubmission, type VideoLinkSlugs, type VideoMutationResult } from '../videos/video-admin-service.js'
+import { VIDEO_BULK_MAX_ITEMS, type VideoBulkService } from '../videos/video-bulk-service.js'
 import type { VideoCheckerService } from '../videos/video-checker-service.js'
 import { VIDEO_EXPORT_FAIL, VIDEO_EXPORT_SUCCESS, VIDEO_IMPORT_FAIL, type VideoTransferService } from '../videos/video-transfer-service.js'
 
-const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: http: https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: http: https:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const UNAUTHORIZED = 'You are not authorized to access this feature'
 
 type UploadedPart = Readonly<{ fieldname: string; filename: string; content: Buffer }>
@@ -25,6 +26,7 @@ export async function registerVideoAdminRoutes(
   videos: VideoAdminService,
   transfers: VideoTransferService,
   subtitles: SubtitleAdminService,
+  bulk: VideoBulkService,
   checker: VideoCheckerService,
   loadPlayerSettings?: PlayerSettingsLoader,
   loadImportFileSize?: () => Promise<number>
@@ -42,6 +44,7 @@ export async function registerVideoAdminRoutes(
   const editUrl = `${adminBase}/videos/edit/`
   const deleteUrl = `${adminBase}/videos/delete/`
   const statusUrl = `${adminBase}/videos/status/`
+  const bulkUrl = `${adminBase}/videos/bulk/`
   const checkUrl = `${adminBase}/videos/check/`
   const dmcaUrl = `${adminBase}/videos/dmca/`
   const posterRemoveUrl = `${adminBase}/videos/poster/remove/`
@@ -52,6 +55,7 @@ export async function registerVideoAdminRoutes(
   const exportDownloadUrl = `${adminBase}/videos/export/download/`
   const importAjaxUrl = `${adminBase}/ajax/videos-import/`
   const exportAjaxUrl = `${adminBase}/ajax/videos-export/`
+  const publicAjaxUrl = `${adminBase}/ajax/`
 
   app.get(`${adminBase}/videos/list`, async (request, reply) => await redirectWithQuery(request, reply, listUrl))
   app.get(`${adminBase}/videos/new`, async (_request, reply) => await reply.redirect(newUrl, 308))
@@ -163,6 +167,23 @@ export async function registerVideoAdminRoutes(
 
   app.post(deleteUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.delete(body.id, access), true))
   app.post(statusUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.status(body.id, body.sources, access)))
+
+  app.post(bulkUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    if (!hasSameOrigin(request, config)) return reply.code(403).send(bulkRequestFailure(objectValue(request.body), 'The video request did not originate from this application.'))
+    const user = await authenticatedUserJson(request, auth)
+    if (user === null) return reply.code(401).send(bulkRequestFailure(objectValue(request.body), UNAUTHORIZED))
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'video-bulk')) {
+      return reply.code(403).send(bulkRequestFailure(body, 'The video request could not be verified.'))
+    }
+    try {
+      return reply.send(await bulk.add(body, accessFor(user), sourceContext(request), await currentVideoSlugs()))
+    } catch {
+      return reply.send(bulkRequestFailure(body, 'The video database is temporarily unavailable.'))
+    }
+  })
 
   app.post(checkUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -320,6 +341,26 @@ export async function registerVideoAdminRoutes(
   app.route({ method: ['GET', 'POST'], url: listAjaxUrl, handler: async (request, reply) => await videoAjax(request, reply, true) })
   app.route({ method: ['GET', 'POST'], url: ajaxUrl, handler: async (request, reply) => await videoAjax(request, reply, false) })
 
+  app.post(publicAjaxUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    const body = objectValue(request.body)
+    if (stringValue(body.action) !== 'saveBulkProcess') return reply.send(bulkRequestFailure(body, 'Invalid parameters'))
+    if (!hasSameOrigin(request, config)) return reply.code(403).send(bulkRequestFailure(body, 'The video request did not originate from this application.'))
+    let user: AuthUser | null
+    try {
+      user = await auth.authenticate(tokenFor(request) || stringValue(body.token), request.headers['user-agent'] ?? '')
+    } catch {
+      return reply.send(bulkRequestFailure(body, 'The video database is temporarily unavailable.'))
+    }
+    if (user === null) return reply.send(bulkRequestFailure(body, UNAUTHORIZED))
+    try {
+      return reply.send(await bulk.add(body, accessFor(user), sourceContext(request), await currentVideoSlugs()))
+    } catch {
+      return reply.send(bulkRequestFailure(body, 'The video database is temporarily unavailable.'))
+    }
+  })
+
   app.post(importAjaxUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
     reply.type('application/json; charset=utf-8')
@@ -383,6 +424,7 @@ async function videoListPage(
     dmca,
     isAdmin: user.role === 0,
     mutationCsrfToken: csrfToken(config, tokenFor(request), 'video-mutate'),
+    bulkCsrfToken: csrfToken(config, tokenFor(request), 'video-bulk'),
     transferCsrfToken: csrfToken(config, tokenFor(request), 'video-transfer'),
     importFileSizeKiB: await importFileSize(loadImportFileSize),
     ...(message === undefined ? {} : { message })
@@ -575,6 +617,33 @@ function legacyMutation(result: VideoMutationResult): Readonly<Record<string, un
 
 function legacyData(result: unknown): Readonly<Record<string, unknown>> {
   return Object.freeze({ status: 'ok', message: 'OK', result })
+}
+
+function sourceContext(request: FastifyRequest): Readonly<{ clientIp: string; userAgent: string; language: string }> {
+  return Object.freeze({
+    clientIp: request.ip,
+    userAgent: request.headers['user-agent'] ?? '',
+    language: request.headers['accept-language'] ?? ''
+  })
+}
+
+function bulkRequestFailure(input: Record<string, unknown>, message: string): Readonly<Record<string, unknown>> {
+  const total = strictBoundedInteger(input.total, 1, VIDEO_BULK_MAX_ITEMS)
+  const offset = strictBoundedInteger(input.offset, 0, Math.max(0, (total ?? 0) - 1))
+  return Object.freeze({
+    status: 'fail',
+    message,
+    result: Object.freeze(total === null || offset === null
+      ? { offset: 0, next: 0, total: 0 }
+      : { offset, next: offset + 1, total })
+  })
+}
+
+function strictBoundedInteger(value: unknown, minimum: number, maximum: number): number | null {
+  const normalized = stringValue(value)
+  if (!/^(?:0|[1-9]\d*)$/u.test(normalized)) return null
+  const parsed = Number(normalized)
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null
 }
 
 function emptyDataTables(draw: unknown): Readonly<{ draw: number; data: readonly never[]; recordsTotal: 0; recordsFiltered: 0 }> {

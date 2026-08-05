@@ -35,6 +35,7 @@ import { FileSystemSubtitleAssetManager } from './subtitles/subtitle-assets-serv
 import { VideoAdminService } from './videos/video-admin-service.js'
 import { FileSystemVideoPosterAssetManager } from './videos/video-assets-service.js'
 import { VideoCheckerService } from './videos/video-checker-service.js'
+import { VideoBulkService } from './videos/video-bulk-service.js'
 import { VideoTransferService } from './videos/video-transfer-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -49,6 +50,7 @@ export type AppDependencies = Readonly<{
   vastAssets?: VastAssetManager
   subtitles?: SubtitleAdminService
   videos?: VideoAdminService
+  videoBulk?: VideoBulkService
   videoChecker?: VideoCheckerService
   videoTransfer?: VideoTransferService
   countryCodeLookup?: CountryCodeLookup
@@ -95,6 +97,7 @@ export async function buildApp(
   const hostingHosts = legacyHostingHosts()
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
   const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config, { loadHostingSettings })
+  const videoBulkRuntime = dependencies.videoBulk ?? new VideoBulkService(videosRuntime, sourceApiRuntime.resolve)
   const videoCheckerRuntime = dependencies.videoChecker ?? new VideoCheckerService(videosRuntime, sourceApiRuntime.resolve)
   supportedHosts = sourceApiRuntime.supportedHosts ?? supportedHosts
   const loadMiscSettings: MiscSettingsLoader = async () => await settingsRuntime.miscSettings(supportedHosts)
@@ -140,6 +143,7 @@ export async function buildApp(
     videosRuntime,
     videoTransferRuntime,
     subtitlesRuntime,
+    videoBulkRuntime,
     videoCheckerRuntime,
     loadPlayerSettings,
     loadImportFileSize

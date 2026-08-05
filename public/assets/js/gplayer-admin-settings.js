@@ -297,11 +297,201 @@
     })
   }
 
+  const setupVideoBulk = () => {
+    const form = document.querySelector('[data-video-bulk]')
+    const linksInput = form?.querySelector('textarea[name="links"]')
+    const useTitle = form?.querySelector('input[name="useTitle"]')
+    const csrf = form?.querySelector('input[name="csrf"]')
+    const submit = form?.querySelector('button[type="submit"]')
+    const progressShell = form?.querySelector('[data-video-bulk-progress]')
+    const progress = progressShell?.querySelector('progress')
+    const output = progressShell?.querySelector('output')
+    const results = document.querySelector('[data-video-bulk-results]')
+    const rows = results?.querySelector('[data-video-bulk-rows]')
+    if (!(form instanceof HTMLFormElement) || !(linksInput instanceof HTMLTextAreaElement) || !(useTitle instanceof HTMLInputElement) || !(csrf instanceof HTMLInputElement) || !(submit instanceof HTMLButtonElement) || !(progressShell instanceof HTMLElement) || !(progress instanceof HTMLProgressElement) || !(output instanceof HTMLOutputElement) || !(results instanceof HTMLElement) || !(rows instanceof HTMLTableSectionElement)) return
+
+    const appendTextCell = (row, value) => {
+      const cell = document.createElement('td')
+      cell.textContent = value
+      row.append(cell)
+      return cell
+    }
+    const safeUrl = (value) => {
+      try {
+        const url = new URL(String(value ?? ''), window.location.href)
+        return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : ''
+      } catch {
+        return ''
+      }
+    }
+    const appendFailure = (input, message) => {
+      const row = document.createElement('tr')
+      row.className = 'video-bulk-error'
+      const title = appendTextCell(row, 'Not saved')
+      const detail = document.createElement('span')
+      detail.textContent = `${input} · ${message}`
+      title.append(detail)
+      appendTextCell(row, '—')
+      appendTextCell(row, '—')
+      appendTextCell(row, '—')
+      const status = appendTextCell(row, '')
+      const state = document.createElement('span')
+      state.className = 'video-state video-state-1'
+      state.textContent = 'Failed'
+      status.append(state)
+      appendTextCell(row, '—')
+      rows.append(row)
+    }
+    const appendResult = (record) => {
+      const row = document.createElement('tr')
+      const title = appendTextCell(row, String(record?.title || 'Untitled video'))
+      const slug = document.createElement('span')
+      slug.textContent = String(record?.slug || '')
+      title.append(slug)
+
+      const source = document.createElement('td')
+      source.className = 'video-bulk-source'
+      const sourceUrl = safeUrl(record?.link)
+      if (sourceUrl !== '') {
+        const link = document.createElement('a')
+        link.href = sourceUrl
+        link.target = '_blank'
+        link.rel = 'noopener noreferrer'
+        link.textContent = String(record?.host || 'source')
+        source.append(link)
+      } else source.textContent = String(record?.host || '—')
+      const sourceId = document.createElement('span')
+      sourceId.textContent = String(record?.host_id || '')
+      source.append(sourceId)
+      row.append(source)
+
+      appendTextCell(row, record?.has_sub === true ? 'Available' : '—')
+      const created = Number(record?.created)
+      appendTextCell(row, Number.isFinite(created) && created > 0 ? new Date(created * 1000).toLocaleString() : '—')
+      const statusCell = appendTextCell(row, '')
+      const status = Number(record?.status) === 0 ? 0 : 1
+      const state = document.createElement('span')
+      state.className = `video-state video-state-${status}`
+      state.textContent = status === 0 ? 'Good' : 'Broken'
+      statusCell.append(state)
+
+      const actionsCell = document.createElement('td')
+      const actions = document.createElement('div')
+      actions.className = 'video-row-actions'
+      const embedUrl = safeUrl(record?.actions?.embed)
+      if (embedUrl !== '') {
+        const embed = document.createElement('a')
+        embed.href = embedUrl
+        embed.target = '_blank'
+        embed.rel = 'noopener noreferrer'
+        embed.textContent = 'Embed'
+        actions.append(embed)
+      }
+      const editBase = safeUrl(form.dataset.editUrl)
+      if (editBase !== '' && String(record?.id || '') !== '') {
+        const edit = document.createElement('a')
+        const editUrl = new URL(editBase)
+        editUrl.searchParams.set('id', String(record.id))
+        edit.href = editUrl.href
+        edit.textContent = 'Edit'
+        actions.append(edit)
+      }
+      const deleteUrl = safeUrl(form.dataset.deleteUrl)
+      if (deleteUrl !== '' && String(record?.id || '') !== '') {
+        const deleteForm = document.createElement('form')
+        deleteForm.action = deleteUrl
+        deleteForm.method = 'post'
+        for (const [name, value] of [['csrf', form.dataset.mutationCsrf || ''], ['id', String(record.id)]]) {
+          const input = document.createElement('input')
+          input.type = 'hidden'
+          input.name = name
+          input.value = value
+          deleteForm.append(input)
+        }
+        const button = document.createElement('button')
+        button.type = 'submit'
+        button.className = 'session-revoke'
+        button.textContent = 'Delete'
+        deleteForm.append(button)
+        deleteForm.addEventListener('submit', (event) => {
+          if (!window.confirm(`Delete ${String(record?.title || 'this video')}?`)) event.preventDefault()
+        })
+        actions.append(deleteForm)
+      }
+      actionsCell.append(actions)
+      row.append(actionsCell)
+      rows.append(row)
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      if (!form.reportValidity()) return
+      const sourceLines = linksInput.value.trim()
+      if (sourceLines === '') {
+        progressShell.hidden = false
+        output.textContent = 'Insert the video links first.'
+        return
+      }
+      const links = sourceLines.split('\n').map((value) => value.trim())
+      const maximum = Number(form.dataset.maxVideos ?? '1000')
+      progressShell.hidden = false
+      if (!Number.isSafeInteger(maximum) || maximum < 1 || links.length > maximum) {
+        output.textContent = `Paste no more than ${Number.isSafeInteger(maximum) && maximum > 0 ? maximum : 1000} video URLs at once.`
+        return
+      }
+      if (!window.confirm(`Resolve and save ${links.length} video URL${links.length === 1 ? '' : 's'}?`)) return
+
+      rows.replaceChildren()
+      results.hidden = false
+      progress.max = links.length
+      progress.value = 0
+      submit.disabled = true
+      linksInput.disabled = true
+      useTitle.disabled = true
+      let good = 0
+      let broken = 0
+      let failed = 0
+
+      for (const [offset, data] of links.entries()) {
+        output.textContent = `Resolving ${offset + 1} of ${links.length}…`
+        try {
+          const response = await fetch(form.action, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body: new URLSearchParams({ csrf: csrf.value, data, total: String(links.length), offset: String(offset), useTitle: String(useTitle.checked) })
+          })
+          const payload = await response.json()
+          if (!response.ok || payload?.status !== 'ok' || typeof payload?.result?.data !== 'object') {
+            failed += 1
+            appendFailure(data, String(payload?.message || 'The new video failed to save'))
+          } else {
+            appendResult(payload.result.data)
+            if (Number(payload.result.data.status) === 0) good += 1
+            else broken += 1
+          }
+        } catch (error) {
+          failed += 1
+          appendFailure(data, error instanceof Error ? error.message : 'The new video failed to save')
+        } finally {
+          progress.value = offset + 1
+        }
+      }
+
+      submit.disabled = false
+      linksInput.disabled = false
+      useTitle.disabled = false
+      linksInput.value = ''
+      output.textContent = `${good} Good · ${broken} Broken${failed > 0 ? ` · ${failed} not saved` : ''}`
+    })
+  }
+
   setupCustomHeaders()
   setupVastSchedule()
   setupPlayerSettings()
   setupHostingSettings()
   setupVideoEditor()
+  setupVideoBulk()
   setupVideoChecker()
   revealActiveSettingsTab()
 })()

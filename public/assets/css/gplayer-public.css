@@ -1767,6 +1767,160 @@
   line-height: 1.5;
 }
 
+.video-bulk-panel {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.video-bulk-form,
+.video-bulk-results {
+  min-width: 0;
+  padding: clamp(22px, 3vw, 34px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg-raised);
+}
+
+.video-bulk-form > p {
+  max-width: 830px;
+  margin: 10px 0 24px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.video-bulk-heading,
+.video-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.video-bulk-heading h2,
+.video-bulk-results h3 {
+  margin: 5px 0 0;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+}
+
+.video-bulk-heading > span {
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.video-bulk-form textarea {
+  width: 100%;
+  min-height: 176px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.video-bulk-title-slug {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-top: 16px;
+  cursor: pointer;
+}
+
+.video-bulk-title-slug input {
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  accent-color: var(--brand);
+}
+
+.video-bulk-title-slug span {
+  display: grid;
+  gap: 3px;
+}
+
+.video-bulk-title-slug strong {
+  font-size: 12px;
+}
+
+.video-bulk-title-slug small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.video-bulk-actions {
+  align-items: flex-end;
+  margin-top: 24px;
+}
+
+.video-bulk-actions > .admin-back-link {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.video-bulk-progress {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 520px);
+}
+
+.video-bulk-progress[hidden],
+.video-bulk-results[hidden] {
+  display: none;
+}
+
+.video-bulk-progress progress {
+  width: 100%;
+  height: 9px;
+  accent-color: var(--brand);
+}
+
+.video-bulk-progress output {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.video-bulk-results .session-table-heading a {
+  color: var(--brand-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.video-bulk-table {
+  min-width: 960px;
+}
+
+.video-bulk-table td:first-child {
+  max-width: 260px;
+  font-weight: 700;
+}
+
+.video-bulk-table td:first-child span,
+.video-bulk-source span {
+  display: block;
+  margin-top: 4px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.video-bulk-source a {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.video-bulk-error td {
+  background: color-mix(in srgb, #f15b5b, transparent 94%);
+}
+
 .video-export-choice {
   display: inline-flex;
   align-items: center;
@@ -2160,6 +2314,22 @@
 
   .video-transfer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .video-bulk-heading,
+  .video-bulk-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .video-bulk-form,
+  .video-bulk-results {
+    padding: 22px 18px;
+  }
+
+  .video-bulk-progress,
+  .video-bulk-actions > .admin-back-link {
+    width: 100%;
   }
 
   .video-table th:last-child,

@@ -139,6 +139,7 @@ export function renderAdminVideos(input: Readonly<{
   dmca: string
   isAdmin: boolean
   mutationCsrfToken: string
+  bulkCsrfToken: string
   transferCsrfToken: string
   importFileSizeKiB: number
   message?: AdminMessage
@@ -191,6 +192,20 @@ export function renderAdminVideos(input: Readonly<{
       <button class="admin-back-link" type="submit">Check selection</button>
       <div class="video-checker-progress" data-video-checker-progress hidden><progress max="1" value="0"></progress><output aria-live="polite">Ready</output></div>
     </form>
+  </section>
+  <section class="video-bulk-panel" aria-labelledby="video-bulk-title">
+    <form class="video-bulk-form" action="${escapeHtml(input.adminBase)}/videos/bulk/" method="post" data-video-bulk data-max-videos="1000" data-delete-url="${escapeHtml(input.adminBase)}/videos/delete/" data-edit-url="${escapeHtml(input.adminBase)}/videos/edit/" data-mutation-csrf="${escapeHtml(input.mutationCsrfToken)}">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.bulkCsrfToken)}">
+      <div class="video-bulk-heading"><div><p class="panel-kicker">Add bulk videos</p><h2 id="video-bulk-title">Resolve and save video URLs</h2></div><span>Sequential source check</span></div>
+      <p>Paste one video URL per line. Each source is checked directly, then saved with its resolved title, poster, captions, and exact Good or Broken status.</p>
+      <div class="field"><label for="video-bulk-links">Video URLs</label><textarea id="video-bulk-links" name="links" rows="8" maxlength="2049000" required placeholder="https://video-host.example/watch/first&#10;https://video-host.example/watch/second"></textarea></div>
+      <label class="video-bulk-title-slug"><input type="checkbox" name="useTitle" value="true"><span><strong>Use title as slug</strong><small>When a title is available, create a unique readable player slug from it.</small></span></label>
+      <div class="video-bulk-actions"><button class="admin-back-link" type="submit">Add videos</button><div class="video-bulk-progress" data-video-bulk-progress hidden><progress max="1" value="0"></progress><output aria-live="polite">Ready</output></div></div>
+    </form>
+    <div class="video-bulk-results" data-video-bulk-results hidden>
+      <div class="session-table-heading"><div><p class="panel-kicker">Bulk results</p><h3>Resolved videos</h3></div><a href="${escapeHtml(input.adminBase)}/videos/list/">Refresh manager ↗</a></div>
+      <div class="session-table-scroll"><table class="session-table video-bulk-table"><thead><tr><th>Title</th><th>Source</th><th>Subtitles</th><th>Created</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody data-video-bulk-rows></tbody></table></div>
+    </div>
   </section>
   <section class="session-table-shell video-table-shell" aria-labelledby="videos-table-title">
     <div class="session-table-heading"><div><p class="panel-kicker">Saved videos</p><h2 id="videos-table-title">Playback links</h2></div><span>${input.isAdmin ? 'All users' : 'Your videos'} · scroll →</span></div>

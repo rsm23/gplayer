@@ -238,6 +238,15 @@ export class VideoAdminService {
     return await this.createWithStatus(input, access, 0, true)
   }
 
+  public async createResolved(input: VideoFormSubmission, access: VideoAccess, status: 0 | 1): Promise<VideoMutationResult> {
+    return await this.createWithStatus(input, access, status, true)
+  }
+
+  public async record(id: unknown, access: VideoAccess, slugs?: VideoLinkSlugs): Promise<VideoAdminRecord | null> {
+    const detail = await this.get(id, access)
+    return detail === null ? null : this.adminRecord(detail, slugs)
+  }
+
   private async createWithStatus(input: VideoFormSubmission, access: VideoAccess, status: 0 | 1, resolveSlugConflict: boolean): Promise<VideoMutationResult> {
     const parsed = parseSubmission(input, access, this.now(), status)
     if (parsed.status === 'fail') return parsed

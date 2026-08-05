@@ -30,6 +30,7 @@ import {
   type VideoPosterAssetManager
 } from '../src/videos/video-assets-service.js'
 import { VideoCheckerService } from '../src/videos/video-checker-service.js'
+import { VIDEO_BULK_MAX_ITEMS, VideoBulkService } from '../src/videos/video-bulk-service.js'
 import {
   VIDEO_EXPORT_SUCCESS,
   VIDEO_IMPORT_SUCCESS,
@@ -441,6 +442,73 @@ describe('video administration service', () => {
     release?.(available())
     await expect(first).resolves.toEqual(expect.objectContaining({ status: 'ok', result: expect.objectContaining({ videoStatus: 0 }) }))
   })
+
+  it('resolves and persists one legacy bulk URL with title slugs, posters, captions, and Good or Broken status', async () => {
+    const store = new MemoryVideoStore()
+    const videos = service(store)
+    const resolved = (sources: MediaResult['sources']): MediaResult => Object.freeze({
+      sources,
+      tracks: Object.freeze([
+        Object.freeze({ file: 'https://captions.example/bulk.en.vtt', label: 'English' }),
+        Object.freeze({ file: 'file:///private/subtitle.srt', label: 'Unsafe' })
+      ]),
+      referer: '',
+      title: 'Bulk resolved movie',
+      email: '',
+      image: 'https://images.example/bulk.jpg',
+      cookies: Object.freeze([]),
+      filmstrip: '',
+      clientip: '127.0.0.1'
+    })
+    const resolver = vi.fn(async () => resolved(Object.freeze([{ file: 'https://cdn.example/bulk.mp4', type: 'video/mp4' }])))
+    const bulk = new VideoBulkService(videos, resolver)
+    const context = { clientIp: '127.0.0.1', userAgent, language: 'en' }
+
+    await expect(bulk.add({ data: 'https://youtu.be/bulk-main', total: '2', offset: '0', useTitle: 'true' }, memberAccess, context)).resolves.toEqual({
+      status: 'ok',
+      message: 'The new video has been saved successfully',
+      result: {
+        offset: 0,
+        next: 1,
+        total: 2,
+        data: expect.objectContaining({ id: '3', title: 'Bulk resolved movie', slug: 'bulk-resolved-movie', host: 'youtube', host_id: 'bulk-main', has_sub: true, has_alt: false, status: 0 })
+      }
+    })
+    expect(resolver).toHaveBeenCalledWith({ host: 'youtube', id: 'bulk-main', uid: '2' }, expect.objectContaining({ downloadable: false }))
+    expect(store.lastCreate).toEqual(expect.objectContaining({
+      title: 'Bulk resolved movie',
+      userId: '2',
+      slug: 'bulk-resolved-movie',
+      poster: 'https://images.example/bulk.jpg',
+      status: 0,
+      subtitles: [expect.objectContaining({ language: 'English' })]
+    }))
+
+    resolver.mockResolvedValueOnce(resolved(Object.freeze([])))
+    const broken = await bulk.add({ data: 'https://cdn.example/broken.mp4', total: 2, offset: 1, useTitle: false }, memberAccess, context)
+    expect(broken).toEqual(expect.objectContaining({ status: 'ok', result: expect.objectContaining({ offset: 1, next: 2, total: 2, data: expect.objectContaining({ status: 1 }) }) }))
+    expect(store.lastCreate).toEqual(expect.objectContaining({ status: 1, slug: 'generated-slug' }))
+  })
+
+  it('advances invalid bulk rows without saving and bounds total work and resolver failures', async () => {
+    const store = new MemoryVideoStore()
+    const videos = service(store)
+    const resolver = vi.fn(async (): Promise<MediaResult> => { throw new Error('provider unavailable') })
+    const bulk = new VideoBulkService(videos, resolver)
+    const context = { clientIp: '127.0.0.1', userAgent, language: 'en' }
+
+    await expect(bulk.add({ data: 'not a URL', total: 3, offset: 1, useTitle: false }, memberAccess, context)).resolves.toEqual({
+      status: 'fail', message: 'The video URL is invalid', result: { offset: 1, next: 2, total: 3 }
+    })
+    expect(resolver).not.toHaveBeenCalled()
+    await expect(bulk.add({ data: 'https://cdn.example/fail.mp4', total: 3, offset: 2, useTitle: false }, memberAccess, context)).resolves.toEqual({
+      status: 'fail', message: 'The video source could not be checked', result: { offset: 2, next: 3, total: 3 }
+    })
+    await expect(bulk.add({ data: 'https://cdn.example/too-many.mp4', total: VIDEO_BULK_MAX_ITEMS + 1, offset: 0, useTitle: false }, memberAccess, context)).resolves.toEqual({
+      status: 'fail', message: 'The new video failed to save', result: { offset: 0, next: 0, total: 0 }
+    })
+    expect(store.videos).toHaveLength(2)
+  })
 })
 
 describe('MySqlVideoAdminStore', () => {
@@ -535,11 +603,14 @@ describe('video administration and saved-video routes', () => {
     expect(list.body).not.toContain('>Settings</a>')
     expect(list.body).not.toContain(token)
     expect(list.body).toContain('data-video-checker')
+    expect(list.body).toContain('data-video-bulk')
+    expect(list.body).toContain('Resolve and save video URLs')
     expect(list.body).toContain('data-video-selection')
     expect(list.body).toContain('<option value="0">Good</option>')
     expect(list.body).toContain('<option value="1">Broken</option>')
     expect(list.body).toContain('<option value="2">Warning</option>')
     expect(list.headers['cache-control']).toBe('no-store')
+    expect(list.headers['content-security-policy']).toContain("connect-src 'self'")
     const editor = await context.app.inject({ method: 'GET', url: '/administrator/videos/new/', headers })
     expect(editor.body).toContain('data-video-editor')
     expect(editor.body).toContain('data-add-video-alternative')
@@ -581,6 +652,67 @@ describe('video administration and saved-video routes', () => {
       url: '/administrator/videos/check/',
       headers: { ...headers, origin: 'https://attacker.example', 'content-type': 'application/x-www-form-urlencoded' },
       payload: new URLSearchParams({ csrf, id: '2' }).toString()
+    })
+    expect(crossOrigin.statusCode).toBe(403)
+  })
+
+  it('adds bulk URLs through signed modern requests and the sequential legacy saveBulkProcess endpoint', async () => {
+    const context = await createApp(member)
+    const page = await context.app.inject({ method: 'GET', url: '/administrator/videos/list/', headers })
+    const csrf = csrfFor(page.body, '/administrator/videos/bulk/')
+    context.resolver.mockResolvedValueOnce(Object.freeze({
+      sources: Object.freeze([{ file: 'https://cdn.example/bulk-route.mp4', type: 'mp4' }]),
+      tracks: Object.freeze([{ file: 'https://captions.example/bulk-route.vtt', label: 'English' }]),
+      referer: '',
+      title: 'Bulk route movie',
+      email: '',
+      image: 'https://images.example/bulk-route.jpg',
+      cookies: Object.freeze([]),
+      filmstrip: '',
+      clientip: '127.0.0.1'
+    }))
+    const added = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/bulk/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, data: 'https://youtu.be/bulk-route', total: '2', offset: '0', useTitle: 'true' }).toString()
+    })
+    expect(added.statusCode).toBe(200)
+    expect(added.json()).toEqual({
+      status: 'ok',
+      message: 'The new video has been saved successfully',
+      result: { offset: 0, next: 1, total: 2, data: expect.objectContaining({ id: '3', title: 'Bulk route movie', slug: 'bulk-route-movie', status: 0, has_sub: true }) }
+    })
+    expect(context.store.lastCreate).toEqual(expect.objectContaining({ userId: '2', status: 0, poster: 'https://images.example/bulk-route.jpg' }))
+
+    const invalid = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/bulk/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf, data: 'invalid', total: '2', offset: '1', useTitle: 'false' }).toString()
+    })
+    expect(invalid.json()).toEqual({ status: 'fail', message: 'The video URL is invalid', result: { offset: 1, next: 2, total: 2 } })
+
+    const legacy = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/ajax/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ action: 'saveBulkProcess', data: 'https://cdn.example/legacy-bulk.mp4', total: '1', offset: '0', useTitle: 'false', token }).toString()
+    })
+    expect(legacy.json()).toEqual({ status: 'ok', message: 'The new video has been saved successfully', result: { offset: 0, next: 1, total: 1, data: expect.objectContaining({ id: '4', status: 0 }) } })
+
+    const forged = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/bulk/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'csrf=forged&data=https%3A%2F%2Fcdn.example%2Fforged.mp4&total=1&offset=0'
+    })
+    expect(forged.statusCode).toBe(403)
+    const crossOrigin = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/ajax/',
+      headers: { ...headers, origin: 'https://attacker.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=saveBulkProcess&data=https%3A%2F%2Fcdn.example%2Fcross.mp4&total=1&offset=0'
     })
     expect(crossOrigin.statusCode).toBe(403)
   })
