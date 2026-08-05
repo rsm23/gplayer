@@ -38,7 +38,9 @@
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register(new URL('sw.js', document.baseURI)).catch(() => {
+      const manifestLink = document.querySelector('link[rel="manifest"]')
+      const publicBase = manifestLink instanceof HTMLLinkElement ? manifestLink.href : document.baseURI
+      navigator.serviceWorker.register(new URL('sw.js', publicBase)).catch(() => {
         // Offline support is optional; a failed registration must not break the player generator.
       })
     })

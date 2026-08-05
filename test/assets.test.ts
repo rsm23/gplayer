@@ -42,6 +42,22 @@ describe('legacy non-PHP assets', () => {
     expect(legacyHostingData.downloadUrls).toEqual(downloadUrlJson)
   })
 
+  it('keeps the static Pages install shortcuts inside the published landing', async () => {
+    const manifest = JSON.parse(await fs.readFile(path.join(projectRoot, 'public/manifest.json'), 'utf8')) as {
+      start_url: string
+      shortcuts: Array<{ url: string; icons: Array<{ src: string }> }>
+    }
+    expect(manifest.start_url).toBe('./?source=pwa')
+    expect(manifest.shortcuts.map((shortcut) => shortcut.url)).toEqual([
+      './?utm_source=homescreen#generator',
+      './?utm_source=homescreen#product-demo'
+    ])
+    for (const shortcut of manifest.shortcuts) {
+      expect(shortcut.url.startsWith('./')).toBe(true)
+      await expect(fs.access(path.join(projectRoot, 'public', shortcut.icons[0]?.src ?? 'missing'))).resolves.toBeUndefined()
+    }
+  })
+
   it('contains no PHP runtime files', async () => {
     const files = await filesUnder(projectRoot)
     expect(files.filter((file) => file.endsWith('.php'))).toEqual([])

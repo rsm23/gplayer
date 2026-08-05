@@ -770,7 +770,14 @@ describe('site asset generation', () => {
       await expect(readFile(path.join(temporaryRoot, 'assets/img/apple-touch-icon-152x152.png'))).resolves.toBeInstanceOf(Buffer)
       const manifest = JSON.parse(await readFile(path.join(temporaryRoot, 'manifest.json'), 'utf8')) as Record<string, unknown>
       expect(manifest).toEqual(expect.objectContaining({ name: 'GPlayer Test', theme_color: '#0b0e0c', display: 'standalone' }))
-      expect(JSON.stringify(manifest)).toContain('./control/dashboard/?source=homescreen')
+      expect(manifest).toEqual(expect.objectContaining({
+        start_url: './?source=pwa',
+        display_override: ['window-controls-overlay'],
+        shortcuts: [
+          expect.objectContaining({ name: 'Google Drive Bypass Limit', url: './sharer/?utm_source=homescreen' }),
+          expect.objectContaining({ name: 'Video List', url: './control/videos/list/?utm_source=homescreen' })
+        ]
+      }))
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true })
     }

@@ -22,6 +22,7 @@ import type { ProxyMaintenanceResult } from '../background/proxy-maintenance-wor
 import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 import { loadRuntimeSiteSettings, type SiteSettingsLoader } from '../settings/site-runtime.js'
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../settings/settings-admin-service.js'
+import { siteManifest, type SiteAssetManager } from '../settings/site-assets-service.js'
 import type { AccountSettingsLoader } from '../auth/account-lifecycle-service.js'
 
 const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
@@ -52,6 +53,7 @@ export async function registerSystemRoutes(
     loadSiteSettings?: SiteSettingsLoader
     loadAccountSettings?: AccountSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
+    siteAssets?: Pick<SiteAssetManager, 'hasLogo'>
     background?: Pick<DriveBackgroundCoordinator, 'trigger'>
     proxyMaintenance?: Readonly<{ runOnce(): Promise<ProxyMaintenanceResult> }>
     landingHtml?: string
@@ -82,6 +84,18 @@ export async function registerSystemRoutes(
       .header('x-content-type-options', 'nosniff')
       .type('text/css; charset=utf-8')
       .send(renderPublicThemeCss(site))
+  })
+
+  app.get('/manifest.json', async (_request, reply) => {
+    const [site, logoAvailable] = await Promise.all([
+      loadRuntimeSiteSettings(options.loadSiteSettings),
+      options.siteAssets?.hasLogo().catch(() => false) ?? false
+    ])
+    return reply
+      .header('cache-control', 'public, max-age=60')
+      .header('x-content-type-options', 'nosniff')
+      .type('application/manifest+json; charset=utf-8')
+      .send(siteManifest(site, logoAvailable, config.adminDirectory))
   })
 
   const landingHtml = options.landingHtml

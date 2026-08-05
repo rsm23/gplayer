@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gplayer-node-public-v28'
+const CACHE_NAME = 'gplayer-node-public-v29'
 const scopedUrl = (path) => new URL(path, self.registration.scope).toString()
 const OFFLINE_URL = scopedUrl('offline.html')
 const PRECACHE = [
@@ -13,6 +13,7 @@ const PRECACHE = [
   'assets/js/gplayer-admin-settings.js',
   'assets/img/logo/rr.ico',
   'assets/img/film.png',
+  'assets/img/google-drive.png',
   'assets/img/maskable_icon.png',
   'assets/img/product/gplayer-generator.png',
   'assets/img/product/gplayer-admin.png'

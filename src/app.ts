@@ -374,6 +374,7 @@ export async function buildApp(
       ? async () => DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS
       : async () => await settingsRuntime.accountLifecycleSettings()
   )
+  const siteAssetsRuntime = dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory)
   await registerPluginExtensionRoutes(app, config, authService, pluginExtensionRuntime, { loadPlayerSlugs: loadPlayerSettings })
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
@@ -381,6 +382,7 @@ export async function buildApp(
     loadSiteSettings,
     loadAccountSettings,
     isAuthenticated,
+    siteAssets: siteAssetsRuntime,
     background: driveBackgroundRuntime,
     proxyMaintenance: proxyMaintenanceRuntime,
     landingHtml
@@ -423,7 +425,7 @@ export async function buildApp(
     authService,
     settingsRuntime,
     usersRuntime,
-    dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
+    siteAssetsRuntime,
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl),
     settingsMaintenanceRuntime,
     supportedHosts,
@@ -633,6 +635,7 @@ export async function buildApp(
     prefix: '/',
     decorateReply: false,
     wildcard: false,
+    globIgnore: ['manifest.json'],
     index: false
   })
 

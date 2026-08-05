@@ -102,8 +102,20 @@ export function siteManifest(settings: SiteSettings, logoAvailable: boolean, adm
     theme_color: `#${settings.pwa_themecolor}`,
     icons,
     shortcuts: [
-      { name: 'Open generator', short_name: 'Generator', description: settings.site_slogan, url: './?source=homescreen', icons: icons.slice(0, 1) },
-      { name: 'Administration', short_name: 'Admin', description: 'Open the GPlayer administration surface.', url: `./${adminDirectory}/dashboard/?source=homescreen`, icons: icons.slice(0, 1) }
+      {
+        name: 'Google Drive Bypass Limit',
+        short_name: 'Google Drive Bypass Limit',
+        description: 'View Google Drive direct link generator and downloader',
+        url: './sharer/?utm_source=homescreen',
+        icons: [{ src: 'assets/img/google-drive.png', sizes: '512x512', type: 'image/png' }]
+      },
+      {
+        name: 'Video List',
+        short_name: 'Video List',
+        description: 'Show a list of videos stored on your account.',
+        url: `./${adminDirectory}/videos/list/?utm_source=homescreen`,
+        icons: [{ src: 'assets/img/film.png', sizes: '512x512', type: 'image/png' }]
+      }
     ]
   })
 }

@@ -1,11 +1,14 @@
 {
   "name": "GPlayer",
   "short_name": "GPlayer",
-  "description": "The GDPlayer 4.8.3 media gateway rebuilt in Node.js, with 63 registered host adapters.",
+  "description": "Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.",
   "id": "./",
-  "start_url": "./",
+  "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay"
+  ],
   "background_color": "#0b0e0c",
   "theme_color": "#0b0e0c",
   "icons": [
@@ -20,6 +23,34 @@
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Player generator",
+      "short_name": "Generator",
+      "description": "Configure a provider link, adaptive stream, or direct video.",
+      "url": "./?utm_source=homescreen#generator",
+      "icons": [
+        {
+          "src": "assets/img/film.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Product UI",
+      "short_name": "Product UI",
+      "description": "View real graphics captured from the Node.js application.",
+      "url": "./?utm_source=homescreen#product-demo",
+      "icons": [
+        {
+          "src": "assets/img/film.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

@@ -98,6 +98,9 @@ describe('legacy-compatible system routes', () => {
     expect(script.body).not.toContain("'content-type': 'application/json'")
     expect(script.body).toContain("github\\.io")
     expect(script.body).toContain("document.querySelector('#product-demo')")
+    expect(script.body).toContain("document.querySelector('link[rel=\"manifest\"]')")
+    expect(script.body).toContain("manifestLink instanceof HTMLLinkElement ? manifestLink.href : document.baseURI")
+    expect(script.body).toContain("navigator.serviceWorker.register(new URL('sw.js', publicBase))")
     expect(script.body).toContain('https://www.facebook.com/sharer/sharer.php')
     expect(script.body).toContain('https://twitter.com/intent/tweet')
     expect(script.body).toContain('https://api.whatsapp.com/send')
@@ -664,16 +667,24 @@ describe('legacy-compatible system routes', () => {
     expect(sitemap.body).toContain('<loc>https://player.example/base/changelog/</loc>')
 
     expect(manifest.statusCode).toBe(200)
+    expect(manifest.headers['content-type']).toContain('application/manifest+json')
+    expect(manifest.headers['cache-control']).toBe('public, max-age=60')
     expect(manifest.json()).toEqual(expect.objectContaining({
       name: 'GPlayer',
       display: 'standalone',
-      start_url: './'
+      start_url: './?source=pwa',
+      display_override: ['window-controls-overlay'],
+      shortcuts: expect.arrayContaining([
+        expect.objectContaining({ name: 'Google Drive Bypass Limit', url: './sharer/?utm_source=homescreen' }),
+        expect.objectContaining({ name: 'Video List', url: './administrator/videos/list/?utm_source=homescreen' })
+      ])
     }))
     expect(worker.statusCode).toBe(200)
-    expect(worker.body).toContain("gplayer-node-public-v28")
+    expect(worker.body).toContain("gplayer-node-public-v29")
     expect(worker.body).toContain("const OFFLINE_URL = scopedUrl('offline.html')")
     expect(worker.body).toContain('.map(scopedUrl)')
     expect(worker.body).toContain("'assets/js/gplayer-theme.js'")
+    expect(worker.body).toContain("'assets/img/google-drive.png'")
     expect(worker.body).not.toContain('main-v3.9.8')
     expect(offline.statusCode).toBe(200)
     expect(publicStyle.statusCode).toBe(200)
