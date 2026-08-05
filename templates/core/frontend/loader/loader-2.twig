@@ -1,0 +1,24 @@
+<style>
+    .conic-segment-spinner {
+        --loader-size: clamp(48px, 12vmin, 96px);
+        width: var(--loader-size);
+        height: var(--loader-size);
+        background: conic-gradient({{ playerColor }} 25%, rgba({{ rgbColor }}, 5%) 25%);
+        border-radius: 50%;
+        animation: segment-spin 1.15s linear infinite;
+        -webkit-animation: segment-spin 1.15s linear infinite;
+        margin: 0 auto;
+        box-sizing: border-box;
+        position: relative;
+        will-change: transform;
+    }
+    @keyframes segment-spin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+<div class="conic-segment-spinner"></div>

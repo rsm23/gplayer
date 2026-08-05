@@ -1,0 +1,42 @@
+{
+  "name": "gplayer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node.js rewrite of GDPlayer 4.8.3 with behavior-parity tracking.",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "audit:schema": "node tools/audit-schema.mjs",
+    "inspect:legacy-php": "node tools/inspect-yakpro-php.mjs",
+    "inventory:legacy": "node tools/inventory-legacy.mjs",
+    "sync:legacy-assets": "node tools/sync-legacy-assets.mjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/cors": "11.3.0",
+    "@fastify/formbody": "8.0.2",
+    "@fastify/static": "10.1.2",
+    "bcryptjs": "3.0.3",
+    "dotenv": "17.4.2",
+    "fastify": "5.11.2",
+    "mysql2": "3.23.2",
+    "youtubei.js": "17.2.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "tsx": "4.23.5",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

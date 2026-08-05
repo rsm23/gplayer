@@ -1,0 +1,36 @@
+{
+    "original": [
+        ".m3u8",
+        ".mpd",
+        ".ts",
+        ".mp4",
+        ".m4s",
+        ".m4a",
+        ".m4v",
+        ".m4i",
+        ".m4f",
+        ".m4t",
+        ".tar",
+        ".mp3",
+        ".php",
+        ".zip",
+        ".rar"
+    ],
+    "custom": [
+        ".txt",
+        ".txt",
+        ".jpg",
+        ".png",
+        ".jpeg",
+        ".gif",
+        ".ico",
+        ".woff",
+        ".woff2",
+        ".jpg",
+        ".png",
+        ".jpeg",
+        ".gif",
+        ".ico",
+        ".woff"
+    ]
+}

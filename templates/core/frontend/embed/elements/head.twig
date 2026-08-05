@@ -1,0 +1,65 @@
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="googlebot" content="noindex">
+<meta name="description" content="{{ newTitle }}">
+<meta name="og:sitename" content="{{ site_name }}">
+<meta name="og:title" content="{{ title|escape('html') }}">
+<meta name="og:description" content="{{ newTitle|escape('html') }}">
+<meta name="og:type" content="video.movie">
+<meta name="og:image" content="{{ poster }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ title|escape('html') }}">
+<meta name="twitter:description" content="{{ newTitle|escape('html') }}">
+<meta name="twitter:image" content="{{ poster }}">
+<link rel="preconnect dns-prefetch" href="{{ base_url }}">
+<link rel="preconnect dns-prefetch" href="https://www.gstatic.com">
+<link rel="preconnect dns-prefetch" href="https://www.googleapis.com">
+<link rel="preconnect dns-prefetch" href="https://www.googletagmanager.com">
+<link rel="preconnect dns-prefetch" href="https://www.google.com">
+<link rel="preconnect dns-prefetch" href="https://www.google-analytics.com">
+<link rel="preconnect dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect dns-prefetch" href="https://googleusercontent.com">
+<link rel="preconnect dns-prefetch" href="https://lh3.googleusercontent.com">
+<link rel="preconnect dns-prefetch" href="https://drive-thirdparty.googleusercontent.com">
+<link rel="shortcut icon" href="{{ base_url }}favicon.ico" type="image/ico">
+{% if player == 'plyr' %}
+<link rel="stylesheet" type="text/css" href="{{ base_url }}assets/vendor/plyr/3.6.3/plyr-custom.min.css">
+{% endif %}
+<link rel="stylesheet" type="text/css" href="{{ base_url }}assets/css/player-v{{ cssPlayerVer }}.min.css">
+<style type="text/css">
+    #btnServer,
+    #servers li a:hover,
+    #servers li a:focus,
+    #servers li a.active,
+    #fakePlayButton>.play-button:hover,
+    #resume_yes
+    {
+        background-color: {{playerColor}}!important
+    }
+    .loading-spinner
+    {
+        border-top-color: {{playerColor}}!important
+    }
+    #btnServer,
+    #fakePlayButton>.play-button:hover
+    {
+        border-color: {{playerColor}}!important
+    }
+</style>
+<script type="text/javascript" src="{{ base_url }}assets/vendor/jquery/3.7.1/jquery.min.js"></script>
+<script type="text/javascript" src="{{ base_url }}assets/vendor/globalThis.js"></script>
+{% if production_mode %}
+    <script type="text/javascript" src="{{ base_url }}assets/vendor/dd.js"></script>
+    <script type="text/javascript">
+        (function(){var devToolsOpened=false;if(typeof devtoolsDetector!=="undefined"){devtoolsDetector.addListener(function(isOpen,event){devToolsOpened=isOpen});devtoolsDetector.launch()}setInterval(function(){if(devToolsOpened){if(typeof globalThis.jwp!=="undefined"){globalThis.jwp.destroy()}else if(typeof globalThis.gdPlyr!=="undefined"){globalThis.gdPlyr.destroy()}if(typeof jQuery!=="undefined"){var $=jQuery;if($("#mContainer").length){$("#mContainer").show()}if($("#loading").length){$("#loading").hide()}if($("#message").length){$("#message").html('Do not open Developer Tools! <a href="javascript:void(0)" onclick="location.href=location.href">Reload</a>')}if($("#videoContainer").length){$("#videoContainer").remove()}$(document).ajaxSend(function(event,jqXHR,settings){jqXHR.abort()})}globalThis.location.href="https://example.com"}},500)})();
+    </script>
+{% endif %}
+{% if templates.blockadb %}
+    {% include templates.blockadb %}
+{% endif %}
+<script type="text/javascript">{{ jsVars|raw }}</script>
+{% include templates.ga %}
+{% include templates.gtm_head %}

@@ -1,0 +1,21 @@
+<script type="text/javascript">
+    document.addEventListener("DOMContentLoaded", function() {
+        var adImg = document.createElement("img"),
+            date = new Date();
+        adImg.id = "advertisement";
+        adImg.src = "{{ base_url }}ads/iklan-" + date.getTime() + ".png?src=https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=";
+        adImg.className = "ad-banner ad-container sponsored";
+        adImg.tabIndex = -1;
+        adImg.onerror = function() {
+            globalThis.adsBlocked = true;
+        };
+        adImg.onload = function() {
+            globalThis.adsBlocked = false;
+        };
+        adImg.style.position = "absolute";
+        adImg.style.width = "300px";
+        adImg.style.height = "300px";
+        adImg.style.display = "none";
+        document.body.appendChild(adImg);
+    });
+</script>

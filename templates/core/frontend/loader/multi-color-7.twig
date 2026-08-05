@@ -1,0 +1,52 @@
+<style>
+    .multi-color-spinner-7 {
+        --loader-size: clamp(48px, 12vmin, 96px);
+        width: var(--loader-size);
+        height: var(--loader-size);
+        border: calc(var(--loader-size) * 0.05) solid {{ playerColor }};
+        border-style: solid solid dotted dotted;
+        border-radius: 50%;
+        display: inline-block;
+        position: relative;
+        box-sizing: border-box;
+        animation: rotation 2s linear infinite;
+        will-change: transform;
+        margin: 0 auto;
+    }
+    .multi-color-spinner-7::after {
+        content: '';  
+        box-sizing: border-box;
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        margin: auto;
+        border: calc(var(--loader-size) * 0.05) solid {{ playerColor2 }};
+        border-style: solid solid dotted;
+        width: calc(var(--loader-size) * 0.7);
+        height: calc(var(--loader-size) * 0.7);
+        border-radius: 50%;
+        animation: rotationBack 1s linear infinite;
+        transform-origin: center center;
+        will-change: transform;
+    }
+
+    @keyframes rotation {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    } 
+    @keyframes rotationBack {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(-360deg);
+        }
+    } 
+</style>
+<div class="multi-color-spinner-7"></div>

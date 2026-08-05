@@ -1,0 +1,11 @@
+{% if ga_id is not empty %}
+    <script defer async src="https://www.googletagmanager.com/gtag/js?id={{ ga_id }}"></script>
+    <script>
+        globalThis.dataLayer = globalThis.dataLayer || [];
+        function gtag() {
+            dataLayer.push(arguments);
+        }
+        gtag('js', new Date());
+        gtag('config', '{{ ga_id }}');
+    </script>
+{% endif %}

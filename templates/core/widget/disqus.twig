@@ -1,0 +1,21 @@
+{% if disqus_shortname is not empty %}
+    <div class="row my-3">
+        <div class="col-12">
+            <div id="disqus_thread"></div>
+            <noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+        </div>
+    </div>
+    <script>
+        var disqus_config = function() {
+            this.page.url = "{{ base_url }}";
+            this.page.identifier = "{{ current_url() }}";
+        };
+        (function() {
+            var d = document,
+                s = d.createElement("script");
+            s.src = "https://{{ disqus_shortname }}.disqus.com/embed.js";
+            s.setAttribute("data-timestamp", +new Date());
+            (d.head || d.body).appendChild(s);
+        })();
+    </script>
+{% endif %}

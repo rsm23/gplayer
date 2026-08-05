@@ -1,0 +1,199 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">VAST Ads</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="block_adblocker" value="false">
+						<input type="checkbox" class="custom-control-input" id="block_adblocker" name="block_adblocker" value="true" {{ block_adblocker ? 'checked' : '' }}>
+						<label class="custom-control-label" for="block_adblocker">Forced To Disable AdBlocker</label>
+					</div>
+					<small class="form-text text-muted">Display a message to notify the visitor to disable the AdBlocker.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="disable_vast_ads" value="false">
+						<input type="checkbox" class="custom-control-input" id="disable_vast_ads" name="disable_vast_ads" value="true" {{ disable_vast_ads ? 'checked' : '' }}>
+						<label class="custom-control-label" for="disable_vast_ads">Disable VAST</label>
+					</div>
+				</div>
+				<div class="mb-3">
+					<label for="vast_client">Publisher</label>
+					<div class="input-group">
+						<select name="vast_client" id="vast_client" class="form-control">
+							<option value="vast" {{ vast_client == 'vast' ? 'selected' : '' }}>VAST</option>
+							<option value="googima" {{ vast_client == 'googima' ? 'selected' : '' }}>Google IMA</option>
+						</select>
+						<div class="input-group-append">
+							<button type="button" class="btn btn-outline-primary" onclick="$('#modalCustomVAST').modal('show')" data-toggle="tooltip" title="Create Custom VAST File">
+								<em class="fas fa-plus-circle"></em>
+							</button>
+						</div>
+					</div>
+				</div>
+				<div class=" mb-3">
+					<label for="vastCustom">Custom VAST List</label><br>
+					<ul class="list-group" id="vastCustom">
+						{% if vast_custom|length > 0 %}
+							{% for ad in vast_custom %}
+								<li class="list-group-item d-flex justify-content-between align-items-center">
+									<a href="{{ ad.url }}" target="_blank" title="Custom Ad" class="mr-2">
+										<em class="fas fa-rectangle-ad fa-lg mr-2"></em>
+										{{ ad.name }}
+									</a>
+									<button type="button" class="btn btn-danger" onclick="settings.vast.delete($(this))" data-id="{{ ad.name }}" class="text-danger" data-toggle="tooltip" title="Delete">
+										<em class="fas fa-trash-alt fa-lg"></em>
+									</button>
+								</li>
+							{% endfor %}
+						{% else %}
+							<li class="list-group-item text-center">No data</li>
+						{% endif %}
+					</ul>
+				</div>
+				<div class=" mb-3">
+					<label for="vastWrapper">VAST URLs</label><br>
+					<button type="button" class="btn btn-success" onclick="settings.vast.add()">
+						<em class="fas fa-plus"></em>
+						Add VAST
+					</button>
+				</div>
+				<div id="vastWrapper">
+					{% if vast_xml|length > 0 %}
+						{% for i, val in vast_xml %}
+							<div class=" mb-3" data-index="{{ i }}">
+								<div class="input-group">
+									<div class="input-group-prepend" style="max-width:110px">
+										<input type="text" placeholder="Ad Position" name="vast_offset[]" id="vast_offset-{{ i }}" class="form-control" value="{{ vast_offset[i] ? vast_offset[i] : '' }}">
+									</div>
+									<input type="url" name="vast_xml[]" id="vast_xml-{{ i }}" placeholder="VAST URL (.xml)" class="form-control" value="{{ val }}">
+									<div class="input-group-append">
+										<button type="button" class="btn btn-danger" onclick="settings.vast.remove({{ i }})" data-toggle="tooltip" title="Remove VAST">
+											<em class="fas fa-minus"></em>
+										</button>
+									</div>
+								</div>
+							</div>
+						{% endfor %}
+					{% endif %}
+				</div>
+				<div class="mb-3">
+					<small>
+						<strong>Ad Position Supported:</strong><br>
+						<strong>preroll</strong>: Start of Video<br>
+						<strong>postroll</strong>: End of Video<br>
+						<strong>start</strong>: Start of Video<br>
+						<strong>end</strong>: End of Video<br>
+						<strong>50%</strong>: In the Middle of Video<br>
+						<strong>00:10:00</strong>: At the 10th Minute<br>
+						<strong>600</strong>: At the 600th Second</small>
+				</div>
+				<div class="mb-3 mb-0">
+					<label for="vast_skip">Skip Ads After</label>
+					<div class="input-group">
+						<input type="number" class="form-control" name="vast_skip" id="vast_skip" placeholder="Skip ads after (seconds)" value="{{ vast_skip }}">
+						<div class="input-group-append">
+							<div class="input-group-text">Seconds</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="card mb-3">
+			<h6 class="card-header">General Ads</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="disable_popup_ads" value="false">
+						<input type="checkbox" class="custom-control-input" id="disable_popup_ads" name="disable_popup_ads" value="true" {{ disable_popup_ads ? 'checked' : '' }}>
+						<label class="custom-control-label" for="disable_popup_ads">Disable General Ads</label>
+					</div>
+				</div>
+                <div class="mb-3">
+                    <label for="popup_load_offset">Offset</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" name="popup_load_offset" id="popup_load_offset" placeholder="Load Popup Offset" value="{{ popup_load_offset }}" min="0">
+                        <div class="input-group-append">
+                            <div class="input-group-text">Seconds</div>
+                        </div>
+                    </div>
+                </div>
+				<div class="mb-3">
+					<label for="popup_ads_link">Javascript URL</label>
+					<input type="url" class="form-control" name="popup_ads_link" id="popup_ads_link" placeholder="Insert the url of the .js file here" value="{{ popup_ads_link }}">
+				</div>
+				<div class="mb-3 mb-0">
+					<label for="popup_ads_code">Ads Codes (HTML Tags Allowed)</label>
+					<textarea name="popup_ads_code" id="popup_ads_code" cols="30" rows="10" class="form-control" placeholder="You can add any html tags here">{{ popup_ads_code }}</textarea>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">Banner Ads</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="disable_banner_ads" value="false">
+						<input type="checkbox" class="custom-control-input" id="disable_banner_ads" name="disable_banner_ads" value="true" {{ disable_banner_ads ? 'checked' : '' }}>
+						<label class="custom-control-label" for="disable_banner_ads">Disable Banner Ads</label>
+					</div>
+				</div>
+				<hr>
+				<strong>Download Page</strong>
+				<div class="mb-3 mt-3">
+					<label for="dl_banner_top">Top Banner on Download Page</label>
+					<textarea name="dl_banner_top" id="dl_banner_top" cols="30" rows="3" class="form-control" placeholder="You can add any html tags here">{{ dl_banner_top }}</textarea>
+				</div>
+				<div class="mb-3">
+					<label for="dl_banner_bottom">Bottom Banner on Download Page</label>
+					<textarea name="dl_banner_bottom" id="dl_banner_bottom" cols="30" rows="3" class="form-control" placeholder="You can add any html tags here">{{ dl_banner_bottom }}</textarea>
+				</div>
+				<hr>
+				<strong>Sharer Page</strong>
+				<div class="mb-3 mt-3">
+					<label for="sh_banner_top">Top Banner on Sharer Page</label>
+					<textarea name="sh_banner_top" id="sh_banner_top" cols="30" rows="3" class="form-control" placeholder="You can add any html tags here">{{ sh_banner_top }}</textarea>
+				</div>
+				<div class="mb-3 mb-0">
+					<label for="sh_banner_bottom">Bottom Banner on Sharer Page</label>
+					<textarea name="sh_banner_bottom" id="sh_banner_bottom" cols="30" rows="3" class="form-control" placeholder="You can add any html tags here">{{ sh_banner_bottom }}</textarea>
+				</div>
+			</div>
+		</div>
+		<div class="card mb-3">
+			<h6 class="card-header">Direct Ads</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="disable_direct_ads" value="false">
+						<input type="checkbox" class="custom-control-input" id="disable_direct_ads" name="disable_direct_ads" value="true" {{ disable_direct_ads ? 'checked' : '' }}>
+						<label class="custom-control-label" for="disable_direct_ads">Disable Direct Ads</label>
+					</div>
+				</div>
+				<div class="mb-3">
+					<label for="direct_ads_link">Direct URL Ads</label>
+					<input type="url" class="form-control" name="direct_ads_link" id="direct_ads_link" placeholder="Enter the direct link ads" value="{{ direct_ads_link }}">
+					<small class="form-text text-muted">The direct URL will open when the download button is clicked.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="visitads_onplay" value="false">
+						<input type="checkbox" class="custom-control-input" id="visitads_onplay" name="visitads_onplay" value="true" {{ visitads_onplay ? 'checked' : '' }}>
+						<label class="custom-control-label" for="visitads_onplay">Visit Direct URL Ads on Play</label>
+					</div>
+					<small class="form-text text-muted">Visit the direct URL ad when the play button is clicked for the first time.</small>
+				</div>
+				<div class="mb-0">
+					<div class="custom-control custom-checkbox">
+                        <input type="hidden" name="show_iframeads" value="false">
+						<input type="checkbox" class="custom-control-input" id="show_iframeads" name="show_iframeads" value="true" {{ show_iframeads ? 'checked' : '' }}>
+						<label class="custom-control-label" for="show_iframeads">Show iFrame Ads If Popups are Blocked</label>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

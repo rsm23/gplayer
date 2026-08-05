@@ -1,0 +1,57 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12 col-md-6 col-lg-4 mx-auto">
+		<h1 class="h3 my-3 text-center">Login</h1>
+		{% autoescape %}
+			{{ message|raw }}
+		{% endautoescape %}
+		<div class="mb-3">
+			<em class="fas fa-asterisk fa-xs text-danger mr-2"></em>Required
+		</div>
+		<form id="frmLogin" action="{{ loginURL }}" method="post" class="needs-validation" novalidate>
+			<div class="mb-3">
+				<label for="txtUsername">
+					Username<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="text" id="txtUsername" name="username" class="form-control" placeholder="Insert your username/email" data-error-required="The username/email is required" required>
+				<div class="invalid-feedback"></div>
+			</div>
+			<div class="mb-3">
+				<label for="txtPassword">
+					Password<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<div class="input-group">
+					<div class="input-group-prepend">
+						<button class="btn btn-outline-custom btn-shp" data-shp="#txtPassword" type="button" data-toggle="tooltip" title="Show/hide Password"><em class="fas fa-eye"></em></button>
+					</div>
+					<input type="password" id="txtPassword" name="password" class="form-control" placeholder="Insert your password" data-error-required="The password is required" required>
+					<div class="invalid-feedback"></div>
+				</div>
+			</div>
+			<div class="mb-3">
+				<div class="custom-control custom-checkbox">
+					<input type="checkbox" class="custom-control-input" id="remember" name="remember" value="1">
+					<label class="custom-control-label" for="remember">Remember Me</label>
+				</div>
+			</div>
+			<div class="mb-3 text-center">
+				<div class="form-row">
+					<div class="col">
+						{% include templates.recaptcha %}
+						<button type="submit" name="submit" class="btn btn-custom btn-block">
+							<em class="fas fa-lock mr-2"></em>Login
+						</button>
+					</div>
+					{% if enable_registration == true %}
+						<div class="col">
+							<a href="{{ registerURL }}" class="btn btn-block btn-secondary">
+								Register<em class="fas fa-arrow-right ml-2"></em>
+							</a>
+						</div>
+					{% endif %}
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{% include templates.backend_footer %}

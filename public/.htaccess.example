@@ -1,0 +1,62 @@
+# DO NOT DELETE THIS FILE
+
+# Disable directory browsing
+Options -MultiViews -Indexes
+
+# Set default charset to UTF-8
+AddDefaultCharset utf-8
+
+# Block access to sensitive files/folders
+<FilesMatch "\.(phar|phtml|swf|pl|py|cgi|asp|aspx|jsp|sh|bat|cmd|msi|dmg|exe|bin|com|scr|jar)$">
+    Require all denied
+</FilesMatch>
+
+# Enable Gzip Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css image/svg+xml application/javascript application/json application/rss+xml application/xhtml+xml application/xml application/x-javascript application/vnd.ms-fontobject application/font-otf application/font-woff application/font-woff2 application/x-font-ttf application/dash+xml application/x-mpegURL application/vnd.apple.mpegurl
+    BrowserMatch ^Mozilla/4 gzip-only-text/html
+    BrowserMatch ^Mozilla/4.0[678] no-gzip
+    BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+</IfModule>
+
+# Improve security by hiding headers
+<IfModule mod_headers.c>
+    Header unset Server
+    Header unset X-Powered-By
+    Header unset X-Runtime
+    Header unset X-Version
+    Header unset Etag
+    Header unset Referrer-Policy
+    Header set Access-Control-Allow-Methods "GET, POST, HEAD, OPTIONS"
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
+
+# LiteSpeed CORS config for cache-files
+<IfModule mod_headers.c>
+    <IfModule mod_env.c>
+        SetEnvIf IS_CACHE_FILE true CACHE_FILE_HEADER
+    </IfModule>
+    Header always set Access-Control-Allow-Origin "*" env=CACHE_FILE_HEADER
+    Header always set Access-Control-Allow-Headers "*" env=CACHE_FILE_HEADER
+    Header always set Access-Control-Expose-Headers "*" env=CACHE_FILE_HEADER
+</IfModule>
+
+# URL Rewrite Rules
+<IfModule mod_rewrite.c>
+    ErrorDocument 502 /index.php
+    ErrorDocument 503 /index.php
+
+    RewriteEngine On
+
+    RewriteRule .* - [E=no-log:1]
+
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule .* index.php [L,QSA]
+
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]
+
+    <IfModule mod_env.c>
+        SetEnvIf REDIRECT_no-gzip 1 no-gzip
+    </IfModule>
+</IfModule>

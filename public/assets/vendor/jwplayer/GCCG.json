@@ -1,0 +1,7 @@
+{
+    "canPlayAds": true,
+    "canPlayOutstreamAds": true,
+    "canUseIdentityScript": false,
+    "canUseVPB": true,
+    "overrideAdConfig": false
+}

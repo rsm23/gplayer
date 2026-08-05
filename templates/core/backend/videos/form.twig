@@ -1,0 +1,371 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		<form action="{{ backend_url }}videos/{{ edit ? 'edit/?id=' ~ id : 'new/' }}" method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+			<div class="row">
+				<div class="col-12 col-lg-6">
+					<div class="mb-3">
+						<label for="title">
+							Video Title
+						</label>
+						<input type="text" name="title" id="title" class="form-control" placeholder="Insert video title here" value="{{ video_title|default('') }}">
+					</div>
+					<div class="mb-3">
+						<label for="host_id">
+							Main Video URL
+						</label>
+						<div class="input-group">
+							{% if edit and host %}
+								<div class="input-group-prepend">
+									<div class="input-group-text">
+                                        {% set hostname = supported_sites[host]|replace({'|New':'','|Additional Host':''}) %}
+										<img src="{{ base_url }}assets/img/logo/{{ host }}.png" alt="{{ hostname }}" width="16" height="16" title="{{ hostname }}" data-tooltip="true">
+									</div>
+								</div>
+							{% endif %}
+							<input type="url" id="host_id" name="host_id" class="form-control" placeholder="Insert main video url here" value="{{ main_url|default('') }}" required>
+							<div class="input-group-append">
+								<button type="button" class="btn btn-info" onclick="videos.scrollToHosts()" data-toggle="tooltip" title="Example Link">
+									<em class="fas fa-info-circle"></em>
+								</button>
+							</div>
+						</div>
+					</div>
+					<div class="mb-3">
+						<label for="sub-url-0">
+							Alternative Video URLs
+						</label>
+						<p>
+							<button type="button" class="btn btn-custom" onclick="videos.alternatives.add()" data-toggle="tooltip" title="Add Alternative Video URL">
+								<em class="fas fa-plus mr-2"></em>
+								Add
+							</button>
+						</p>
+						<div id="altWrapper">
+							{% if edit %}
+								{% for i, val in alternatives %}
+									{% set title = supported_sites[val.host]|replace({'|New':'','|Additional Host':''}) %}
+									<div class="mb-3" data-index="{{ i }}">
+										<div class="input-group">
+											<div class="input-group-prepend">
+												<div class="input-group-text">
+													<img src="{{ base_url }}assets/img/logo/{{ val.host }}.png" data-tooltip="true" title="{{ title }}" alt="{{ title }}" width="16" height="16">
+												</div>
+											</div>
+											<input type="url" id="altLink-{{ i }}" name="altLinks[]" class="form-control" placeholder="Insert alternative video url here" value="{{ val.link }}">
+											<div class="input-group-append">
+												<button type="button" data-toggle="tooltip" title="Remove Alternative Video URL" class="btn btn-danger" onclick="videos.alternatives.remove({{ i }})">
+													<em class="fas fa-minus"></em>
+												</button>
+												<a href="javascript.void(0)" data-toggle="tooltip" title="Move" class="btn btn-outline-secondary move">
+													<em class="fas fa-expand-arrows-alt"></em>
+												</a>
+											</div>
+										</div>
+									</div>
+								{% endfor %}
+							{% endif %}
+						</div>
+					</div>
+					<div class="mb-3">
+						<label for="multiSubUrls">Subtitles</label>
+						<p>
+							<button type="button" class="btn btn-custom" onclick="$('#multiSubFiles').val('');$('#bulkSubtitles').hide();$('#multiSubUrls').val('');videos.subtitles.add()" data-toggle="tooltip" title="Add Subtitle File/URL">
+								<em class="fas fa-plus-square mr-2"></em>
+								Add
+							</button>
+							<button type="button" class="btn btn-info" onclick="$('#subsWrapper').html('');$('#bulkSubtitles').show()" data-toggle="tooltip" title="Add Bulk Subtitles">
+								<em class="fas fa-plus-circle mr-2"></em>
+								Add Bulk Subtitles
+							</button>
+						</p>
+						<div id="subsWrapper"></div>
+						<div id="bulkSubtitles" class="my-3" style="display:none">
+							<textarea id="multiSubUrls" name="multiSubUrls" class="form-control" rows="5" placeholder="{{ edit ? 'Insert subtitle url per line' : 'Insert url per line' }}"></textarea>
+							<div class="custom-file mt-2">
+								<input type="file" id="multiSubFiles" name="multiSubFiles[]" class="custom-file-input" accept=".srt, .vtt, .ass, .sub, .stl, .dfxp, .ttml, .sbv, .txt" multiple>
+								<label class="custom-file-label" for="multiSubFiles">
+									Upload Files (Max.
+									{{ max_file_uploads }}
+									)
+								</label>
+							</div>
+							<small class="form-text text-muted">
+								<strong class="text-success">
+									New:
+								</strong>
+								You can insert at the beginning/end of the file name the ISO 639-1 language code and separated by a period. Or you can use a vertical line as a separator between the language and the subtitle URL.
+							</small>
+							<small class="form-text text-muted">
+								<strong class="text-success">
+									Example:
+								</strong>
+								<br>
+								https://subtitle.com/subtitles/movie.en.srt
+								<br>
+								https://subtitle.com/subtitles/en.movie.vtt
+								<br>
+								English|https://subtitle.com/subtitles/movie.srt
+								<br>
+								https://subtitle.com/subtitles/movie.vtt|English
+							</small>
+						</div>
+						<small class="form-text text-muted">
+							<strong class="text-success">New:</strong>
+							Upload Subtitle Files (Max. {{ max_file_uploads }})
+						</small>
+						<small class="form-text text-muted">
+							<strong class="text-success">Subtitle formats:</strong> .srt, .vtt, .ass, .sub, .stl, .dfxp, .ttml, .sbv, .txt
+						</small>
+						<small class="form-text text-muted">
+							<strong class="text-success">New:</strong> You can find the subtitle file that you uploaded earlier through the Subtitle URL field by typing the file name.
+						</small>
+					</div>
+					{% if edit and subtitle %}
+						<div class="mb-3">
+							<div class="card">
+								<div class="card-header">
+									<strong>Subtitle List</strong>
+								</div>
+								<div class="card-body p-0">
+									<ul id="subtitles" class="list-group list-group-flush">
+										{% for val in subtitle %}
+											<li class="list-group-item d-flex justify-content-between align-items-center" data-sub="{{ val.id }}">
+												<input type="hidden" name="subs[]" value="{{ val.id }}">
+												<div class="float-left">
+													<a href="{{ val.link }}" target="_blank">{{ val.language }}</a>
+												</div>
+												<div class="float-right">
+													<button type="button" class="btn btn-primary" data-toggle="tooltip" title="Edit Subtitle" onclick="videos.subtitles.edit({{ val.id }}, '{{ val.language }}', '{{ val.link|replace({'\\': '/'}) }}')">
+														<em class="fas fa-pencil"></em>
+													</button>
+													<button type="button" class="btn btn-danger ml-2" data-toggle="tooltip" title="Delete Subtitle" onclick="videos.subtitles.delete({{ val.id }}, '{{ val.language }}')">
+														<em class="fas fa-trash-alt"></em>
+													</button>
+												</div>
+											</li>
+										{% endfor %}
+									</ul>
+								</div>
+							</div>
+							<small class="form-text text-muted">Reorder subtitles by drag and drop.</small>
+						</div>
+					{% endif %}
+				</div>
+				<div class="col-12 col-lg-6">
+					<div class="mb-3">
+						<label for="slug">
+							Custom Slug
+						</label>
+						<input type="text" name="slug" id="slug" class="form-control" placeholder="Insert custom slug here" maxlength="50" value="{{ slug|default('') }}">
+					</div>
+					<div class="mb-3">
+						<label for="posterUrl">
+							Poster
+						</label>
+						<div id="posterURL" class="input-group">
+							<input type="url" id="posterUrl" name="poster-url" class="form-control" placeholder="Poster Link">
+							<div class="input-group-append">
+								<button type="button" class="btn btn-primary btn-upload-poster" data-toggle="tooltip" title="Upload Poster">
+									<em class="fas fa-upload"></em>
+								</button>
+							</div>
+						</div>
+						<div id="posterUpload" class="input-group d-none">
+							<div class="custom-file">
+								<input type="file" id="posterFile" name="poster-file" class="custom-file-input form-control" accept=".jpg, .jpeg, .png, .webp, .gif">
+								<label class="custom-file-label" for="posterFile">Choose file</label>
+							</div>
+							<div class="input-group-append">
+								<button type="button" class="btn btn-primary btn-upload-poster" data-toggle="tooltip" title="{{ edit ? 'Insert Poster Link' : 'Insert Poster URL' }}">
+									<em class="fas fa-link"></em>
+								</button>
+							</div>
+						</div>
+						<small class="form-text text-muted">
+							Poster formats: .jpg, .jpeg, .png, .webp, .gif
+						</small>
+					</div>
+					{% if edit and poster %}
+                        <input type="hidden" name="poster" value="{{ poster }}">
+						<div class="mb-3">
+							<a href="{{ poster_url }}" target="_blank" rel="noopener" title="Poster Image">
+								<div class="embed-responsive embed-responsive-16by9 mb-3 border rounded">
+									<img src="{{ poster_url }}" class="embed-responsive-item w-100" alt="{{ video_title|default('') }}" style="object-fit:cover;object-position:center">
+								</div>
+							</a>
+							<button type="button" class="btn btn-danger" onclick="videos.removePoster({{ id }}, $(this))" rel="noopener">
+								<em class="fas fa-trash-alt mr-2"></em>Delete Poster
+							</button>
+						</div>
+					{% endif %}
+				</div>
+			</div>
+			{# Plugin Widget Slot: form bottom #}
+			{{ render_slot(edit ? 'backend.videos.edit.form_bottom' : 'backend.videos.new.form_bottom') }}
+
+			<div class="row" id="actions-buttons">
+				<div class="col-12">
+					{% if edit %}
+						<input type="hidden" name="id" value="{{ id }}" required>
+					{% endif %}
+					<button type="submit" class="btn btn-success">
+						<em class="fas fa-save mr-2"></em>
+						{{ edit ? 'Update' : 'Save' }}
+					</button>
+					{% if edit %}
+						&nbsp;
+						<button type="button" class="btn btn-danger" onclick="videos.cache.clear.single($(this))" data-id="{{ id }}">
+							<em class="fas fa-eraser mr-2"></em>Clear Cache
+						</button>
+					{% endif %}
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+{% if edit %}
+	<div class="row mt-3">
+		<div class="col-12">
+			<ul class="nav nav-pills nav-justified mb-3" aria-owns="url-tab embed-tab dl-tab req-tab json-tab">
+				<li class="nav-item">
+					<a role="tab" class="nav-link active" id="url-tab" data-toggle="tab" href="#turl" aria-controls="turl">Embed Link</a>
+				</li>
+				<li class="nav-item">
+					<a role="tab" class="nav-link" id="dl-tab" data-toggle="tab" href="#tdl" aria-controls="tdl">Download Link</a>
+				</li>
+				<li class="nav-item">
+					<a role="tab" class="nav-link" id="embed-tab" data-toggle="tab" href="#tembed" aria-controls="tembed">Embed Code</a>
+				</li>
+			</ul>
+			<div class="tab-content" id="myTabContent">
+				<div class="tab-pane fade show active" id="turl" role="tabpanel" aria-labelledby="url-tab">
+					<label for="txtEmbed">Embed Link</label>
+					<textarea onfocus="this.select()" id="txtEmbed" cols="30" rows="6" class="form-control" readonly>{{ embed_url }}</textarea>
+				</div>
+				<div class="tab-pane fade" id="tembed" role="tabpanel" aria-labelledby="embed-tab">
+					<label for="txtEmbedCode">Embed Code</label>
+					<textarea onfocus="this.select()" id="txtEmbedCode" cols="30" rows="6" class="form-control" readonly>{{ embed_code }}</textarea>
+				</div>
+				<div class="tab-pane fade" id="tdl" role="tabpanel" aria-labelledby="dl-tab">
+					<label for="txtDl">Download Link</label>
+					<textarea onfocus="this.select()" id="txtDl" cols="30" rows="6" class="form-control" readonly>{{ download_url }}</textarea>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="row mt-3">
+		<div class="col-12">
+			<div class="card border-primary">
+				<div class="card-header border-0 bg-primary">
+					<div class="d-flex align-items-center">
+						<h6 class="mb-0 flex-grow-1 text-white mr-2">
+							<em class="fab fa-google-drive mr-2"></em>Google Drive Backup Links</h6>
+						<button type="button" class="btn btn-outline-light" data-toggle="collapse" href="#collapseGdrive" aria-expanded="false" aria-controls="collapseGdrive">Show/Hide</button>
+					</div>
+				</div>
+				<div class="card-body collapse p-0" id="collapseGdrive">
+					<ul class="list-group list-group-flush rounded-bottom">
+						{% if gdrive_files %}
+							{% for val in gdrive_files %}
+								<li class="list-group-item list-group-item-action p-2">
+									<a href="{{ val.url }}" target="_blank" rel="noopener" class="float-left">{{ val.mirror_id }}</a>
+									{% if is_admin %}
+										<button type="button" onclick="videos.gdrive_files.delete($(this))" data-id="{{ val.id }}" data-name="{{ val.mirror_id }}" class="btn btn-default float-right text-danger ml-2" data-toggle="tooltip" title="Delete">
+											<em class="fas fa-trash"></em>
+										</button>
+									{% endif %}
+								</li>
+							{% endfor %}
+						{% else %}
+							<li class="list-group-item">Not found backup links</li>
+						{% endif %}
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+{% endif %}
+
+{% include templates.link_examples %}
+
+{% if edit %}
+	<div class="modal fade" id="mdEditSubtitle" data-backdrop="static" data-keyboard="false" aria-labelledby="mdEditSubtitleLabel">
+		<div class="modal-dialog modal-md">
+			<div class="modal-content">
+				<form id="frmEditSubtitle" method="POST" enctype="multipart/form-data" class="needs-validation" novalidate>
+					<div class="modal-header">
+						<h5 class="modal-title" id="mdEditSubtitleLabel">Edit Subtitle</h5>
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+							<span>&times;</span>
+						</button>
+					</div>
+					<div class="modal-body">
+						<div class="mb-3">
+							<label for="editSubLang">Select Language</label>
+							<select id="editSubLang" name="editSubLang" class="form-control select2" required>
+								{% for val in subtitle_list %}
+									<option value="{{ val }}">{{ val }}</option>
+								{% endfor %}
+							</select>
+						</div>
+						<div id="fgEditSubURL" class="mb-3 m-0">
+							<div class="input-group">
+								<input type="url" name="editSubURL" id="editSubURL" class="form-control subtitle" placeholder="Subtitle URL" aria-label="Subtitle URL" required>
+								<div class="input-group-append">
+									<button onclick="$('#editSubType').val('file');$('#fgEditSubURL').toggleClass('d-none');$('#editSubURL').removeAttr('required');$('#fgEditSubFile').toggleClass('d-none');$('#editSubFile').attr('required','').val('')" type="button" class="btn btn-primary" data-toggle="tooltip" title="Upload Subtitle">
+										<em class="fas fa-upload"></em>
+									</button>
+								</div>
+							</div>
+						</div>
+						<div id="fgEditSubFile" class="m-0 d-none">
+							<div class="input-group">
+								<div class="custom-file">
+									<input type="file" name="editSubFile" id="editSubFile" class="custom-file-input form-control" placeholder="Choose file" accept=".srt, .vtt, .ass, .sub, .stl, .dfxp, .ttml, .sbv, .txt">
+									<label class="custom-file-label" for="editSubFile">Choose file</label>
+								</div>
+								<div class="input-group-append">
+									<button onclick="$('#editSubType').val('url');$('#fgEditSubURL').toggleClass('d-none');$('#editSubURL').attr('required','').val('');$('#fgEditSubFile').toggleClass('d-none');$('#editSubFile').removeAttr('required')" type="button" class="btn btn-primary" data-toggle="tooltip" title="Insert Subtitle URL">
+										<em class="fas fa-link"></em>
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="modal-footer">
+						<button type="submit" class="btn btn-success">
+							<em class="fas fa-save mr-2"></em>Update
+						</button>
+						&nbsp;
+						<button type="reset" class="btn btn-danger" data-dismiss="modal">
+							<em class="fas fa-times mr-2"></em>Close
+						</button>
+						<input type="hidden" name="editSubId" id="editSubId">
+						<input type="hidden" name="action" id="action" value="editSubtitle">
+						<input type="hidden" name="editSubType" id="editSubType" value="url">
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+	<script type="text/javascript">
+		$(document).ready(function () {
+			var clGDrive = localStorage.getItem('collapseGdrive');
+			clGDrive = clGDrive !== null ? clGDrive.replace('true', 'show') : 'hide';
+			$('#collapseGdrive').collapse(clGDrive);
+			$('#collapseGdrive').on('shown.bs.collapse', function () {
+				localStorage.setItem('collapseGdrive', 'show');
+			}).on('hidden.bs.collapse', function () {
+				localStorage.setItem('collapseGdrive', 'hide');
+			});
+		});
+	</script>
+{% endif %}
+
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot(edit ? 'backend.videos.edit.bottom' : 'backend.videos.new.bottom') }}
+
+{% include templates.backend_footer %}

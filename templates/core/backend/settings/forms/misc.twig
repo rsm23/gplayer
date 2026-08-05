@@ -1,0 +1,134 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="form-group">
+			<label for="bypass_host">Bypassed Hosts</label>
+            <input type="hidden" name="bypass_host[]" value="">
+			<select multiple="multiple" id="bypass_host" name="bypass_host[]" class="multi-select">
+				{% for key, val in supported_sites %}
+					{% set x = val|split('|', 2) %}
+					<option value="{{ key }}" {{ key in bypass_host ? 'selected' : '' }}>{{ x[0] }}</option>
+				{% endfor %}
+			</select>
+            <div class="row mt-2">
+                <div class="col-6"><button type="button" class="btn btn-primary btn-block" onclick="$('#bypass_host').multiSelect('select_all')">Select All</button></div>
+                <div class="col-6"><button type="button" class="btn btn-secondary btn-block" onclick="$('#bypass_host').multiSelect('deselect_all')">Deselect All</button></div>
+            </div>
+			<p>
+				<small class="form-text text-muted">The bypassed hosts will use your VPS bandwidth to stream the video. The bypassed hosts are in the right or bottom column.</small>
+			</p>
+			<button type="button" class="btn btn-warning" id="resetHost" onclick="settings.resetHost()">Reset Hosts</button>
+		</div>
+		<div class="form-group">
+			<label for="disable_host">Disabled Hosts</label>
+            <input type="hidden" name="disable_host[]" value="">
+			<select multiple="multiple" id="disable_host" name="disable_host[]" class="multi-select">
+				{% for key, val in supported_sites %}
+					{% set x = val|split('|', 2) %}
+					<option value="{{ key }}" {{ key in disable_host ? 'selected' : '' }}>{{ x[0] }}</option>
+				{% endfor %}
+			</select>
+            <div class="row mt-2">
+                <div class="col-6"><button type="button" class="btn btn-primary btn-block" onclick="$('#disable_host').multiSelect('select_all')">Select All</button></div>
+                <div class="col-6"><button type="button" class="btn btn-secondary btn-block" onclick="$('#disable_host').multiSelect('deselect_all')">Deselect All</button></div>
+            </div>
+			<small class="form-text text-muted">The disabled hosts are in the right or bottom column.</small>
+		</div>
+		<div class="form-group">
+			<label for="disable_resolution">Disabled Video Resolutions</label>
+            <input type="hidden" name="disable_resolution[]" value="">
+			<select multiple="multiple" id="disable_resolution" name="disable_resolution[]" class="multi-select">
+				{% for val in resolutions %}
+					{% set px = val == 'Default' or val == 'Original' ? '' : 'p+' %}
+					<option value="{{ val }}" {{ val in disable_resolution ? 'selected' : '' }}>{{ val ~ px }}</option>
+				{% endfor %}
+			</select>
+            <div class="row mt-2">
+                <div class="col-6"><button type="button" class="btn btn-primary btn-block" onclick="$('#disable_resolution').multiSelect('select_all')">Select All</button></div>
+                <div class="col-6"><button type="button" class="btn btn-secondary btn-block" onclick="$('#disable_resolution').multiSelect('deselect_all')">Deselect All</button></div>
+            </div>
+			<small class="form-text text-muted">Does not apply to HLS/MPD videos. The disabled resolutions are in the right or bottom column.</small>
+		</div>
+		<div class="form-group">
+			<div class="custom-control custom-checkbox">
+                <input type="hidden" name="disable_proxy" value="false">
+				<input type="checkbox" class="custom-control-input" id="disable_proxy" name="disable_proxy" value="true" {{ disable_proxy ? 'checked' : '' }}>
+				<label class="custom-control-label" for="disable_proxy">Disable Proxy</label>
+			</div>
+		</div>
+		<div class="form-group">
+			<div class="custom-control custom-checkbox">
+                <input type="hidden" name="free_proxy" value="false">
+				<input type="checkbox" class="custom-control-input" id="free_proxy" name="free_proxy" value="true" {{ free_proxy ? 'checked' : '' }}>
+				<label class="custom-control-label" for="free_proxy">Disable Free Proxy</label>
+			</div>
+		</div>
+		<div class="form-group">
+			<label for="proxy_list">Active Proxy List</label>
+			<textarea name="proxy_list" id="proxy_list" cols="30" rows="5" class="form-control" placeholder="Active proxy list">{{ proxy_list }}</textarea>
+			<small class="form-text text-muted">
+				<strong class="text-success">Proxy Format:</strong><br>
+				IP<strong>:</strong>PORT<br>
+				IP<strong>:</strong>PORT<strong>,</strong>TYPE<br>
+				IP<strong>:</strong>PORT<strong>,</strong>USERNAME<strong>:</strong>PASSWORD<br>
+				IP<strong>:</strong>PORT<strong>,</strong>USERNAME<strong>:</strong>PASSWORD<strong>,</strong>TYPE<br>
+				<strong class="text-success">Type:</strong>
+				socks4, socks4a, socks5, https
+			</small>
+		</div>
+		<div class="form-group">
+			<button type="button" class="btn btn-primary" onclick="settings.checkProxy()" id="checkProxy">Proxy Checker</button>
+		</div>
+	</div>
+	<div class="col-12 col-md-6">
+		<div class="form-group">
+			<label for="domain_whitelisted">Allowed Embed Domains/IPs</label>
+			<textarea name="domain_whitelisted" id="domain_whitelisted" cols="30" rows="5" class="form-control" placeholder="Enter a domain/ip that you trust (per line). Example: userweb.com">{{ domain_whitelisted }}</textarea>
+			<small class="form-text text-muted">Site domain/IP where you can put embed codes. Empty to allow all sites.</small>
+		</div>
+		<div class="form-group">
+			<label for="domain_blacklisted">Blacklisted Domains/IPs</label>
+			<textarea name="domain_blacklisted" id="domain_blacklisted" cols="30" rows="5" class="form-control" placeholder="Enter a domain/ip you don't trust (per line). Example: userweb.com">{{ domain_blacklisted }}</textarea>
+			<small class="form-text text-muted">Block domain/IP of prohibited sites using embed codes. Empty to allow all sites.</small>
+		</div>
+		<div class="form-group">
+			<label for="link_blacklisted">Blacklisted Referer URLs</label>
+			<textarea name="link_blacklisted" id="link_blacklisted" cols="30" rows="5" class="form-control" placeholder="Enter a referer url you don't trust (per line). Example: userweb.com/watch/the-video">{{ link_blacklisted }}</textarea>
+			<small class="form-text text-muted">Block domain/IP of prohibited sites using embed codes. Empty to allow all sites.</small>
+		</div>
+		<div class="form-group">
+			<label for="word_blacklisted">Blacklisted Words</label>
+			<textarea name="word_blacklisted" id="word_blacklisted" cols="30" rows="5" class="form-control" placeholder="Enter the words you blacklisted (per line). Example: porn">{{ word_blacklisted }}</textarea>
+			<small class="form-text text-muted">Disable videos with titles that contain blacklisted words.</small>
+			<button type="button" class="btn btn-danger mt-2" onclick="settings.disableBlacklistedVideos($(this))">Disable Videos</button>
+		</div>
+		<div class="form-group">
+			<label for="banned_countries">Banned Countries</label>
+            <input type="hidden" name="banned_countries[]" value="">
+			<select multiple="multiple" id="banned_countries" name="banned_countries[]" class="multi-select">
+				{% for key, val in country_list %}
+					<option value="{{ key }}" {{ key in banned_countries ? 'selected' : '' }}>{{ val }}</option>
+				{% endfor %}
+			</select>
+            <div class="row mt-2">
+                <div class="col-6"><button type="button" class="btn btn-primary btn-block" onclick="$('#banned_countries').multiSelect('select_all')">SelectAll</button></div>
+                <div class="col-6"><button type="button" class="btn btn-secondary btn-block" onclick="$('#banned_countries').multiSelect('deselect_all')">Deselect All</button></div>
+            </div>
+		</div>
+		<div class="form-group">
+			<div class="custom-control custom-checkbox">
+				<input type="hidden" name="block_vpn" value="false">
+				<input type="checkbox" class="custom-control-input" id="block_vpn" name="block_vpn" value="true"  {{ block_vpn ? 'checked' : '' }}>
+				<label class="custom-control-label" for="block_vpn">
+					Block Proxy/VPN
+				</label>
+			</div>
+			<small class="form-text text-muted">
+				If you enable this option, all access using proxy/VPN or data center servers such as AWS, Digital Ocean, Google, Linode, Vultr, etc is blocked.
+			</small>
+		</div>
+		<div class="form-group">
+			<label for="block_vpn_list">IP Proxy/VPN Prefix or IPv4/6 Ranges</label>
+			<textarea name="block_vpn_list" id="block_vpn_list" cols="30" rows="5" class="form-control" placeholder="Enter the prefix of the IP addresses you want to block (per line)">{{ block_vpn_list }}</textarea>
+		</div>
+	</div>
+</div>

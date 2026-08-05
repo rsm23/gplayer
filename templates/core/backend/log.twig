@@ -1,0 +1,280 @@
+{% include templates.backend_header %}
+{% set currentUrl = current_url()|split('?')[0] %}
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/themes/prism-dark.min.css" integrity="sha256-l+VX6V333ll/PXrjqG1W6DyZvDEw+50M7aAP6dcD7Qc=" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/plugins/line-numbers/prism-line-numbers.min.css" integrity="sha256-4CROCOz16nRjanuxMghkzZzCOdmwLXxFqCMCW7XG/lA=" crossorigin="anonymous">
+<style>
+    pre.line-numbers {
+        white-space: pre-wrap !important;
+        word-break: break-all !important;
+        padding-left: 3.8em !important;
+    }
+    code[class*=language-], pre[class*=language-] {
+        word-wrap: break-word !important;
+    }
+</style>
+
+<div class="pt-3 mt-5">
+    <h1 class="h4 mb-3">{{ title }}</h1>
+    <div class="form-row">
+        <div class="col-12 col-md-4">
+            <div class="card mb-3">
+                <div class="card-header h6">
+                    Select Log File
+                </div>
+                <div class="card-body">
+                    <label for="logServerSelector">Select Server:</label>
+                    <div class="input-group mb-3">
+                        <select id="logServerSelector" class="form-control"></select>
+                        <div class="input-group-append">
+                            <button type="button" class="btn btn-outline-success" onclick="$('#logServerSelector').trigger('change')">
+                                <i class="fas fa-arrows-rotate"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="list-group list-group-flush" id="logFilesContainer"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-8">
+            <div class="card">
+                <div class="card-header h6">
+                    <span class="h6 mb-0" id="selectedFileHeader">Selected file: none</span>
+                </div>
+                <div class="card-body">
+                    <div class="btn-group mb-3 d-none" id="logActionsContainer">
+                        <button type="button" class="btn btn-outline-primary" id="btnDownloadLog" data-toggle="tooltip" title="Download File">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="btnClearLog" data-toggle="tooltip" title="Clear Log">
+                            <i class="fas fa-eraser"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger" id="btnDeleteLog" data-toggle="tooltip" title="Delete File">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-info" id="btnReloadLog" data-toggle="tooltip" title="Reload Log">
+                            <i class="fas fa-arrows-rotate"></i>
+                        </button>
+                    </div>
+                    <pre id="txtLogs" class="line-numbers language-log mb-3" style="height:512px"><code class="language-log"></code></pre>
+                    <button type="button" id="btnLoadMore" class="btn btn-outline-primary btn-block">
+                        <i class="fas fa-circle-arrow-down mr-2"></i>Load More
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    globalThis.Prism = globalThis.Prism || {};
+    globalThis.Prism.manual = true;
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/components/prism-core.min.js" integrity="sha256-bKrTFt2ZHyT4AE4LnBnAVctYKf9l6XP77kBvltgbjn4=" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/components/prism-log.min.js" integrity="sha256-KWLRPcUKptNLy8DERPsVdxHeD7FyUDx7u7u3HCzraK0=" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/plugins/line-numbers/prism-line-numbers.min.js" integrity="sha256-9cmf7tcLdXpKsPi/2AWE93PbZpTp4M4tqzFk+lWomjU=" crossorigin="anonymous"></script>
+<script>
+    $(document).ready(function(){
+        let currentServer = '';
+        let currentFile = '';
+
+        // Populating Load Balancer list from localStorage
+        let lbData = [];
+        try {
+            lbData = JSON.parse(localStorage.getItem('lb') || '[]');
+        } catch (e) {
+            console.error('Failed to parse load balancer list from localStorage', e);
+        }
+
+        if (Array.isArray(lbData)) {
+            lbData.forEach(function(url) {
+                if (url) {
+                    $('#logServerSelector').append(`<option value="${url}{{ admin_dir }}">${url}</option>`);
+                }
+            });
+            loadFileList();
+        }
+
+        function getBaseApiUrl() {
+            if (currentServer === '') {
+                return '{{ currentUrl }}';
+            }
+            return currentServer.endsWith('/') ? currentServer + 'log/' : currentServer + '/log/';
+        }
+
+        // Load files list for selected server
+        function loadFileList() {
+            $('#txtLogs code').html('');
+            $('#logFilesContainer').html('<div class="list-group-item text-center">Loading files...</div>');
+
+            $.ajax({
+                url: getBaseApiUrl() + '?api=1&action=list',
+                type: 'GET',
+                success: function(res) {
+                    if (res && res.status === 'ok' && Array.isArray(res.result)) {
+                        $('#logFilesContainer').empty();
+                        if (res.result.length === 0) {
+                            $('#logFilesContainer').html('<div class="list-group-item text-center text-danger text-bold">No log file.</div>');
+                            return;
+                        }
+                        res.result.forEach(function(file) {
+                            let isActive = (currentFile === file.src) ? 'active' : '';
+                            $('#logFilesContainer').append(`
+                                <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${isActive}" data-file="${file.src}">
+                                    <span>${file.src}</span>
+                                    <span class="badge badge-success">${file.size} KB</span>
+                                </a>
+                            `);
+                        });
+                    } else {
+                        $('#logFilesContainer').html('<div class="list-group-item text-center text-danger">Failed to fetch file list</div>');
+                    }
+                },
+                error: function() {
+                    $('#logFilesContainer').html('<div class="list-group-item text-center text-danger">Error connecting to server log API</div>');
+                }
+            });
+        }
+
+        let currentStartLine = 1;
+        const LINES_PER_PAGE = 250;
+
+        function fetchLogData(start) {
+            let end = start + LINES_PER_PAGE - 1;
+            $('#btnLoadMore').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i>Loading...');
+            
+            $.ajax({
+                url: getBaseApiUrl() + `?api=1&action=read&file=${currentFile}&start=${start}&end=${end}`,
+                type: 'GET',
+                success: function(res) {
+                    const codeEl = document.querySelector('#txtLogs code');
+                    codeEl.textContent += res;
+                    Prism.highlightElement(codeEl);
+
+                    if (res.trim() !== '') {
+                        currentStartLine = end + 1;
+                    }
+                },
+                complete: function() {
+                    $('#btnLoadMore').prop('disabled', false).html('<i class="fas fa-circle-arrow-down mr-2"></i>Load More');
+                },
+                error: function() {
+                    swalError('Failed to load log file');
+                }
+            });
+        }
+
+        // Load log file content
+        function loadFileContent(fileName) {
+            currentFile = fileName;
+            currentStartLine = 1;
+
+            $('#selectedFileHeader').text('Selected file: ' + fileName);
+            $('#logActionsContainer').removeClass('d-none');
+
+            fetchLogData(currentStartLine);
+        }
+
+        $('#btnLoadMore').click(function(e) {
+            e.preventDefault();
+            fetchLogData(currentStartLine);
+        });
+
+        // Server selection handler
+        $('#logServerSelector').change(function() {
+            currentServer = $(this).val();
+            currentFile = '';
+            $('#logActionsContainer').addClass('d-none');
+            $('#selectedFileHeader').text('Selected file: None');
+            loadFileList();
+        });
+
+        // File click handler
+        $(document).on('click', '#logFilesContainer a[data-file]', function(e) {
+            e.preventDefault();
+
+            const codeEl = document.querySelector('#txtLogs code');
+            codeEl.textContent = '';
+            Prism.highlightElement(codeEl);
+
+            $('#logFilesContainer a').removeClass('active');
+            let fileName = $(this).data('file');
+            $(this).addClass('active');
+
+            currentStartLine = 1;
+
+            loadFileContent(fileName);
+        });
+
+        $('#btnReloadLog').click(function(e) {
+            e.preventDefault();
+
+            $('.list-group-item.active').trigger('click');
+        });
+
+        // AJAX Clear Log Handler
+        $('#btnClearLog').click(function(e) {
+            e.preventDefault();
+            let $el = $(this);
+            swalQuestion(
+                "Are you sure?",
+                "You want to clear this log?",
+                function(isConfirm) {
+                    if (!isConfirm) return;
+                    $.ajax({
+                        url: getBaseApiUrl() + `?api=1&action=clear&file=${currentFile}`,
+                        type: 'GET',
+                        success: function(res) {
+                            if (res && res.status === 'ok') {
+                                swalSuccess(res.message || 'Log cleared');
+                                $('#txtLogs > code').html('');
+                            } else {
+                                swalError('Failed to clear log');
+                            }
+                        },
+                        error: function() {
+                            swalError('Connection error');
+                        }
+                    });
+                }
+            );
+        });
+
+        // AJAX Delete Log Handler
+        $('#btnDeleteLog').click(function(e) {
+            e.preventDefault();
+            let $el = $(this);
+            swalQuestion(
+                "Are you sure?",
+                "You want to delete this file permanently?",
+                function(isConfirm) {
+                    if (!isConfirm) return;
+                    $.ajax({
+                        url: getBaseApiUrl() + `?api=1&action=delete&file=${currentFile}`,
+                        type: 'GET',
+                        success: function(res) {
+                            if (res && res.status === 'ok') {
+                                swalSuccess(res.message || 'Log file deleted');
+                                currentFile = '';
+                                $('#logActionsContainer').addClass('d-none');
+                                $('#selectedFileHeader').text('Selected file: None');
+                                loadFileList();
+                            } else {
+                                swalError('Failed to delete log file');
+                            }
+                        },
+                        error: function() {
+                            swalError('Connection error');
+                        }
+                    });
+                }
+            );
+        });
+    });
+</script>
+
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot('backend.log.bottom') }}
+
+{% include templates.backend_footer %}

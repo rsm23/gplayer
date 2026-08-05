@@ -1,0 +1,182 @@
+const productName = 'GDPlayer'
+
+export type PublicPageOptions = Readonly<{
+  title: string
+  heading?: string
+  description: string
+  eyebrow: string
+  body: string
+  robots?: 'index, follow' | 'noindex, nofollow'
+}>
+
+export type PublicError = Readonly<{
+  status: 400 | 401 | 403 | 404 | 500 | 503
+  title: string
+  description: string
+}>
+
+export const publicErrors: Readonly<Record<PublicError['status'], PublicError>> = Object.freeze({
+  400: Object.freeze({ status: 400, title: '400 Bad Request', description: 'The page is disabled.' }),
+  401: Object.freeze({ status: 401, title: '401 Unauthorized', description: 'You are not allowed to access the page.' }),
+  403: Object.freeze({ status: 403, title: '403 Forbidden', description: 'You are not allowed to access the page.' }),
+  404: Object.freeze({ status: 404, title: '404 Page Not Found', description: 'The page you are looking for was not found.' }),
+  500: Object.freeze({ status: 500, title: '500 Internal Server Error', description: 'Sorry, the server is currently unavailable. Please contact admin.' }),
+  503: Object.freeze({ status: 503, title: '503 Service Unavailable', description: 'Sorry, the server is currently unavailable. Please try again later.' })
+})
+
+export function renderPublicPage(options: PublicPageOptions): string {
+  const title = escapeHtml(options.title)
+  const heading = escapeHtml(options.heading ?? options.title)
+  const description = escapeHtml(options.description)
+  const eyebrow = escapeHtml(options.eyebrow)
+  const robots = options.robots ?? 'index, follow'
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="${description}">
+  <meta name="robots" content="${robots}">
+  <meta name="theme-color" content="#0b0b10">
+  <title>${title} | ${productName}</title>
+  <link rel="icon" href="/assets/img/logo/rr.ico">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/gplayer-landing.css">
+  <link rel="stylesheet" href="/assets/css/gplayer-public.css">
+  <script src="/assets/js/gplayer-landing.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  ${renderHeader()}
+  <main id="main-content" class="public-main">
+    <header class="public-hero">
+      <p class="eyebrow"><span></span>${eyebrow}</p>
+      <h1>${heading}</h1>
+      <p>${description}</p>
+    </header>
+    <article class="public-article">${options.body}</article>
+  </main>
+  ${renderFooter()}
+</body>
+</html>`
+}
+
+export function renderPublicError(error: PublicError): string {
+  const homeLabel = error.status >= 500 ? 'Try the homepage' : 'Return home'
+  return renderPublicPage({
+    title: error.title,
+    description: error.description,
+    eyebrow: `HTTP ${error.status}`,
+    robots: 'noindex, nofollow',
+    body: `<div class="error-action"><a class="public-button" href="/">${homeLabel}<span aria-hidden="true">↗</span></a></div>`
+  })
+}
+
+export function renderTermsPage(): string {
+  return renderPublicPage({
+    title: 'Terms & Conditions',
+    heading: 'Terms and Conditions',
+    description: 'Terms and conditions that must be met between the website owner and the users of the services provided on this website.',
+    eyebrow: 'Legal / Terms',
+    body: `<p><strong>Effective date: 07 Aug 2025</strong></p>
+<p>These Terms and Conditions govern your use of our file and video hosting platform (the "Service"). By accessing or using our Service, you agree to be bound by these Terms.</p>
+<ol class="legal-list">
+  <li><h2>Eligibility</h2><p>You must be at least 18 years old or the age of majority in your jurisdiction to use this Service.</p></li>
+  <li><h2>Account registration</h2><p>You are responsible for maintaining the confidentiality of your account credentials. You agree to provide accurate and complete information and to update it as necessary.</p></li>
+  <li><h2>User content</h2><p>You retain ownership of files or videos you upload. You grant us a worldwide, non-exclusive, royalty-free license to host, store, and deliver that content as necessary to operate the Service. You must have all necessary rights and permissions to upload and share it.</p></li>
+  <li><h2>Prohibited content and conduct</h2><p>You may not use the Service to store or distribute:</p><ul><li>Copyright-infringing materials</li><li>Child exploitation content</li><li>Malware, viruses, or other harmful software</li><li>Hate speech or content inciting violence</li></ul></li>
+  <li><h2>DMCA and copyright complaints</h2><p>We comply with the Digital Millennium Copyright Act. If you believe your copyright has been infringed, follow our <a href="/dmca/">DMCA policy</a>.</p></li>
+  <li><h2>Termination</h2><p>We reserve the right to suspend or terminate your access without notice if you violate these Terms.</p></li>
+  <li><h2>Limitation of liability</h2><p>We provide the Service "as is" without warranties. We are not liable for loss of data, profits, or damages resulting from use of the Service.</p></li>
+  <li><h2>Privacy</h2><p>Our <a href="/privacy/">Privacy Policy</a> governs how we handle information. We do not sell user data.</p></li>
+  <li><h2>Governing law</h2><p>These Terms are governed by the laws of the USA.</p></li>
+  <li><h2>Changes to terms</h2><p>We may update these Terms at any time. Continued use of the Service after changes constitutes acceptance.</p></li>
+</ol>`
+  })
+}
+
+export function renderPrivacyPage(): string {
+  return renderPublicPage({
+    title: 'Privacy Policy',
+    description: 'By using this site, you agree to follow all the privacy policies set out on this page.',
+    eyebrow: 'Legal / Privacy',
+    body: `<p><strong>Last updated: 07 Aug 2025</strong></p>
+<section><h2>1. Definitions</h2><p><strong>Personal Information</strong> is information that identifies you as an individual. <strong>Non-Personal Information</strong> includes anonymous or aggregated data not linked to you personally.</p></section>
+<section><h2>2. Information we collect</h2><p>We do not collect personal information through the public player generator. We may process non-personal technical data such as browser type, device model, anonymized network data, and usage patterns to operate and secure the Service.</p></section>
+<section><h2>3. Cookies and preferences</h2><p>The Service may use cookies or local browser storage to remember display and player preferences. Third-party media or advertising integrations may set their own cookies.</p></section>
+<section><h2>4. Third-party services</h2><p>Media hosts, analytics providers, or advertising networks may process data under their own privacy policies. This policy does not cover their independent practices.</p></section>
+<section><h2>5. Your data rights</h2><p>If the Service begins collecting personal data, applicable law may give you rights to access, correct, or delete it. Contact the site operator to exercise those rights.</p></section>
+<section><h2>6. Data security</h2><p>We take reasonable technical measures to protect service data, including HTTPS in production. No method of transmission over the Internet is completely secure.</p></section>
+<section><h2>7. International data transfers</h2><p>Non-personal service data may be processed in countries with different data-protection laws.</p></section>
+<section><h2>8. Changes to this policy</h2><p>We may update this policy and publish the current version on this page. Continued use after an update constitutes acceptance.</p></section>
+<section><h2>9. Contact</h2><p>Contact the site operator if you have questions about this policy.</p></section>`
+  })
+}
+
+export function renderDmcaPage(): string {
+  return renderPublicPage({
+    title: 'DMCA Takedown Policy',
+    description: 'DMCA Takedown Policy',
+    eyebrow: 'Legal / Copyright',
+    body: `<section><h2>Introduction</h2><p>GDPlayer respects the intellectual-property rights of others and expects users to do the same. The site operator responds to clear notices of alleged infringement that comply with the Digital Millennium Copyright Act.</p></section>
+<section><h2>Reporting copyright infringement</h2><p>A written notice should include:</p><ol><li>A physical or electronic signature of a person authorized to act for the copyright owner.</li><li>Identification of the copyrighted work, or a representative list of works.</li><li>Identification and location of the material claimed to be infringing.</li><li>Your address, telephone number, and email address.</li><li>A statement of good-faith belief that the disputed use is not authorized.</li><li>A statement, under penalty of perjury, that the notice is accurate and that you are authorized to act.</li></ol></section>
+<section><h2>Submit your notice</h2><p>Send the notice to the designated DMCA contact published by the operator of this deployment with the subject <strong>DMCA Takedown Request</strong>. A deployment must configure its real legal contact before operating publicly.</p></section>
+<section><h2>Counter-notification</h2><p>A counter-notification should identify the removed material and its prior location; include your signature and contact information; state under penalty of perjury that removal resulted from mistake or misidentification; and include the jurisdiction and service-of-process consent required by 17 U.S.C. § 512(g).</p></section>
+<section><h2>Repeat infringers</h2><p>The operator may terminate access for repeat infringers in appropriate circumstances.</p></section>
+<section><h2>Disclaimer</h2><p>This policy is informational and is not legal advice. Seek advice from a qualified attorney if you are unsure of your rights or obligations.</p></section>`
+  })
+}
+
+export function renderChangelogPage(): string {
+  return renderPublicPage({
+    title: 'Change Log',
+    description: 'These change logs indicate that this website is being kept up to date.',
+    eyebrow: 'Release history',
+    body: `<div class="changelog-intro"><p>The Node.js rewrite retains the 4.8.3 contract while replacing PHP subsystems incrementally. Historical entries below are preserved from the supplied release.</p></div>
+<ol class="changelog-list">
+  <li><div><time datetime="2026-08-05">05 Aug 2026</time><span class="release-tag">Node rewrite</span></div><h2>Streaming and public delivery foundation</h2><ul><li><strong>Added</strong> authenticated HLS, DASH, poster, subtitle, download, and ranged-video routes.</li><li><strong>Added</strong> DNS-pinned upstream connections and strict player-query authentication.</li><li><strong>Added</strong> public generator, legal pages, status pages, compatibility redirects, and installable-web-app metadata.</li></ul></li>
+  <li><div><time datetime="2026-08-02">02 Aug 2026</time><span class="release-tag">v4.8.3</span></div><h2>Legacy release</h2><ul><li><strong>Added</strong> disabled-function diagnostics and admin system alerts.</li><li><strong>Improved</strong> plugin loading, background execution, and asset pipelines.</li><li><strong>Fixed</strong> stream-handler debug output and the application entry point.</li></ul></li>
+  <li><div><time datetime="2026-07-29">29 Jul 2026</time><span class="release-tag">v4.8.2</span></div><h2>Headers and preflight compatibility</h2><ul><li><strong>Added</strong> custom-header management and deployment documentation.</li><li><strong>Improved</strong> background processes, server templates, and parser type safety.</li><li><strong>Fixed</strong> cross-origin preflight behavior across routes and static assets.</li></ul></li>
+  <li><div><time datetime="2026-07-26">26 Jul 2026</time><span class="release-tag">v4.8.1</span></div><h2>Plugin and stream engine update</h2><ul><li><strong>Added</strong> plugin overrides, synchronization, and server-status monitoring.</li><li><strong>Improved</strong> live-stream cache bypass, MPD trailing-slash preservation, and static poster/subtitle delivery.</li><li><strong>Fixed</strong> HLS player state, database indexes, admin responsiveness, and multiple provider adapters.</li></ul></li>
+  <li><div><time datetime="2026-06-22">22 Jun 2026</time><span class="release-tag">v4.8.0</span></div><h2>Stream runtime maintenance</h2><ul><li><strong>Added</strong> shared HTTP client support.</li><li><strong>Fixed</strong> database versioning, headless-browser extraction, player loaders, and provider adapters.</li><li><strong>Changed</strong> upstream HTTP preference to HTTP/1.1 for stability.</li></ul></li>
+</ol>`
+  })
+}
+
+function renderHeader(): string {
+  return `<header class="site-header">
+  <a class="wordmark" href="/" aria-label="GDPlayer home">
+    <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+    <span>GD<span>PLAYER</span></span>
+  </a>
+  <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation">Menu</button>
+  <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
+    <a href="/">Home</a>
+    <a href="/changelog/">Changelog</a>
+    <a href="/terms/">Terms</a>
+    <a href="/privacy/">Privacy</a>
+    <a class="nav-cta" href="/#generator">Build a player</a>
+  </nav>
+</header>`
+}
+
+function renderFooter(): string {
+  return `<footer class="site-footer public-footer">
+  <div>
+    <a class="wordmark wordmark-footer" href="/" aria-label="GDPlayer home">
+      <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span>GD<span>PLAYER</span></span>
+    </a>
+    <p>Universal video delivery for the web.</p>
+  </div>
+  <nav aria-label="Legal navigation">
+    <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/dmca/">DMCA</a><a href="/changelog/">Changelog</a>
+  </nav>
+  <p class="copyright">© <span id="copyright-year">2026</span> GDPlayer</p>
+</footer>`
+}
+
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+}

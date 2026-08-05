@@ -1,0 +1,90 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+    <div class="col-12">
+        <h1 class="h4 mb-3">{{ title }}</h1>
+        <form id="frmUser" action="{{ backend_url }}users/{{ edit ? 'edit?id=' ~ id : 'new/' }}" method="post" class="needs-validation" novalidate>
+            <div class="row">
+                <div class="col-12 col-md-6">
+                    <div class="mb-3">
+                        <label for="name">Full Name</label>
+                        <input type="text" name="name" id="name" value="{{ name|default('') }}" class="form-control" placeholder="Your full name" required>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email">Email</label>
+                        <input type="email" name="email" id="email" value="{{ email|default('') }}" class="form-control" placeholder="Your email address" autocomplete="email" required>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="user">Username</label>
+                        <input type="text" name="user" id="user" value="{{ user|default('') }}" class="form-control" placeholder="Your username" autocomplete="username" required>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="role">User Role</label>
+                        <select name="role" id="role" class="form-control" required>
+                            <option value="">-- Select User Role --</option>
+                            <option value="0" {{ (role is defined and role == 0) ? 'selected' : '' }}>Administrator</option>
+                            <option value="1" {{ (role is defined and role == 1) ? 'selected' : '' }}>User</option>
+                            <option value="2" {{ (role is defined and role == 2) ? 'selected' : '' }}>User Premium</option>
+                        </select>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="status">Status</label>
+                        <select name="status" id="status" class="form-control" required>
+                            <option value="">-- Select Status --</option>
+                            <option value="0" {{ (status is defined and status == 0) ? 'selected' : '' }}>Inactive</option>
+                            <option value="1" {{ (status is defined and status == 1) ? 'selected' : '' }}>Active</option>
+                            <option value="2" {{ (status is defined and status == 2) ? 'selected' : '' }}>Need Approval</option>
+                        </select>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="mb-3">
+                        <label for="password">New Password</label>
+                        <div class="input-group has-validation">
+                            <input type="password" autocomplete="new-password" name="password" id="password" class="form-control" placeholder="Your new password" pattern="[^ ]{8,}" data-error-pattern="The password must contain at least 8 characters" data-error-required="The new password is required" {{ edit ? '' : 'required' }}>
+                            <div class="input-group-append">
+                                <button class="btn btn-secondary btn-shp" data-shp="#password" type="button" data-toggle="tooltip" title="Show/hide New Password">
+                                    <em class="fas fa-eye"></em>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback"></div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="retype_password">Confirm New Password</label>
+                        <div class="input-group has-validation">
+                            <input type="password" autocomplete="new-password" name="retype_password" id="retype_password" class="form-control" placeholder="Confirm your new password" pattern="[^ ]{8,}" data-error-pattern="The confirm password must contain at least 8 characters" data-error-required="The confirm new password is required" {{ edit ? '' : 'required' }}>
+                            <div class="input-group-append">
+                                <button class="btn btn-secondary btn-shp" data-shp="#retype_password" type="button" data-toggle="tooltip" title="Show/hide Confirm New Password">
+                                    <em class="fas fa-eye"></em>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {# Plugin Widget Slot: form bottom #}
+            {{ render_slot(edit ? 'backend.users.edit.form_bottom' : 'backend.users.new.form_bottom') }}
+
+            <div class="row">
+                <div class="col-12">
+                    {% if edit %}
+                        <input type="hidden" name="id" value="{{ id }}" required>
+                    {% endif %}
+                    <button type="submit" class="btn btn-success">
+                        <em class="fas fa-save mr-2"></em>{{ edit ? 'Update' : 'Save' }}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot(edit ? 'backend.users.edit.bottom' : 'backend.users.new.bottom') }}
+
+{% include templates.backend_footer %}

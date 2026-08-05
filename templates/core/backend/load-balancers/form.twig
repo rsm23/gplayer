@@ -1,0 +1,98 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		<form action="{{ backend_url }}load-balancers/{{ edit ? 'edit?id=' ~ id : 'new/' }}" method="post" class="needs-validation" novalidate>
+			<div class="row">
+				<div class="col-12 col-md-6">
+					<div class="mb-3">
+						<label for="name">Name</label>
+						<input type="text" name="name" id="name" class="form-control" placeholder="Insert load balancer name" value="{{ name|default('') }}" required>
+					</div>
+					<div class="mb-3">
+						<label for="link">Homepage URL</label>
+						<input type="url" name="link" id="link" class="form-control" placeholder="Example: http://example.com/" value="{{ link|default('') }}" required>
+					</div>
+					<div class="mb-3 row">
+						<label for="status" class="col-2">Status</label>
+						<div class="col-10">
+							<div class="custom-control custom-checkbox">
+                                <input type="hidden" name="status" value="0">
+								<input type="checkbox" class="custom-control-input" name="status" id="status" value="1" {{ status|default(0) == 1 ? 'checked' : '' }}>
+								<label class="custom-control-label" for="status">Active</label>
+							</div>
+						</div>
+					</div>
+					<div class="mb-3">
+						<label for="disallow_hosts">Disabled Hosts</label>
+                        <input type="hidden" name="disallow_hosts[]" value="">
+						<select multiple="multiple" id="disallow_hosts" name="disallow_hosts[]" class="multi-select">
+							{% for key, val in supported_sites %}
+                                {% set x = val|split('|', 2) %}
+                                <option value="{{ key }}" {{ (disallow_hosts is defined and key in disallow_hosts) ? 'selected' : '' }}>{{ x[0] }}</option>
+                            {% endfor %}
+						</select>
+                        <div class="row mt-2">
+                            <div class="col-6"><button type="button" class="btn btn-primary btn-block" onclick="$('#disallow_hosts').multiSelect('select_all')">Select All</button></div>
+                            <div class="col-6"><button type="button" class="btn btn-secondary btn-block" onclick="$('#disallow_hosts').multiSelect('deselect_all')">Deselect All</button></div>
+                        </div>
+						<small class="form-text text-muted">The load balancer will not bypass the disabled hosts. The disabled hosts are in the right or bottom column.</small>
+					</div>
+				</div>
+				<div class="col-12 col-md-6">
+					<div class="mb-3">
+						<label for="disallow_continent">Disallowed Continents</label>
+                        <input type="hidden" name="disallow_continent[]" value="">
+						<select multiple="multiple" id="disallow_continent" name="disallow_continent[]" class="multi-select">
+                            {% for key, val in continent_list %}
+                                <option value="{{ key }}" {{ (disallow_continent is defined and key in disallow_continent) ? 'selected' : '' }}>{{ val }}</option>
+                            {% endfor %}
+						</select>
+                        <div class="row mt-2">
+                            <div class="col-6"><button type="button" class="btn btn-primary btn-block" onclick="$('#disallow_continent').multiSelect('select_all')">Select All</button></div>
+                            <div class="col-6"><button type="button" class="btn btn-secondary btn-block" onclick="$('#disallow_continent').multiSelect('deselect_all')">Deselect All</button></div>
+                        </div>
+						<small class="form-text text-muted">If you are worried about latency then this feature is good for you.</small>
+					</div>
+				</div>
+			</div>
+			{# Plugin Widget Slot: form bottom #}
+			{{ render_slot(edit ? 'backend.load_balancers.edit.form_bottom' : 'backend.load_balancers.new.form_bottom') }}
+
+			<div class="row">
+				<div class="col">
+					<div class="mb-3">
+						{% if edit %}
+							<input type="hidden" name="id" value="{{ id }}" required>
+						{% endif %}
+						<button type="submit" class="btn btn-success">
+							<em class="fas fa-save mr-2"></em>{{ edit ? 'Update' : 'Save' }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+{% if edit and server_status is defined %}
+	<div class="row mt-3">
+		<div class="col-12">
+			{% include server_status with {link: link} %}
+		</div>
+	</div>
+	<script>
+		$(document).ready(function() {
+			setInterval(function() {
+				if (typeof load_balancers !== 'undefined') {
+					load_balancers.loadStatusCard('{{ link }}');
+				}
+			}, 5000);
+		});
+	</script>
+{% endif %}
+
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot(edit ? 'backend.load_balancers.edit.bottom' : 'backend.load_balancers.new.bottom') }}
+
+{% include templates.backend_footer %}

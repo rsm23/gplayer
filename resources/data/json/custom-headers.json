@@ -1,0 +1,106 @@
+[
+    {
+        "keywords": [
+            "cdn.dzen.ru"
+        ],
+        "headers": {
+            "Referer": "https://dzen.ru/"
+        }
+    },
+    {
+        "keywords": [
+            "basseqwevewcewcewecwcw.xyz"
+        ],
+        "headers": {
+            "Referer": "https://embed.warezcdn.link/"
+        }
+    },
+    {
+        "keywords": [
+            "AbuDhabiSportsChannel"
+        ],
+        "headers": {
+            "Origin": "https://adtv.ae",
+            "Referer": "https://adtv.ae/"
+        }
+    },
+    {
+        "keywords": [
+            "cloud.mail.ru",
+            "datacloudmail.ru",
+            "cloclo"
+        ],
+        "headers": {
+            "Origin": "https://cloud.mail.ru",
+            "Referer": "https://cloud.mail.ru/"
+        }
+    },
+    {
+        "keywords": [
+            "rumble."
+        ],
+        "headers": {
+            "Origin": "https://rumble.com",
+            "Referer": "https://rumble.com/"
+        }
+    },
+    {
+        "keywords": [
+            "mncnow."
+        ],
+        "headers": {
+            "Origin": "https://www.visionplus.id",
+            "Referer": "https://www.visionplus.id/"
+        }
+    },
+    {
+        "keywords": [
+            "dailymotion"
+        ],
+        "headers": {
+            "Origin": "https://www.dailymotion.com",
+            "Referer": "https://www.dailymotion.com/"
+        }
+    },
+    {
+        "keywords": [
+            "vuclip"
+        ],
+        "headers": {
+            "Origin": "https://www.viu.com",
+            "Referer": "https://www.viu.com/"
+        }
+    },
+    {
+        "keywords": [
+            "cloudfront.net/RCTI",
+            "cloudfront.net/MNCTV",
+            "cloudfront.net/GTV",
+            "cloudfront.net/INEWS",
+            "rctiplus."
+        ],
+        "headers": {
+            "Origin": "https://www.rctiplus.com",
+            "Referer": "https://www.rctiplus.com/"
+        }
+    },
+    {
+        "keywords": [
+            "www.video.com",
+            "live-production.secureswiftcontent.com"
+        ],
+        "headers": {
+            "Origin": "https://www.vidio.com",
+            "Referer": "https://www.vidio.com/"
+        }
+    },
+    {
+        "keywords": [
+            "ttvnw."
+        ],
+        "headers": {
+            "Origin": "https://www.twitch.tv",
+            "Referer": "https://www.twitch.tv/"
+        }
+    }
+]

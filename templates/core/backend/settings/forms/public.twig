@@ -1,0 +1,125 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">Embed & Public Pages Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="anonymous_generator" value="false">
+						<input type="checkbox" class="custom-control-input" id="anonymous_generator" name="anonymous_generator" value="true" {{ anonymous_generator ? 'checked' : '' }}>
+						<label class="custom-control-label" for="anonymous_generator">Enable Public Pages</label>
+					</div>
+					<small class="form-text text-muted">If enabled, front pages will be accessible to the public. If disabled, access to all front pages will be restricted.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="embed_only" value="false">
+						<input type="checkbox" class="custom-control-input" id="embed_only" name="embed_only" value="true" {{ embed_only ? 'checked' : '' }}>
+						<label class="custom-control-label" for="embed_only">Enable Embed Only</label>
+					</div>
+					<small class="form-text text-muted">If enabled, the embed URL can only be accessed within an iframe.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_request_url" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_request_url" name="enable_request_url" value="true" {{ enable_request_url ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_request_url">Enable Request/Embed2 URL</label>
+					</div>
+					<small class="form-text text-muted">If enabled, anyone can access URLs containing /embed2/ or /r/.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_json_subtitles" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_json_subtitles" name="enable_json_subtitles" value="true" {{ enable_json_subtitles ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_json_subtitles">Allow Anyone to Insert Subtitle URL</label>
+					</div>
+					<small class="form-text text-muted">If enabled, anyone can load custom subtitles using query parameters in the embed URL.<br>
+						<strong style="word-break:break-all">Example:<br>/embed/?embedslug<span class="text-danger">&amp;subs=https://yoursite.com/movie/subtitles.json</span><br>or<br>/embed/?embedslug<span class="text-danger">&amp;sub[]=https://yoursite.com/movie/en.vtt&amp;lang[]=English</span><br>or<br>/embed/custom-slug/?<span class="text-danger">subs=https://yoursite.com/movie/subtitles.json&amp;sub[]=https://yoursite.com/movie/id.srt&amp;lang[]=Indonesian</span>
+						</strong>
+					</small>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Download Page Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_download_page" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_download_page" name="enable_download_page" value="true" {{ enable_download_page ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_download_page">Enable Download Page</label>
+					</div>
+					<small class="form-text text-muted">If enabled, users can download video files directly from the download page.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="show_sub_download" value="false">
+						<input type="checkbox" class="custom-control-input" id="show_sub_download" name="show_sub_download" value="true" {{ show_sub_download ? 'checked' : '' }}>
+						<label class="custom-control-label" for="show_sub_download">Show Subtitles on Download Page</label>
+					</div>
+					<small class="form-text text-muted">If enabled, available subtitles will be listed on the download page for download.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="show_watch_button" value="false">
+						<input type="checkbox" class="custom-control-input" id="show_watch_button" name="show_watch_button" value="true" {{ show_watch_button ? 'checked' : '' }}>
+						<label class="custom-control-label" for="show_watch_button">Show Watch Button on Download Page</label>
+					</div>
+					<small class="form-text text-muted">If enabled, a button to watch the video will be displayed on the download page.</small>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">Public Features & Registration</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_gsharer" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_gsharer" name="enable_gsharer" value="true" {{ enable_gsharer ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_gsharer">Enable Google Sharer Page</label>
+					</div>
+					<small class="form-text text-muted">If enabled, users can bypass Google Drive download limits using the Bypass Limit page.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_registration" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_registration" name="enable_registration" value="true" {{ enable_registration ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_registration">Enable Registration Page</label>
+					</div>
+					<small class="form-text text-muted">If enabled, public user registration will be allowed on the site.</small>
+				</div>
+				<div class="mb-3">
+					<label for="contact_page_link">Contact Page URL</label>
+					<input type="url" name="contact_page_link" id="contact_page_link" class="form-control" placeholder="Insert contact page URL" value="{{ contact_page_link }}">
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Public Video Submission</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="save_public_video" value="false">
+						<input type="checkbox" class="custom-control-input" id="save_public_video" name="save_public_video" value="true" {{ save_public_video ? 'checked' : '' }}>
+						<label class="custom-control-label" for="save_public_video">Save Public Video</label>
+					</div>
+					<small class="form-text text-muted">If enabled, all videos generated or played by the public will be saved to your database.</small>
+				</div>
+				<div class="mb-0">
+					<label for="public_video_user">Save Public Videos As User</label>
+					<select name="public_video_user" id="public_video_user" class="form-control select2">
+						{% for val in user_list %}
+							<option value="{{ val.id }}" {{ val.id == public_video_user ? 'selected' : '' }}>{{ val.name }}</option>
+						{% endfor %}
+					</select>
+					<small class="form-text text-muted">Select the default user account to associate with public video submissions.</small>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

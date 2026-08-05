@@ -1,0 +1,91 @@
+<style>
+    .newton-cradle-container {
+        --loader-size: clamp(16px, 4vmin, 28px);
+        width: calc(var(--loader-size) * 9);
+        height: calc(var(--loader-size) * 4);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0 auto;
+        box-sizing: border-box;
+        position: relative;
+    }
+
+    .newton-cradle-loader {
+        width: var(--loader-size);
+        height: var(--loader-size);
+        border-radius: 50%;
+        background-color: {{ playerColor }};
+        box-shadow: calc(var(--loader-size) * 1.6) 0 {{ playerColor }}, calc(var(--loader-size) * -1.6) 0 {{ playerColor }};
+        position: relative;
+        animation: flash 0.3s ease-in infinite alternate;
+        will-change: background-color, box-shadow;
+    }
+
+    .newton-cradle-loader::before, 
+    .newton-cradle-loader::after {
+        content: '';
+        position: absolute;
+        left: calc(var(--loader-size) * -3.2);
+        top: 0;
+        background: {{ playerColor }};
+        width: var(--loader-size);
+        height: var(--loader-size);
+        border-radius: 50%;
+        transform-origin: calc(var(--loader-size) * 1.75) calc(var(--loader-size) * -1.75);
+        transform: rotate(45deg);
+        animation: hitL 0.3s ease-in infinite alternate;
+        will-change: transform, background-color;
+    }
+
+    .newton-cradle-loader::after {
+        left: calc(var(--loader-size) * 3.2);
+        transform: rotate(-45deg);
+        transform-origin: calc(var(--loader-size) * -1.75) calc(var(--loader-size) * -1.75);
+        animation: hitR 0.3s ease-out infinite alternate;
+    }
+
+    @keyframes flash {
+        0%, 100% {
+            background-color: rgba({{ rgbColor }}, 0.25);
+            box-shadow: calc(var(--loader-size) * 1.6) 0 rgba({{ rgbColor }}, 0.25), calc(var(--loader-size) * -1.6) 0 rgba({{ rgbColor }}, 0.25);
+        }
+        25% {
+            background-color: rgba({{ rgbColor }}, 0.25);
+            box-shadow: calc(var(--loader-size) * 1.6) 0 rgba({{ rgbColor }}, 0.25), calc(var(--loader-size) * -1.6) 0 rgba({{ rgbColor }}, 1);
+        }
+        50% {
+            background-color: rgba({{ rgbColor }}, 1);
+            box-shadow: calc(var(--loader-size) * 1.6) 0 rgba({{ rgbColor }}, 0.25), calc(var(--loader-size) * -1.6) 0 rgba({{ rgbColor }}, 0.25);
+        }
+        75% {
+            background-color: rgba({{ rgbColor }}, 0.25);
+            box-shadow: calc(var(--loader-size) * 1.6) 0 rgba({{ rgbColor }}, 1), calc(var(--loader-size) * -1.6) 0 rgba({{ rgbColor }}, 0.25);
+        }
+    }
+
+    @keyframes hitL {
+        0% {
+            transform: rotate(45deg);
+            background-color: rgba({{ rgbColor }}, 1);
+        }
+        25%, 100% {
+            transform: rotate(0deg);
+            background-color: rgba({{ rgbColor }}, 0.25);
+        }
+    }
+
+    @keyframes hitR {
+        0%, 75% {
+            transform: rotate(0deg);
+            background-color: rgba({{ rgbColor }}, 0.25);
+        }
+        100% {
+            transform: rotate(-45deg);
+            background-color: rgba({{ rgbColor }}, 1);
+        }
+    }
+</style>
+<div class="newton-cradle-container">
+    <div class="newton-cradle-loader"></div>
+</div>

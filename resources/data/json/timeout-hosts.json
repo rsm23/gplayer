@@ -1,0 +1,73 @@
+{
+    "1-hour": [
+        "cyberdrop",
+        "daddyhd",
+        "facebook",
+        "navertv",
+        "onedrive",
+        "vimeo",
+        "youtube"
+    ],
+    "2-hour": [
+        "amazon",
+        "freedl",
+        "googlephotos",
+        "mp4upload",
+        "mstream",
+        "mymailru",
+        "vidio",
+        "yourupload"
+    ],
+    "3-hour": [
+        "gdrive"
+    ],
+    "4-hour": [
+        "hexupload"
+    ],
+    "6-hour": [
+        "blogger",
+        "desiupload",
+        "dood",
+        "mediacm",
+        "okru",
+        "pcloud"
+    ],
+    "8-hour": [
+        "terabox"
+    ],
+    "10-hour": [
+        "vidembed"
+    ],
+    "12-hour": [
+        "darkibox",
+        "supervideo",
+        "uptomega"
+    ],
+    "1-day": [
+        "dropbox",
+        "filesfm",
+        "rumble",
+        "streamable",
+        "tiktok",
+        "vidtube",
+        "viu",
+        "yadisk"
+    ],
+    "3-day": [
+        "filemoon"
+    ],
+    "4-day": [
+        "cloudmailru"
+    ],
+    "3-month": [
+        "archive",
+        "direct",
+        "filegram",
+        "pixeldrain",
+        "streama2z",
+        "streamhg"
+    ],
+    "1-year": [
+        "dailymotion"
+    ]
+}

@@ -1,0 +1,1 @@
+"undefined"==typeof globalThis&&function(){var n=function(){if("undefined"!=typeof self)return self;if("undefined"!=typeof window)return window;try{return new Function("return this")()}catch(n){throw new Error("Tidak dapat menemukan objek global")}}();n.globalThis=n}();

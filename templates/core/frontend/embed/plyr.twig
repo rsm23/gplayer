@@ -1,0 +1,46 @@
+{% set newTitle = isError ? title : text_title|replace({'{title}': title, '{siteName}': site_name}) %}
+{% set resumeYes = 'gdPlyr.resumePlayback()' %}
+{% set resumeNo = 'gdPlyr.play()' %}
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+    <head>
+        <title>{{ newTitle|escape('html') }}</title>
+        {% include 'elements/head.twig' with templates %}
+    </head>
+	<body>
+        {% include 'elements/ads_load.twig' %}
+		{% include 'elements/body_top.twig' %}
+		{% if isError == false %}
+			<video id="videoContainer" preload="{{ preload }}" controls="true" style="display:none"></video>
+			{% include 'elements/body_middle.twig' %}
+            <script type="text/javascript" src="{{ base_url }}assets/vendor/promise-polyfill/8.3.0/polyfill.min.js" defer></script>
+            <script type="text/javascript" src="{{ base_url }}assets/vendor/hls.js/1.6.4/hls.min.js"></script>
+            {% if enableP2P and isSafariIE == false %}
+                <script type="text/javascript" src="{{ base_url }}assets/vendor/p2p-media-loader-core/0.6.2/p2p-media-loader-core.min.js" defer></script>
+                <script type="text/javascript" src="{{ base_url }}assets/vendor/p2p-media-loader-shaka/0.6.2/p2p-media-loader-shaka.min.js" defer></script>
+                <script type="text/javascript" src="{{ base_url }}assets/vendor/shaka-player/2.5.23/shaka-player.compiled{{ production_mode ? '' : '.debug' }}.js" defer></script>
+                <script type="importmap">
+                    {
+                        "imports": {
+                            "p2p-media-loader-core": "{{ base_url }}assets/vendor/p2p-media-loader-core/2.2.1/p2p-media-loader-core.es.min.js",
+                            "p2p-media-loader-hlsjs": "{{ base_url }}assets/vendor/p2p-media-loader-hlsjs/2.2.1/p2p-media-loader-hlsjs.es.min.js"
+                        }
+                    }
+                </script>
+                <script type="module">
+                    import { HlsJsP2PEngine } from "p2p-media-loader-hlsjs";
+
+                    var HlsWithP2P = HlsJsP2PEngine.injectMixin(window.Hls);
+                    window.HlsWithP2P = HlsWithP2P;
+                </script>
+            {% else %}
+                <script type="text/javascript" src="{{ base_url }}assets/vendor/shaka-player/4.13.4/shaka-player.compiled{{ production_mode ? '' : '.debug' }}.js" defer></script>
+            {% endif %}
+			<script type="text/javascript" src="{{ base_url }}assets/vendor/plyr/3.6.3/plyr-custom.polyfilled.min.js" defer></script>
+			<script type="text/javascript" src="{{ base_url }}assets/js/shaka-player-error-codes.min.js" defer></script>
+			{% include 'elements/body_bottom.twig' %}
+		{% endif %}
+		{% include templates.histats %}
+	</body>
+
+</html>

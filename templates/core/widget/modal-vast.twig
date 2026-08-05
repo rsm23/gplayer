@@ -1,0 +1,69 @@
+<div class="modal fade" id="modalCustomVAST" tabindex="-1" aria-labelledby="modalCustomVASTLabel" data-backdrop="static" data-keyboard="false">
+	<div class="modal-dialog modal-md modal-dialog-scrollable">
+		<form method="post" id="frmCreateCustomVast" class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="modalCustomVASTLabel">Create Custom VAST</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span>&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<p><em class="fas fa-asterisk fa-xs text-danger mr-2"></em>Required</p>
+				<div class="mb-3">
+					<label for="adTitle">Title</label>
+					<input type="text" name="adTitle" id="adTitle" class="form-control" placeholder="Insert ad title">
+				</div>
+				<div class="mb-3">
+					<label for="adClickThrough">Destination URL<em class="fas fa-asterisk fa-xs text-danger ml-2"></em></label>
+					<input type="url" name="adClickThrough" id="adClickThrough" class="form-control" placeholder="Insert destination url when ad is clicked" required>
+				</div>
+				<div class="mb-3">
+					<label for="adMediaFile">Video File URL (.mp4)<em class="fas fa-asterisk fa-xs text-danger ml-2"></em></label>
+					<input type="url" name="adMediaFile" id="adMediaFile" class="form-control" placeholder="Insert ad video file url (.mp4)" required>
+				</div>
+				<div class="mb-3">
+					<label for="adDuration">Video Duration<em class="fas fa-asterisk fa-xs text-danger ml-2"></em></label>
+					<div class="input-group">
+						<input type="number" min="0" step="1" name="adDuration" id="adDuration" class="form-control" placeholder="Insert ad video duration" aria-describedby="ad-addon1" required>
+						<div class="input-group-append">
+							<span class="input-group-text" id="ad-addon1">Seconds</span>
+						</div>
+					</div>
+				</div>
+				<div class="mb-3">
+					<label for="adSkipOffset">Skip Offset</label>
+					<div class="input-group">
+						<input type="number" min="0" step="1" name="adSkipOffset" id="adSkipOffset" class="form-control" placeholder="Insert ad skip offset" aria-describedby="ad-addon2">
+						<div class="input-group-append">
+							<span class="input-group-text" id="ad-addon2">Seconds</span>
+						</div>
+					</div>
+					<small class="form-text text-muted">Show a skip button after the video has played for a few seconds.</small>
+				</div>
+				<div class="mb-3">
+					<label for="adFilename">Filename (.xml)<em class="fas fa-asterisk fa-xs text-danger ml-2"></em></label>
+					<input type="text" name="adFilename" id="adFilename" class="form-control" placeholder="Example: myvastads.xml" required>
+				</div>
+				<div id="customVastResult" class="d-none">
+					<div class="mb-3">
+						<label for="txtCustomVastResult">Custom VAST URL</label>
+						<div class="input-group">
+							<input type="text" class="form-control" id="txtCustomVastResult" value="" readonly>
+							<div class="input-group-append">
+								<button type="button" class="btn btn-outline-secondary" onclick="copyText($('#txtCustomVastResult').val(), 'Custom VAST URL')" data-toggle="tooltip" title="Copy Custom VAST URL">
+									<em class="fas fa-copy"></em>
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<input type="hidden" name="action" value="createCustomVast">
+				<button type="submit" class="btn btn-success" name="adSubmit">Save</button>
+				&nbsp;
+				<button type="button" class="btn btn-danger" data-dismiss="modal">Close</button>
+			</div>
+		</form>
+	</div>
+</div>

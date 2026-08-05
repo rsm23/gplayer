@@ -1,0 +1,31 @@
+<div class="row">
+	<div class="col">
+		<div class="mb-3">
+			<div class="custom-control custom-checkbox">
+                <input type="hidden" name="disable_shortener_link" value="false">
+				<input type="checkbox" class="custom-control-input" name="disable_shortener_link" id="disable_shortener_link" value="true" {{ disable_shortener_link ? 'checked' : '' }}>
+				<label class="custom-control-label" for="disable_shortener_link">Disable Shortener Link</label>
+			</div>
+		</div>
+		<div class="row">
+			<div class="mb-3 col-12 col-md-6">
+				<label for="additional_url_shortener">Select URL Shortener</label>
+				<select name="additional_url_shortener" id="additional_url_shortener" class="form-control select2">
+					{% for key, val in shortener_website %}
+						<option value="{{ key }}" {{ additional_url_shortener == key ? 'selected' : '' }}>{{ val.name }}</option>
+					{% endfor %}
+				</select>
+				<small class="form-text text-muted">URL shorteners are used to earn money online and will be used on the download page.</small>
+			</div>
+			{% for key, val in shortener_website %}
+				{% if key != 'random' %}
+					{% set keyConfig = 'additional_url_shortener_' ~ key %}
+					<div class="mb-3 col-12 col-md-6">
+						<label for="{{ key }}">{{ val.name }} API Key</label>
+						<input type="text" name="{{ keyConfig }}" id="{{ key }}" class="form-control" placeholder="Enter {{ val.name }} API Key" value="{{ attribute(_context, keyConfig) }}">
+					</div>
+				{% endif %}
+			{% endfor %}
+		</div>
+	</div>
+</div>

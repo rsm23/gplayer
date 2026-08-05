@@ -1,0 +1,21 @@
+<style>
+    .classic-loading-spinner {
+        --loader-size: clamp(48px, 12vmin, 96px);
+        margin: 0 auto;
+        border: calc(var(--loader-size) * 0.1) solid rgba(255, 255, 255, 0.15);
+        border-top: calc(var(--loader-size) * 0.1) solid {{ playerColor }};
+        border-radius: 50%;
+        width: var(--loader-size);
+        height: var(--loader-size);
+        animation: spin 1s linear infinite;
+        box-sizing: border-box;
+        position: relative;
+        will-change: transform;
+    }
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+<div class="classic-loading-spinner"></div>

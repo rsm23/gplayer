@@ -1,0 +1,22 @@
+<style>
+    .dual-ring-spinner-5 {
+        --loader-size: clamp(48px, 12vmin, 96px);
+        width: var(--loader-size);
+        height: var(--loader-size);
+        border: calc(var(--loader-size) * 0.08) solid transparent;
+        border-top-color: {{ playerColor }};
+        border-right-color: {{ playerColor2 }};
+        border-radius: 50%;
+        animation: dual-spin 1s linear infinite;
+        margin: 0 auto;
+        box-sizing: border-box;
+        position: relative;
+        will-change: transform;
+    }
+    @keyframes dual-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+<div class="dual-ring-spinner-5"></div>

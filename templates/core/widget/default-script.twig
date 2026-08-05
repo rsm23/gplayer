@@ -1,0 +1,12 @@
+<script>
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+            .register('sw.js')
+            .then(function(res) {
+                console.debug("service worker registered");
+            })
+            .catch(function(err) {
+                console.debug("service worker not registered", err);
+            });
+    }
+</script>

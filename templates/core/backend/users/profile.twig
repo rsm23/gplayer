@@ -1,0 +1,67 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		<form id="frmProfile" action="{{ backend_url }}profile/" method="post" class="needs-validation" novalidate>
+			<div class="row">
+				<div class="col-12 col-md-6">
+					<div class="mb-3">
+						<label for="name">Full Name</label>
+						<input type="text" name="name" id="name" value="{{ name }}" class="form-control" placeholder="Your full name" required>
+						<div class="invalid-feedback"></div>
+					</div>
+					<div class="mb-3">
+						<label for="email">Email</label>
+						<input type="email" name="email" id="email" value="{{ email }}" class="form-control" placeholder="Your email address" pattern="^[a-zA-Z0-9!#$%&'*+\/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+\/=?^_`{|}~-]+)*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$" data-error-required="The email is required" data-error-pattern="The email is invalid" required>
+						<div class="invalid-feedback"></div>
+					</div>
+					<div class="mb-3">
+						<label for="user">Username</label>
+						<input type="text" name="user" id="user" value="{{ user }}" class="form-control" placeholder="Your username" data-error-required="The username is required" required>
+						<div class="invalid-feedback"></div>
+					</div>
+				</div>
+				<div class="col-12 col-md-6">
+					<div class="mb-3">
+						<label for="password">New Password</label>
+						<div class="input-group has-validation">
+							<input type="password" autocomplete="new-password" name="password" id="password" class="form-control" placeholder="Your new password" data-error-required="The new password is required" data-error-pattern="The newpassword must contain at least 8 characters" pattern="[^ ]{8,}">
+							<div class="input-group-append">
+								<button class="btn btn-secondary btn-shp" data-shp="#password" type="button" data-toggle="tooltip" title="Show/hide New Password">
+									<em class="fas fa-eye"></em>
+								</button>
+							</div>
+							<div class="invalid-feedback"></div>
+						</div>
+					</div>
+					<div class="mb-3">
+						<label for="retype_password">Confirm New Password</label>
+						<div class="input-group has-validation">
+							<input type="password" autocomplete="new-password" name="retype_password" id="retype_password" class="form-control" placeholder="Your confirm new password" data-error-required="The confirm new password is required" data-error-pattern="The confirm new password must contain at least 8 characters" pattern="[^ ]{8,}">
+							<div class="input-group-append">
+								<button class="btn btn-secondary btn-shp" data-shp="#retype_password" type="button" data-toggle="tooltip" title="Show/hide Confirm New Password">
+									<em class="fas fa-eye"></em>
+								</button>
+							</div>
+							<div class="invalid-feedback"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+			{# Plugin Widget Slot: form bottom #}
+			{{ render_slot('backend.users.profile.form_bottom') }}
+
+			<div class="row">
+				<div class="col-12">
+					<button type="submit" class="btn btn-success">
+						<em class="fas fa-save mr-2"></em>Update
+					</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot('backend.users.profile.bottom') }}
+
+{% include templates.backend_footer %}

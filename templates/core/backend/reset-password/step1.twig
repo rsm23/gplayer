@@ -1,0 +1,36 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12 col-md-6 col-lg-4 mx-auto">
+		<h1 class="h3 my-3 text-center">Reset Password</h1>
+		{% autoescape %}
+			{{ message|raw }}
+		{% endautoescape %}
+		<div class="mb-3">
+			<em class="fas fa-asterisk fa-xs text-danger mr-2"></em>Required
+		</div>
+		<form id="frm" action="{{ resetPasswordURL }}" method="post" class="needs-validation" novalidate>
+			<div class="mb-3">
+				<label for="username">Username / Email<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="text" id="username" name="username" class="form-control" placeholder="Insert your username / email" required>
+			</div>
+			<div class="mb-3 text-center">
+				<div class="form-row">
+					<div class="col-7">
+						{% include templates.recaptcha %}
+						<input type="hidden" name="action" value="confirm">
+						<button type="submit" name="submit" class="btn btn-custom btn-block">
+							<em class="fas fa-sync-alt mr-2"></em>Reset Password
+						</button>
+					</div>
+					<div class="col-5">
+						<a href="{{ loginURL }}" class="btn btn-block btn-secondary">
+							Login<em class="fas fa-arrow-right ml-2"></em>
+						</a>
+					</div>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{% include templates.backend_footer %}

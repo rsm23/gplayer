@@ -1,0 +1,84 @@
+<form id="frmCreatePlayer" method="post" enctype="multipart/form-data">
+	<div class="mb-3">
+		<div class="input-group">
+			<input tabindex="0" type="url" id="id" name="id" class="form-control" placeholder="Main Video URL" aria-label="Main Video URL" required>
+			<div class="input-group-append">
+				<button type="button" class="btn btn-info" data-toggle="tooltip" title="Example URL" aria-label="Example URL" onclick="videos.scrollToHosts()">
+					<em class="fas fa-info-circle"></em>
+				</button>
+			</div>
+		</div>
+	</div>
+	<div class="mb-3">
+		<div class="input-group">
+			<input type="url" id="aid" name="aid" class="form-control" placeholder="Alternative Video URL" aria-label="Alternative Video URL">
+			<div class="input-group-append">
+				<button onclick="player.alternative.add()" type="button" class="btn btn-custom" data-toggle="tooltip" title="Add More Alternative Video URL" aria-label="Add Alternative Video URL">
+					<em class="fas fa-plus"></em>
+				</button>
+			</div>
+		</div>
+	</div>
+	<div class="mb-3">
+		<div id="posterURL" class="input-group">
+			<input type="url" id="poster" name="poster" class="form-control" placeholder="Poster URL (.jpg, .jpeg, .png, .webp, .gif)" aria-label="Poster URL" >
+			<div class="input-group-append">
+				<button type="button" onclick="$('#posterUpload').toggleClass('d-none');$('#posterURL').toggleClass('d-none')" class="btn btn-primary btn-toggle-upload" data-toggle="tooltip" title="Upload Poster" aria-label="Upload Poster">
+					<em class="fas fa-upload"></em>
+				</button>
+			</div>
+		</div>
+		<div id="posterUpload" class="input-group d-none">
+			<div class="custom-file">
+				<input type="file" class="custom-file-input form-control" id="poster-file" name="poster-file" accept=".jpg, .jpeg, .png, .webp, .gif">
+				<label class="custom-file-label" for="poster-file">Choose file (.jpg, .jpeg, .png, .webp, .gif)</label>
+			</div>
+			<div class="input-group-append">
+				<button type="button" onclick="$('#posterUpload').toggleClass('d-none');$('#posterURL').toggleClass('d-none')" class="btn btn-primary btn-toggle-upload" data-toggle="tooltip" title="Insert Poster URL" aria-label="Insert Poster URL">
+					<em class="fas fa-link"></em>
+				</button>
+			</div>
+		</div>
+	</div>
+	{% if enable_json_subtitles %}
+		<div class="mb-3">
+			<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="generalSubs" name="cksub" class="custom-control-input ckSub" checked>
+				<label class="custom-control-label" for="generalSubs">General Subtitles</label>
+			</div>
+			<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="jsonSubs" name="cksub" class="custom-control-input ckSub">
+				<label class="custom-control-label" for="jsonSubs">JSON Subtitle</label>
+			</div>
+		</div>
+	{% endif %}
+    <div class="mb-3 mb-0" id="subsWrapper">
+        <button type="button" class="btn btn-primary mb-3" onclick="player.subtitle.add()"><em class="fas fa-plus mr-2"></em>Add Subtitle</button>
+    </div>
+	{% if enable_json_subtitles %}
+		<div class="mb-3" id="jsonSubWrapper" style="display:none">
+			<input type="url" name="subs" class="form-control" placeholder="Example: https://yoursite.com/spiderman/subtitles.json" aria-label="Subtitle JSON File URL" >
+		</div>
+		<script>
+			$(document).ready(function(){
+				$('.ckSub').change(function(){
+					var $subsWrapper = $('#subsWrapper'),
+						$jsonSubWrapper = $('#jsonSubWrapper');
+					if ($(this).attr('id') !== 'generalSubs') {
+						$subsWrapper.hide();
+						$jsonSubWrapper.show();
+					} else {
+						$subsWrapper.show();
+						$jsonSubWrapper.hide();
+					}
+				});
+			});
+		</script>
+	{% endif %}
+	<div class="text-center">
+		{% include templates.recaptcha %}
+		<button id="submit" type="submit" class="btn btn-custom btn-block">
+			<em class="fas fa-cog mr-2"></em>Create Player
+		</button>
+	</div>
+</form>

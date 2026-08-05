@@ -1,0 +1,449 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		{# Plugin Widget Slot: page top #}
+		{{ render_slot('backend.videos.list.top') }}
+		<div class="toolbar d-flex flex-wrap toolbar mb-3">
+			<a href="{{ backend_url }}videos/new/" class="btn btn-success">
+				<em class="fas fa-plus-circle mr-2"></em>Add New
+			</a>
+			<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#mdBulkVideo">
+				<em class="fas fa-plus-square mr-2"></em>Add Bulk
+			</button>
+			<button type="button" class="btn btn-custom" data-toggle="modal" data-target="#mdVideosImport">
+				<em class="fas fa-plus-square mr-2"></em>Import
+			</button>
+			<button id="btnExport" type="button" class="btn btn-primary btn-hidden d-none" onclick="$('#mdVideosExport').modal('show')">
+				<em class="fas fa-file-export mr-2"></em>Export
+			</button>
+			<button id="btnDelete" type="button" class="btn btn-danger btn-hidden d-none" onclick="videos.delete.multi($(this))">
+				<em class="fas fa-trash-alt mr-2"></em>Delete
+			</button>
+			<button id="btnChecker" type="button" class="btn btn-warning btn-hidden d-none" onclick="videos.checker.multi($(this))">
+				<em class="fas fa-check-circle mr-2"></em>Video Checker
+			</button>
+			<button id="btnClear" type="button" class="btn btn-secondary btn-hidden d-none" onclick="videos.cache.clear.multi($(this))">
+				<em class="fas fa-eraser mr-2"></em>Clear Cache
+			</button>
+			<button type="button" class="btn btn-warning btn-hidden d-none" data-toggle="modal" data-target="#mdVideosRename">
+				<em class="fas fa-pencil mr-2"></em>Rename
+			</button>
+			<button type="button" class="btn btn-info" onclick="videos.reload()">
+				<em class="fas fa-sync-alt mr-2"></em>Reload
+			</button>
+			<div class="dropdown">
+				<button class="btn btn-custom dropdown-toggle" type="button" id="dropdownStatus" data-toggle="dropdown" aria-expanded="false">
+					<em class="fas fa-eye mr-2"></em>Status
+				</button>
+				<div class="dropdown-menu dropdown-menu-right shadow border-0" aria-labelledby="dropdownStatus">
+					<a class="dropdown-item" href="{{ backend_url }}videos/list/">
+						<em class="fas fa-sync-alt mr-2"></em>All
+					</a>
+					<div class="dropdown-divider"></div>
+					<a class="dropdown-item" href="{{ backend_url }}videos/list/?status=0">
+						<em class="fas fa-check-circle text-success mr-2"></em>Good
+					</a>
+					<a class="dropdown-item" href="{{ backend_url }}videos/list/?status=2">
+						<em class="fas fa-exclamation-circle text-warning mr-2"></em>Warning
+					</a>
+					<a class="dropdown-item" href="{{ backend_url }}videos/list/?status=1">
+						<em class="fas fa-times-circle text-danger mr-2"></em>Broken
+					</a>
+					<div class="dropdown-divider"></div>
+					<a class="dropdown-item" href="{{ backend_url }}videos/list/?dmca=1">
+						<em class="fas fa-ban text-danger mr-2"></em>DMCA Takedown
+					</a>
+				</div>
+			</div>
+			{% if is_admin %}
+				<button id="btnDelByHost" type="button" class="btn btn-danger" data-toggle="modal" data-target="#mdDelHost">
+					<em class="fas fa-trash mr-2"></em>Delete by Hostname
+				</button>
+				<button type="button" class="btn btn-success btn-hidden d-none" onclick="videos.dmca.multi($(this), 0)">
+					<em class="fas fa-check mr-2"></em>Cancel Takedown
+				</button>
+				<button type="button" class="btn btn-danger btn-hidden d-none" onclick="videos.dmca.multi($(this), 1)">
+					<em class="fas fa-ban mr-2"></em>Takedown
+				</button>
+			{% endif %}
+		</div>
+		<div class="toolbar mb-3">
+			<div class="custom-control custom-switch">
+				<input type="checkbox" class="custom-control-input" id="shThumbnail" value="true" onchange="videos.showHideThumbnail($(this).prop('checked'))">
+				<label class="custom-control-label" for="shThumbnail">Hide/Show Thumbnail</label>
+			</div>
+		</div>
+		<table id="tbVideos" aria-label="Videos" class="table table-striped table-bordered table-hover m-0 w-100">
+			<thead>
+				<tr>
+					<th scope="col" data-priority="0" style="width:64px!important">
+						<div class="custom-control custom-checkbox mx-auto">
+							<input type="checkbox" class="custom-control-input" id="ckAllVideos" data-tableid="#tbVideos">
+							<label class="custom-control-label" for="ckAllVideos" aria-label="Check All"></label>
+						</div>
+					</th>
+					<th scope="col" data-priority="1">Title</th>
+					<th scope="col" data-priority="3">Sources</th>
+					<th scope="col" data-priority="5">Slug</th>
+					<th scope="col" data-priority="4">Status</th>
+					<th scope="col" data-priority="10">
+						<span data-toggle="tooltip" title="DMCA Takedown">Takedown</span>
+					</th>
+					<th scope="col" data-priority="7">Subtitles</th>
+					<th scope="col" data-priority="8">Views</th>
+					<th scope="col" data-priority="9">User</th>
+					<th scope="col" data-priority="6">Created</th>
+					<th scope="col" data-priority="11">Updated</th>
+					<th scope="col" data-priority="2">Actions</th>
+				</tr>
+			</thead>
+			<tfoot>
+				<tr>
+					<th scope="col" data-priority="0" style="width:64px!important">
+						<div class="custom-control custom-checkbox mx-auto">
+							<input type="checkbox" class="custom-control-input" id="ckAllVideos1" data-tableid="#tbVideos">
+							<label class="custom-control-label" for="ckAllVideos1" aria-label="Check All"></label>
+						</div>
+					</th>
+					<th scope="col" data-priority="1">Title</th>
+					<th scope="col" data-priority="3">Sources</th>
+					<th scope="col" data-priority="5">Slug</th>
+					<th scope="col" data-priority="4">Status</th>
+					<th scope="col" data-priority="10">
+						<span data-toggle="tooltip" title="DMCA Takedown">Takedown</span>
+					</th>
+					<th scope="col" data-priority="7">Subtitles</th>
+					<th scope="col" data-priority="8">Views</th>
+					<th scope="col" data-priority="9">User</th>
+					<th scope="col" data-priority="6">Created</th>
+					<th scope="col" data-priority="11">Updated</th>
+					<th scope="col" data-priority="2">Actions</th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+</div>
+<div class="modal fade" id="mdBulkVideo" data-backdrop="static" data-keyboard="false" tabindex="-1" aria-labelledby="mdBulkVideoLabel">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">Add Bulk Videos</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span>&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<div class="alert alert-info">This feature will check video availability directly and may require a longer process than the video import feature.</div>
+				<form id="frmBulkVideo">
+					<div class="mb-3">
+						<label for="txtBulkLinks">Insert Video URLs</label>
+						<textarea id="txtBulkLinks" cols="30" rows="8" class="form-control" placeholder="Insert video URL per line" required></textarea>
+					</div>
+					<div class="mb-3">
+						<div class="custom-control custom-checkbox">
+							<input type="checkbox" class="custom-control-input" id="useTitleAsSlug" name="useTitleAsSlug">
+							<label class="custom-control-label" for="useTitleAsSlug">Use Title As Slug</label>
+						</div>
+						<p>
+							<small class="form-text">If the url slug exists or the title exist/empty then the url slug will be generated randomly.</small>
+						</p>
+					</div>
+					<div class="mb-3 d-none" id="saveBulkPercent">
+						<div class="progress">
+							<div class="progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+						</div>
+					</div>
+					<div class="mb-3 text-center">
+						<button type="submit" id="btnSaveBulkVideo" class="btn btn-success">
+							<em class="fas fa-save mr-2"></em>Save
+						</button>
+					</div>
+				</form>
+				<table id="tbBulkVideos" class="table table-striped table-bordered table-hover m-0 w-100" aria-label="Video List">
+					<thead>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="1" class="text-center">Sources</th>
+							<th scope="col" data-priority="3" class="text-center">Subtitles</th>
+							<th scope="col" data-priority="5" class="text-right">Created</th>
+							<th scope="col" data-priority="4" class="text-center">Status</th>
+							<th scope="col" data-priority="2" class="text-center">Actions</th>
+						</tr>
+					</thead>
+					<tbody></tbody>
+					<tfoot>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="1" class="text-center">Sources</th>
+							<th scope="col" data-priority="3" class="text-center">Subtitles</th>
+							<th scope="col" data-priority="5" class="text-right">Created</th>
+							<th scope="col" data-priority="4" class="text-center">Status</th>
+							<th scope="col" data-priority="2" class="text-center">Actions</th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+			<div class="modal-footer">
+				<button type="reset" class="btn btn-danger" data-dismiss="modal">
+					<em class="fas fa-times mr-2"></em>Close
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="modal fade" id="mdVideosImport" data-backdrop="static" data-keyboard="false" tabindex="-1" aria-labelledby="mdVideosImportLabel">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">Import Videos</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span>&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<div class="alert alert-info">
+					You have to import the video list by providing a header in the first row.
+					<br>You can add several headers with the names
+					<strong>video_url, subtitle_label, subtitle_url</strong>.
+					<br>You can only add one header with the names
+					<strong>title, poster, slug, subtitle_json</strong>.
+					<br>Available header names:
+					<strong>title, poster, slug, video_url, subtitle_json, subtitle_label, subtitle_url</strong>
+				</div>
+				<div class="alert alert-danger">
+					There is no limit to the number of rows that can be processed. Recommended 1000 rows per file.</div>
+				<form id="frmImportVideos">
+					<div class="mb-3">
+						<div class="custom-file">
+							<input type="file" name="importVideos" id="importVideos" class="custom-file-input form-control" accept=".csv" required="">
+							<label class="custom-file-label" for="importVideos">Choose file (.csv with comma separator) (Max. Filesize {{ import_filesize }} kB)</label>
+						</div>
+					</div>
+					<div class="mb-3 d-none" id="importPercent">
+						<div class="progress">
+							<div class="progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+						</div>
+					</div>
+					<div class="mb-3 text-center">
+						<input type="hidden" name="action" value="importVideos">
+						<button type="submit" id="btnUploadVideo" class="btn btn-success" disabled>
+							<em class="fas fa-upload mr-2"></em>Upload &amp; Save</button>
+						<a href="{{ base_url }}import.csv" class="btn btn-primary">
+							CSV File Example
+                        </a>
+					</div>
+				</form>
+				<table id="tbImportVideos" class="table table-striped table-bordered table-hover m-0 w-100" aria-describedby="Video List">
+					<thead>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="1" class="text-center">Sources</th>
+							<th scope="col" data-priority="3" class="text-center">Subtitles</th>
+							<th scope="col" data-priority="5" class="text-right">Created</th>
+							<th scope="col" data-priority="4" class="text-center">Saved</th>
+							<th scope="col" data-priority="2" class="text-center">Actions</th>
+						</tr>
+					</thead>
+					<tbody></tbody>
+					<tfoot>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="1" class="text-center">Sources</th>
+							<th scope="col" data-priority="3" class="text-center">Subtitles</th>
+							<th scope="col" data-priority="5" class="text-right">Created</th>
+							<th scope="col" data-priority="4" class="text-center">Saved</th>
+							<th scope="col" data-priority="2" class="text-center">Actions</th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-danger" data-dismiss="modal">
+					<em class="fas fa-times mr-2"></em>Close
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="modal fade" id="mdVideosRename" data-backdrop="static" data-keyboard="false" tabindex="-1" aria-labelledby="mdVideosRename">
+	<div class="modal-dialog modal-sm">
+		<form id="frmRenameVideos" class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">Rename Videos</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span>&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<div class="mb-3">
+					<input type="text" name="renamePrefix" class="form-control" placeholder="Add Prefix" aria-label="Add Prefix">
+				</div>
+				<div class="mb-3">
+					<input type="text" name="renamePostfix" class="form-control" placeholder="Add Postfix" aria-label="Add Postfix">
+				</div>
+				<div class="mb-3">
+					<input type="text" name="renameReplaceX" class="form-control" placeholder="Replace X" aria-label="Replace X">
+				</div>
+				<div class="mb-3 mb-0">
+					<input type="text" name="renameReplaceY" class="form-control" placeholder="With Y" aria-label="With Y">
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="submit" id="btnBulkRename" class="btn btn-success">
+					<em class="fas fa-pencil mr-2"></em>Rename
+				</button>
+				<button type="reset" class="btn btn-danger" data-dismiss="modal">
+					<em class="fas fa-times mr-2"></em>Close
+				</button>
+			</div>
+		</form>
+	</div>
+</div>
+<div class="modal fade" id="mdDelHost" data-backdrop="static" data-keyboard="false" tabindex="-1" aria-labelledby="mdDelHost">
+	<div class="modal-dialog modal-lg">
+		<form id="frmDelHost" class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">Delete videos based on hostnames</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span>&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<style>
+					.ckdelhost:checked + label {
+						font-weight: bold;
+					}
+					.lblckdel {
+						word-wrap: break-word;
+						word-break: break-all;
+						overflow: hidden;
+						text-overflow: ellipsis;
+						max-width: 160px;
+					}
+					@media(min-width:768px) {
+						.lblckdel {
+							max-width: 130px;
+						}
+					}
+					.lblckdel img {
+						margin-bottom: 2px;
+					}
+				</style>
+				<div class="mb-3">
+					<div class="input-group">
+						<div class="input-group-prepend">
+							<span class="input-group-text" id="search-host">
+								<em class="fas fa-magnifying-glass"></em>
+							</span>
+						</div>
+						<input id="txtScDelHost" type="search" class="form-control" placeholder="Search..." aria-describedby="search-host" aria-label="Search">
+					</div>
+				</div>
+				<div class="mb-3 row">
+					{% for k,v in supported_sites %}
+						<div class="col-12 col-sm-6 col-md-4 col-lg-3 mb-2 coldelhost" data-host="{{ v|lower }}">
+							<div class="custom-control custom-checkbox custom-control-inline text-nowrap">
+								<input type="checkbox" class="custom-control-input ckdelhost" id="ckDel{{ k }}" value="{{ k }}" data-name="{{ v|replace({'|Additional Host':'','|New':''}) }}">
+								<label class="custom-control-label" for="ckDel{{ k }}">
+									<div class="lblckdel">
+										<img src="{{ base_url}}assets/img/logo/{{ k }}.png" class="mr-2" width="16" height="16" alt="{{ v|replace({'|Additional Host':'','|New':''}) }}"> {{ v|replace({'|Additional Host':'','|New':''}) }}
+									</div>
+								</label>
+							</div>
+						</div>
+					{% endfor %}
+					<div class="col-12 col-sm-6 col-md-4 col-lg-3">
+						<div class="custom-control custom-checkbox custom-control-inline">
+							<input type="checkbox" class="custom-control-input" id="ckDelAll">
+							<label class="custom-control-label" for="ckDelAll">Uncheck All</label>
+						</div>
+					</div>
+				</div>
+				<div class="mb-3">
+					<strong>Selected Hosts:</strong>&nbsp;<span id="ckDelHostSelected"></span>
+				</div>
+				<div class="mb-0">
+					<div class="alert alert-warning text-bold mb-0">Attention! Deleted videos cannot be restored.</div>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="submit" class="btn btn-danger">
+					<em class="fas fa-trash mr-2"></em>Delete
+				</button>
+				<button type="reset" class="btn btn-outline-danger" data-dismiss="modal">
+					<em class="fas fa-times mr-2"></em>Close
+				</button>
+			</div>
+		</form>
+	</div>
+</div>
+<div class="modal fade" id="mdVideosExport" data-backdrop="static" data-keyboard="false" tabindex="-1" aria-labelledby="mdVideosExport">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">Export Videos</h5>
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span>&times;</span>
+				</button>
+			</div>
+			<div class="modal-body">
+				<ul class="nav nav-pills mb-3">
+					<li class="nav-item">
+						<a class="nav-link active" data-toggle="tab" href="#dl">Download Link</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" data-toggle="tab" href="#el">Embed Link</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" data-toggle="tab" href="#embed">Embed Code</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" data-toggle="tab" href="#bb">BBCode</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" data-toggle="tab" href="#html">HTML Code</a>
+					</li>
+				</ul>
+				<div class="tab-content">
+					<div class="custom-control custom-checkbox mb-2">
+						<input type="checkbox" class="custom-control-input" id="show_title" onchange="showVideosExport()">
+						<label class="custom-control-label" for="show_title">Title</label>
+					</div>
+					<div class="tab-pane fade show active" id="dl">
+						<label for="txtDl">Download URLs</label>
+						<textarea id="txtDl" class="form-control" rows="10" onclick="this.select();" readonly></textarea>
+					</div>
+					<div class="tab-pane fade" id="el">
+						<label for="txtEl">Embed URLs</label>
+						<textarea id="txtEl" class="form-control" rows="10" onclick="this.select();" readonly></textarea>
+					</div>
+					<div class="tab-pane fade" id="embed">
+						<label for="txtEmbed">Embed iFrame Codes</label>
+						<textarea id="txtEmbed" class="form-control" rows="10" onclick="this.select();" readonly></textarea>
+					</div>
+					<div class="tab-pane fade" id="bb">
+						<label for="txtBb">BBCodes</label>
+						<textarea id="txtBb" class="form-control" rows="10" onclick="this.select();" readonly></textarea>
+					</div>
+					<div class="tab-pane fade" id="html">
+						<label for="txtHtml">HTML Codes</label>
+						<textarea id="txtHtml" class="form-control" rows="10" onclick="this.select();" readonly></textarea>
+					</div>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-primary" onclick="videos.exportAsCSV($(this))">
+					<em class="fas fa-file-export mr-2"></em>Export As CSV
+				</button>
+				<button type="reset" class="btn btn-outline-danger" data-dismiss="modal">
+					<em class="fas fa-times mr-2"></em>Close
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot('backend.videos.list.bottom') }}
+
+{% include templates.backend_footer %}

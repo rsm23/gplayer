@@ -1,0 +1,44 @@
+{% if recaptcha_site_key is not empty %}
+    <div id="g-recaptcha" class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}" data-size="invisible" data-callback="recaptchaOnSubmit" data-expired-callback="recaptchaReset" data-error-callback="recaptchaReset"></div>
+    <script src="https://www.google.com/recaptcha/api.js?onload=recaptchaOnLoad" async defer></script>
+    <script>
+        globalThis.sStorage = {
+            setItem: function (key, value) {
+                globalThis.sStorage[key] = value;
+            },
+            getItem: function (key) {
+                return globalThis.sStorage[key];
+            },
+            removeItem: function (key) {
+                return delete globalThis.sStorage[key];
+            },
+            clear: function () {
+                Object.keys(globalThis.sStorage).forEach(function(key) {
+                    if (key !== 'setItem' && key !== 'getItem' && key !== 'removeItem' && key !== 'clear') {
+                        delete globalThis.sStorage[key];
+                    }
+                });
+            },
+        };
+        globalThis.recaptchaOnSubmit = function(token) {
+            globalThis.sStorage.setItem('g-recaptcha-response', token);
+        };
+        globalThis.recaptchaReset = function() {
+            globalThis.sStorage.removeItem('g-recaptcha-response');
+            if ($('.g-recaptcha').length) {
+                grecaptcha.reset();
+                grecaptcha.ready(function() {
+                    grecaptcha.execute();
+                });
+            }
+        };
+        globalThis.recaptchaOnLoad = function() {
+            globalThis.sStorage.removeItem('g-recaptcha-response');
+            if ($('.g-recaptcha').length) {
+                grecaptcha.ready(function() {
+                    grecaptcha.execute();
+                });
+            }
+        };
+    </script>
+{% endif %}

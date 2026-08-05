@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VAST xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vast.xsd" version="3.0">
+    <Ad id="1">
+        <InLine>
+            <AdSystem>{{ siteName }}</AdSystem>
+            <AdTitle>{{ adTitle }}</AdTitle>
+            <Creatives>
+                <Creative id="2" sequence="1">
+                    <Linear {{ adSkipOffset }}>
+                        <Duration>{{ adDuration }}</Duration>
+                        <VideoClicks>
+                            <ClickThrough id="blog"><![CDATA[{{ adClickThrough }}]]></ClickThrough>
+                            <CustomClick>{{ adClickThrough }}</CustomClick>
+                        </VideoClicks>
+                        <MediaFiles>
+                            <MediaFile id="3" delivery="progressive" type="video/mp4" scalable="1" maintainAspectRatio="1" codec="0" apiFramework="VAST"><![CDATA[{{ adMediaFile }}]]></MediaFile>
+                        </MediaFiles>
+                    </Linear>
+                </Creative>
+            </Creatives>
+        </InLine>
+    </Ad>
+</VAST>

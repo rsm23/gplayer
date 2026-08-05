@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<base href="{{ base_url }}">
+		<meta http-equiv="X-UA-Compatible" content="ie=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+		<meta name="msapplication-TileColor" content="{{ theme_color }}">
+		<meta name="theme-color" content="{{ theme_color }}">
+		<meta name="mobile-web-app-capable" content="yes">
+
+		<meta
+		name="description" content="{{ strip_tags(description) }}">
+
+		<!-- facebook -->
+		{% set defaultPoster = poster is not empty ? poster : site_logo %}
+		<meta name="og:sitename" content="{{ strip_tags(site_name) }}">
+		<meta name="og:title" content="{{ strip_tags(title) }}">
+		<meta name="og:description" content="{{ strip_tags(description) }}">
+		<meta name="og:type" content="Website">
+		<meta name="og:image" content="{{ defaultPoster }}">
+		<!-- end facebook -->
+
+		<!-- twitter -->
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="twitter:title" content="{{ strip_tags(title) }}">
+		<meta name="twitter:description" content="{{ strip_tags(description) }}">
+		<meta name="twitter:image" content="{{ defaultPoster }}">
+		<!-- end twitter -->
+
+		<link rel="manifest" href="manifest.json">
+		<link rel="mask-icon" href="assets/img/maskable_icon.png" color="#ffffff">
+
+		<!-- favicon -->
+		<link rel="shortcut icon" href="favicon.ico" type="image/ico">
+		<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+		<link rel="apple-touch-icon-precomposed" sizes="152x152" href="assets/img/apple-touch-icon-152x152.png">
+		<link rel="apple-touch-icon-precomposed" sizes="152x152" href="assets/img/apple-touch-icon-152x152-precomposed.png">
+		<link rel="apple-touch-icon-precomposed" sizes="120x120" href="assets/img/apple-touch-icon-120x120.png">
+		<link rel="apple-touch-icon-precomposed" sizes="120x120" href="assets/img/apple-touch-icon-120x120-precomposed.png">
+		<link rel="apple-touch-icon-precomposed" sizes="114x114" href="assets/img/apple-touch-icon-114x114.png">
+		<link rel="apple-touch-icon-precomposed" sizes="72x72" href="assets/img/apple-touch-icon-72x72.png">
+		<link rel="apple-touch-icon-precomposed" sizes="57x57" href="assets/img/apple-touch-icon-57x57.png">
+		<link rel="apple-touch-icon-precomposed" href="assets/img/apple-touch-icon.png">
+		<link rel="apple-touch-icon-precomposed" href="assets/img/apple-touch-icon-precomposed.png">
+		<!-- end favicon -->
+
+		<title>{{ strip_tags(title) }} - {{ strip_tags(site_name) }}</title>
+
+		<!-- preconnect/prefetch -->
+		<link rel="preconnect dns-prefetch" href="//{{ parse_url(base_url).host }}"/>
+		<link rel="preconnect dns-prefetch" href="//cdn.datatables.net"/>
+		<link rel="preconnect dns-prefetch" href="//www.gstatic.com"/>
+		<link rel="preconnect dns-prefetch" href="//fonts.gstatic.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.googleapis.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.googletagmanager.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.google.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.google-analytics.com"/>
+		<link rel="preconnect dns-prefetch" href="//googleusercontent.com"/>
+		<link rel="preconnect dns-prefetch" href="//lh3.googleusercontent.com"/>
+		<link rel="preconnect dns-prefetch" href="//drive-thirdparty.googleusercontent.com"/>
+		<link rel="preconnect dns-prefetch" href="//static.addtoany.com"/>
+		<!-- end preconnect/prefetch -->
+
+		<link rel="stylesheet" type="text/css" href="assets/vendor/bootstrap/4.6.2/css/bootstrap.min.css" media="all" />
+
+		<!-- Preload CSS Files -->
+		<link rel="preload" href="assets/vendor/bootstrap-sweetalert/1.0.1/sweetalert.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/fontawesome/7.3.0/css/all.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/css/bs-dark-v1.3.3.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="themes/frontend/default/assets/css/frontend-default-v3.4.1.min.css" as="style" onload="this.rel='stylesheet'" />
+		<!-- End Preload CSS Files -->
+
+		<noscript>
+			<link rel="stylesheet" type="text/css" href="assets/vendor/bootstrap-sweetalert/1.0.1/sweetalert.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/fontawesome/7.3.0/css/all.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="assets/css/bs-dark-v1.3.3.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="themes/frontend/default/assets/css/frontend-default-v3.4.1.min.css" media="all" />
+		</noscript>
+
+		<style>
+			a,
+			.page-link,
+			.btn-outline-custom {
+				color: #{{ theme_color }};
+			}
+
+			.btn-outline-custom {
+				border-color: #{{ theme_color }};
+			}
+
+			a:hover,
+			.page-link:hover {
+				color: #{{ theme_color2 }};
+			}
+
+			.bootstrap-dark .border-custom,
+			.border-custom {
+				border-color: #{{ theme_color }} !important;
+			}
+
+			.page-item.active .page-link,
+			.dropdown-item.active,
+			.dropdown-item:active,
+			.bg-custom,
+			.btn-custom,
+			.nav-pills .nav-link.active,
+			.nav-pills .show>.nav-link {
+				color: #fff !important;
+				border-color: #{{ theme_color }};
+				background-image: -webkit-linear-gradient(to right, #{{ theme_color }}, #{{ theme_color2 }});
+				background-image: -moz-linear-gradient(to right, #{{ theme_color }}, #{{ theme_color2 }});
+				background-image: -o-linear-gradient(to right, #{{ theme_color }}, #{{ theme_color2 }});
+				background-image: linear-gradient(to right, #{{ theme_color }}, #{{ theme_color2 }});
+				background-color: #{{ theme_color }};
+			}
+
+			.btn-outline-custom.active,
+			.btn-outline-custom:active,
+			.btn-outline-custom.focus,
+			.btn-outline-custom:focus,
+			.btn-outline-custom:not(:disabled):hover,
+			.btn-custom.focus,
+			.btn-custom:focus,
+			.btn-custom:not(:disabled):hover {
+				color: #fff !important;
+				border-color: #{{ theme_color2 }};
+				background-image: -webkit-linear-gradient(to right, #{{ theme_color2 }}, #{{ theme_color }});
+				background-image: -moz-linear-gradient(to right, #{{ theme_color2 }}, #{{ theme_color }});
+				background-image: -o-linear-gradient(to right, #{{ theme_color2 }}, #{{ theme_color }});
+				background-image: linear-gradient(to right, #{{ theme_color2 }}, #{{ theme_color }});
+				background-color: #{{ theme_color2 }};
+			}
+
+			.page-link:focus,
+			.btn-outline-custom.focus,
+			.btn-outline-custom:focus,
+			.btn-outline-custom:not(:disabled):hover,
+			.btn-custom.focus,
+			.btn-custom:focus {
+				box-shadow: 0 0 0 .2rem rgba({{ rgb_color }}, .2);
+			}
+
+			.table-hover tbody tr:hover td {
+				background-color: rgba({{ rgb_color }}, .07) !important;
+			}
+
+			.bootstrap-dark .table-hover tbody tr:hover td {
+				background-color: rgba({{ rgb_color }}, .2) !important;
+			}
+
+			#footer .nav-link.active,
+			#footer .nav-link:active,
+			#footer .nav-link:focus,
+			#footer .nav-link:hover {
+				color: #{{ theme_color }} !important;
+			}
+
+			/* Bootstrap 4 Overrides to match theme color */
+			:root {
+				--primary: #{{ theme_color }};
+			}
+			.text-primary {
+				color: #{{ theme_color }} !important;
+			}
+			.bg-primary {
+				background-color: #{{ theme_color }} !important;
+			}
+			.border-primary {
+				border-color: #{{ theme_color }} !important;
+			}
+			.btn-primary {
+				color: #fff !important;
+				background-color: #{{ theme_color }};
+				border-color: #{{ theme_color }};
+			}
+			.btn-primary:hover {
+				color: #fff !important;
+				background-color: #{{ theme_color2 }};
+				border-color: #{{ theme_color2 }};
+			}
+			.btn-primary:focus, .btn-primary.focus {
+				color: #fff !important;
+				background-color: #{{ theme_color2 }};
+				border-color: #{{ theme_color2 }};
+				box-shadow: 0 0 0 0.2rem rgba({{ rgb_color }}, 0.5) !important;
+			}
+			.btn-primary.disabled, .btn-primary:disabled {
+				color: #fff !important;
+				background-color: #{{ theme_color }} !important;
+				border-color: #{{ theme_color }} !important;
+			}
+			.btn-primary:not(:disabled):not(.disabled):active, .btn-primary:not(:disabled):not(.disabled).active,
+			.show > .btn-primary.dropdown-toggle {
+				color: #fff !important;
+				background-color: #{{ theme_color2 }};
+				border-color: #{{ theme_color2 }};
+			}
+			.btn-primary:not(:disabled):not(.disabled):active:focus, .btn-primary:not(:disabled):not(.disabled).active:focus,
+			.show > .btn-primary.dropdown-toggle:focus {
+				box-shadow: 0 0 0 0.2rem rgba({{ rgb_color }}, 0.5) !important;
+			}
+			.btn-outline-primary {
+				color: #{{ theme_color }} !important;
+				border-color: #{{ theme_color }} !important;
+			}
+			.btn-outline-primary:hover {
+				color: #fff !important;
+				background-color: #{{ theme_color }} !important;
+				border-color: #{{ theme_color }} !important;
+			}
+			.btn-outline-primary:focus, .btn-outline-primary.focus {
+				box-shadow: 0 0 0 0.2rem rgba({{ rgb_color }}, 0.5) !important;
+			}
+			.btn-outline-primary:not(:disabled):not(.disabled):active, .btn-outline-primary:not(:disabled):not(.disabled).active,
+			.show > .btn-outline-primary.dropdown-toggle {
+				color: #fff !important;
+				background-color: #{{ theme_color }} !important;
+				border-color: #{{ theme_color }} !important;
+			}
+			.badge-primary {
+				color: #fff !important;
+				background-color: #{{ theme_color }} !important;
+			}
+			a.badge-primary:hover, a.badge-primary:focus {
+				color: #fff !important;
+				background-color: #{{ theme_color2 }} !important;
+			}
+			.form-control:focus {
+				border-color: #{{ theme_color }} !important;
+				box-shadow: 0 0 0 0.2rem rgba({{ rgb_color }}, 0.25) !important;
+			}
+			.custom-control-input:checked ~ .custom-control-label::before {
+				color: #fff !important;
+				border-color: #{{ theme_color }} !important;
+				background-color: #{{ theme_color }} !important;
+			}
+			.custom-control-input:focus ~ .custom-control-label::before {
+				box-shadow: 0 0 0 0.2rem rgba({{ rgb_color }}, 0.25) !important;
+			}
+			.custom-control-input:focus:not(:checked) ~ .custom-control-label::before {
+				border-color: #{{ theme_color }} !important;
+			}
+			.custom-select:focus {
+				border-color: #{{ theme_color }} !important;
+				box-shadow: 0 0 0 0.2rem rgba({{ rgb_color }}, 0.25) !important;
+			}
+			.list-group-item.active {
+				z-index: 2;
+				color: #fff !important;
+				background-color: #{{ theme_color }} !important;
+				border-color: #{{ theme_color }} !important;
+			}
+		</style>
+
+		<!-- Scripts -->
+		<script src="assets/vendor/jquery/3.7.1/jquery.min.js"></script>
+		<script src="assets/vendor/FormData.js"></script>
+		<script>
+			var $ = jQuery.noConflict(),
+				adminURL = '{{ backend_url }}',
+				baseURL = '{{ base_url }}',
+				imgCDNURL = baseURL,
+				uid = '{{ user_detail is not empty ? user_detail.id : '' }}',
+				email = '{{ user_detail is not empty ? user_detail.email : '' }}',
+				defaultTimeZone = '{{ timezone }}',
+				themeColors = ['#{{ theme_color }}', '#{{ theme_color2 }}'];
+		</script>
+		{% include templates.ga %}
+		{% include templates.gtm_head %}
+		<script type="text/javascript" src="assets/vendor/globalThis.js"></script>
+		<!-- End Scripts -->
+	</head>
+
+	<body class="bootstrap{{ is_dark_mode ? '-dark' : ' bg-light' }} mb-5">
+		{% include templates.gtm_body %}
+		<div class="container-xl rounded-bottom shadow border border-custom">
+			<header id="header">{% include templates.frontend_nav %}</header>
+			<main id="main" class="pb-3" style="margin-top:55px">

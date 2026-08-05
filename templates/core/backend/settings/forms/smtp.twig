@@ -1,0 +1,68 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">SMTP Configuration</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="disable_confirm" value="false">
+						<input type="checkbox" class="custom-control-input" id="disable_confirm" name="disable_confirm" value="true" {{ disable_confirm ? 'checked' : '' }}>
+						<label class="custom-control-label" for="disable_confirm">Disable Registration Confirmation &amp; Password Reset Emails</label>
+					</div>
+					<small class="form-text text-muted">Warning: If enabled, email addresses entered during registration will not be verified.</small>
+				</div>
+				<div class="mb-3">
+					<label for="smtp_provider">Provider</label>
+					<select name="smtp_provider" id="smtp_provider" class="form-control" onchange="settings.smtp()">
+						<option value="">-- Select Email Provider --</option>
+						{% for key, val in email_provider %}
+							<option value="{{ key }}" {{ key == smtp_provider ? 'selected' : '' }}>{{ val }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="mb-3">
+					<label for="smtp_host">Host</label>
+					<input type="text" name="smtp_host" id="smtp_host" class="form-control" placeholder="SMTP Host" value="{{ smtp_host }}">
+				</div>
+				<div class="mb-3">
+					<label for="smtp_port">Port</label>
+					<input type="number" name="smtp_port" id="smtp_port" class="form-control" placeholder="SMTP Port" value="{{ smtp_port }}">
+				</div>
+				<div class="mb-3 mb-0">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="smtp_tls" value="false">
+						<input type="checkbox" class="custom-control-input" id="smtp_tls" name="smtp_tls" {{ smtp_tls ? 'checked' : '' }}>
+						<label class="custom-control-label" for="smtp_tls">Use TLS</label>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">SMTP Credentials &amp; Sender</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="smtp_email">Email</label>
+					<input type="email" name="smtp_email" id="smtp_email" class="form-control" placeholder="Email" value="{{ smtp_email }}" autocomplete="email">
+				</div>
+				<div class="mb-3">
+					<label for="smtp_password">Password</label>
+					<input type="password" name="smtp_password" id="smtp_password" class="form-control" placeholder="Password" value="{{ smtp_password }}" autocomplete="new-password">
+				</div>
+				<div class="mb-3">
+					<label for="smtp_sender">Sender Name</label>
+					<input type="text" name="smtp_sender" id="smtp_sender" class="form-control" placeholder="Sender Name" value="{{ smtp_sender }}">
+				</div>
+				<div class="mb-3">
+					<label for="smtp_reply_email">Reply To Email</label>
+					<input type="email" name="smtp_reply_email" id="smtp_reply_email" class="form-control" placeholder="Reply To Email" value="{{ smtp_reply_email }}" autocomplete="email">
+				</div>
+				<div class="mb-0">
+					<label for="smtp_reply_name">Reply To Recipient</label>
+					<input type="text" name="smtp_reply_name" id="smtp_reply_name" class="form-control" placeholder="Reply To Recipient" value="{{ smtp_reply_name }}">
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

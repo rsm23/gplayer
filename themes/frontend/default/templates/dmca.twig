@@ -1,0 +1,95 @@
+{% include 'elements/header.twig' %}
+<div class="pt-3 mt-5 row">
+	<div class="col-12">
+		<h1 class="mb-3 text-center h2">DMCA Takedown Policy</h1>
+		<h2 class="h4" id="introduction">Introduction</h3>
+		<p>
+			{{ site_name }}
+			("we", "us", or "our") respects the intellectual property rights of others and expects our users to do the same. It is our policy to respond to clear notices of alleged copyright infringement that comply with the Digital Millennium Copyright Act (DMCA).
+		</p>
+		<h2 class="h4" id="reporting-copyright-infringement">Reporting Copyright Infringement</h3>
+		<p>
+			If you believe that your copyrighted work has been copied and is accessible on our website or servers in a way that constitutes copyright infringement, please provide our designated DMCA Agent with the following information in writing (as required by 17 U.S.C. § 512(c)(3)):
+		</p>
+		<ol>
+			<li>
+				A physical or electronic signature of a person authorized to act on behalf of the copyright owner;
+			</li>
+			<li>
+				Identification of the copyrighted work claimed to have been infringed, or, if multiple works on a single site are covered by a single notification, a representative list of such works;
+			</li>
+			<li>
+				Identification of the material that is claimed to be infringing or to be the subject of infringing activity, and information reasonably sufficient to permit us to locate the material;
+			</li>
+			<li>
+				Your contact information, including your address, telephone number, and email address;
+			</li>
+			<li>
+				A statement that you have a good faith belief that the disputed use of the material is not authorized by the copyright owner, its agent, or the law; and
+			</li>
+			<li>
+				A statement, made under penalty of perjury, that the information in the notification is accurate and that you are authorized to act on behalf of the copyright owner.
+			</li>
+		</ol>
+		<h2 class="h4" id="submit-your-dmca-notice-to">Submit Your DMCA Notice To:</h3>
+		<p>
+			<strong>
+				DMCA Agent
+			</strong>
+			<br/>
+			{% if company_legal_department %}
+				{{ company_legal_department }}
+				<br/>
+			{% endif %}
+			{% if company_name %}
+				{{ company_name }}
+				<br/>
+			{% else %}
+				{{ site_name }}
+				Admin
+				<br/>
+			{% endif %}
+			{% if company_physical_address %}
+				{{ company_physical_address }}
+				<br/>
+			{% endif %}
+			{% if company_email %}
+				Email:
+				{{ company_email }}
+				<br/>
+			{% endif %}
+			Subject: "DMCA Takedown Request"
+		</p>
+		<h2 class="h4" id="counter-notification">Counter Notification</h3>
+		<p>
+			If you believe that the material removed or disabled as a result of a DMCA notice was misidentified or wrongly removed, you may send us a counter-notification. Your counter-notification must include the following:
+		</p>
+		<ol>
+			<li>Your physical or electronic signature;</li>
+			<li>
+				Identification of the material that has been removed or to which access has been disabled, and the location at which the material appeared before it was removed or access was disabled;
+			</li>
+			<li>
+				A statement under penalty of perjury that you have a good faith belief that the material was removed or disabled as a result of mistake or misidentification;
+			</li>
+			<li>Your name, address, telephone number, and email address; and</li>
+			<li>
+				A statement that you consent to the jurisdiction of the federal court in your judicial district (or if outside the United States, that you consent to jurisdiction in any judicial district in which the service provider may be found) and that you will accept service of process from the person who provided the original DMCA notice or their agent.
+			</li>
+		</ol>
+		<p>
+			After receiving a valid counter-notification, we may restore the material in question, unless the original complainant files a court action seeking a restraining order against the user.
+		</p>
+		<h2 class="h4" id="repeat-infringers">Repeat Infringers</h3>
+		<p>
+			In accordance with the DMCA and other applicable laws,
+			{{ site_name }}
+			may, in appropriate circumstances, terminate the accounts of users who are repeat infringers.
+		</p>
+		<h2 class="h4" id="disclaimer">Disclaimer</h3>
+		<p>
+			This information is provided solely for informational purposes and does not constitute legal advice. If you are unsure of your rights or obligations under the DMCA, you should seek advice from a qualified attorney.
+		</p>
+	</div>
+</div>
+{% include 'elements/footer.twig' %}

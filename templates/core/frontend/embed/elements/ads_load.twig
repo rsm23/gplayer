@@ -1,0 +1,9 @@
+<textarea id="txtAdsScript" style="display:none!important">
+    {% if templates.popupads %}
+        {% include templates.popupads %}
+    {% endif %}
+</textarea>
+<input type="hidden" id="txtAdsOffset" style="display:none!important" value="{{ PopupAdsOffset|trim() }}">
+{% if templates.popupads and PopupAdsOffset == '0' %}
+    {% include templates.popupads %}
+{% endif %}

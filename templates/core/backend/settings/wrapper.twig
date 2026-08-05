@@ -1,0 +1,61 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		<form action="{{ current_url() }}" method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+			{% if form_data is not empty %}
+				{% include form with form_data %}
+				{% include 'buttons.twig' %}
+			{% elseif reset_form is not empty %}
+				{% include reset_form %}
+			{% endif %}
+			{# Plugin Widget Slot: form bottom #}
+			{{ render_slot('backend.settings.form_bottom') }}
+		</form>
+	</div>
+</div>
+{% if modal %}
+    {% include modal %}
+{% endif %}
+<script type="text/javascript">
+    $(document).ready(function() {
+        var lbs = localStorage.getItem("lb"),
+			lb = [],
+            data = {
+                action: "clearSettingsCache",
+                token: Cookies.get("adv_token", {
+                    domain: "." + document.domain,
+                    path: "/",
+                })
+            };
+        if (lbs !== 'null') {
+            lb = JSON.parse(lbs);
+        }
+        if ("{{ clearCache }}" === "1") {
+            const $btns = $('form button[type=submit], button.dropdown-item'),
+                requests = lb.map((v) =>
+                $.ajax({
+                    url: `${v}ajax/settings/`,
+                    type: "POST",
+                    timeout: 0,
+                    cache: false,
+                    data: data
+                })
+            );
+            $btns.prop('disabled', true);
+            $.when(...requests)
+                .done(function (...responses) {
+                    console.log(responses);
+                    $btns.prop('disabled', false);
+                })
+                .fail(function (...errors) {
+                    console.error(errors);
+                    $btns.prop('disabled', false);
+                });
+        }
+    });
+</script>
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot('backend.settings.bottom') }}
+
+{% include templates.backend_footer %}

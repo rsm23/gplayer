@@ -1,0 +1,198 @@
+# Trusted Proxy Cloudflare (IPv4)
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+
+# Trusted Proxy Cloudflare (IPv6)
+set_real_ip_from 2400:cb00::/32;
+set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;
+set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;
+set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+
+# Client Real IP
+real_ip_header CF-Connecting-IP;
+
+# start custom configuration
+disable_symlinks off;
+
+{% if nginx_config is defined and nginx_config %}
+{% for k,v in nginx_config %}
+{{ v|raw ~ '\n' }}
+{% endfor %}
+{% endif %}
+
+{% if cache_mode == 'nginx' %}
+# X-Accel-Redirect configuration
+location /cache-files/ {
+    internal;
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    directio 512k;
+    output_buffers 1 512k;
+    location ~ \.mp4$ {
+        mp4;
+        mp4_buffer_size 4m;
+        mp4_max_buffer_size 20m;
+        directio 2m;
+        output_buffers 1 2m;
+    }
+    gzip off;
+    alias {{ base_dir }}/cache/files/;
+}
+{% endif %}
+
+# THEMES STATIC ASSETS DIRECT serving
+location /themes/ {
+    alias {{ base_dir }}/public/themes/;
+    expires max;
+    tcp_nopush on;
+    sendfile on;
+
+    add_header Cache-Control 'public, max-age=31536000, immutable' always;
+    add_header X-Content-Type-Options 'nosniff' always;
+
+    add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+    add_header Access-Control-Allow-Origin '*';
+    add_header Access-Control-Allow-Headers '*';
+    add_header Access-Control-Expose-Headers '*';
+}
+# end custom configuration
+
+# Allow iframe
+location ~* ^/(embed|embed2|download|request|e|d|r)/ {
+    gzip on;
+    rewrite ^ /index.php$is_args$args last;
+}
+
+# BINARY ENDPOINTS (With performance optimization)
+location ~* ^/(stream-(seg|ts|vid)|poster|seg|ts|vid)/ {
+    gzip off;
+    rewrite ^ /index.php$is_args$args last;
+}
+
+# API ENDPOINTS (With security headers)
+location ~* ^/(filmstrip|hls|mpd|subtitle)/ {
+    gzip on;
+    rewrite ^ /index.php$is_args$args last;
+}
+
+# STATIC ASSETS (Optimized caching with security)
+location ~* ^/(assets|uploads)/ {
+    # Handle OPTIONS preflight requests
+    if ($request_method = 'OPTIONS') {
+        add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+        add_header Access-Control-Allow-Origin '*';
+        add_header Access-Control-Allow-Headers '*';
+        add_header Access-Control-Expose-Headers '*';
+        return 204;
+    }
+
+    # Performance optimization
+    gzip_static on;
+    expires max;
+    tcp_nopush on;
+    sendfile on;
+
+    # Try files with fallback
+    try_files $uri $uri/ =404;
+
+    add_header Cache-Control 'public, max-age=31536000, immutable' always;
+    add_header X-Content-Type-Options 'nosniff' always;
+
+    add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+    add_header Access-Control-Allow-Origin '*';
+    add_header Access-Control-Allow-Headers '*';
+    add_header Access-Control-Expose-Headers '*';
+}
+
+# Uploads security (deny executables)
+location ~* ^/uploads/.*\.(php|php3|php4|php5|phar|phtml|html|htm|xhtml|js|json|svg|swf|pl|py|cgi|asp|aspx|jsp|sh|bat|cmd|msi|dmg|exe|bin|com|scr|jar)$ {
+    deny all;
+    return 403;
+}
+
+# Uploads general handler
+location ~* ^/uploads/ {
+    default_type application/octet-stream;
+    try_files $uri $uri/ =404;
+}
+
+# CORE FILES (Optimized caching)
+location ~* ^/(robots\.txt|offline\.html)$ {
+    # Performance optimization
+    gzip_static on;
+    expires 1d;
+
+    try_files $uri $uri/ =404;
+
+    add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+    add_header Access-Control-Allow-Origin '*';
+    add_header Access-Control-Allow-Headers '*';
+    add_header Access-Control-Expose-Headers '*';
+}
+
+# SERVICE WORKER (Proper caching headers)
+location = /sw.js {
+    try_files $uri $uri/ =404;
+
+    add_header Cache-Control 'no-cache, no-store, must-revalidate, max-age=0' always;
+    add_header Pragma 'no-cache' always;
+    add_header Expires '0' always;
+    add_header X-Content-Type-Options 'nosniff' always;
+
+    add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+    add_header Access-Control-Allow-Origin '*';
+    add_header Access-Control-Allow-Headers '*';
+    add_header Access-Control-Expose-Headers '*';
+}
+
+# CLOUDFLARE CGI (Proper handling)
+location /cdn-cgi {
+    # Security headers for proxy
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_pass http://127.0.0.1;
+    proxy_redirect off;
+
+    add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+    add_header Access-Control-Allow-Origin '*';
+    add_header Access-Control-Allow-Headers '*';
+    add_header Access-Control-Expose-Headers '*';
+}
+
+# MAIN LOCATION
+location / {
+    # Handle OPTIONS preflight requests
+    if ($request_method = 'OPTIONS') {
+        add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+        add_header Access-Control-Allow-Origin '*';
+        add_header Access-Control-Allow-Headers '*';
+        add_header Access-Control-Expose-Headers '*';
+        return 204;
+    }
+
+    try_files $uri $uri/ /index.php$is_args$args;
+
+    add_header Access-Control-Allow-Methods 'GET, POST, HEAD, OPTIONS';
+    add_header Access-Control-Allow-Origin '*';
+    add_header Access-Control-Allow-Headers '*';
+    add_header Access-Control-Expose-Headers '*';
+}

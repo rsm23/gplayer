@@ -1,0 +1,28 @@
+<style>
+    .pulse-spinner-4 {
+        --loader-size: clamp(48px, 12vmin, 96px);
+        width: var(--loader-size);
+        height: var(--loader-size);
+        background-color: {{ playerColor }};
+        border-radius: 50%;
+        animation: pulse-animation 1.5s infinite;
+        margin: 0 auto;
+        box-sizing: border-box;
+        will-change: transform;
+    }
+    @keyframes pulse-animation {
+        0%,
+        100% {
+            transform: scale(0.8);
+            -webkit-transform: scale(0.8);
+            opacity: 1;
+        }
+        50% {
+            background-color: {{ playerColor2 }};
+            transform: scale(1.5);
+            -webkit-transform: scale(1.5);
+            opacity: 0.5;
+        }
+    }
+</style>
+<div class="pulse-spinner-4"></div>

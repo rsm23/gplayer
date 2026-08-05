@@ -1,0 +1,50 @@
+{
+    "random": {
+        "name": "Random",
+        "apiUrl": ""
+    },
+    "adtival_network": {
+        "name": "Adtival.Network",
+        "apiUrl": "https://adtival.network/st?api=%s&url=%s"
+    },
+    "clicksfly_com": {
+        "name": "ClicksFly.com",
+        "apiUrl": "https://clicksfly.com/st?api=%s&url=%s"
+    },
+    "clk_sh": {
+        "name": "Clk.sh",
+        "apiUrl": "https://clk.sh/st?api=%s&url=%s"
+    },
+    "cutpaid_com": {
+        "name": "Cutpaid.com",
+        "apiUrl": "https://cutpaid.com/st?api=%s&url=%s"
+    },
+    "payskip_org": {
+        "name": "PaySkip.ORG",
+        "apiUrl": "https://payskip.org/st?api=%s&url=%s"
+    },
+    "shrinkearn_com": {
+        "name": "ShrinkEarn.com",
+        "apiUrl": "https://shrinkearn.com/st?api=%s&url=%s"
+    },
+    "shrinkme_io": {
+        "name": "ShrinkMe.io",
+        "apiUrl": "https://shrinkme.io/st?api=%s&url=%s"
+    },
+    "shrtfly_com": {
+        "name": "ShrtFly.com",
+        "apiUrl": "https://shrtfly.com/st?api=%s&url=%s"
+    },
+    "v2links_com": {
+        "name": "V2links.com",
+        "apiUrl": "https://v2links.com/st?api=%s&url=%s"
+    },
+    "ouo_io": {
+        "name": "ouo.io",
+        "apiUrl": "https://ouo.io/qs/%s?s=%s"
+    },
+    "safelinku_com": {
+        "name": "SafelinkU.com",
+        "apiUrl": "https://semawur.com/full/?type=2&api=%s&url=%s"
+    }
+}

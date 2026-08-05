@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<base href="{{ base_url }}">
+		<meta http-equiv="X-UA-Compatible" content="ie=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+		<meta name="msapplication-TileColor" content="{{ theme_color }}">
+		<meta name="theme-color" content="{{ theme_color }}">
+		<meta name="mobile-web-app-capable" content="yes">
+
+		<link rel="manifest" href="manifest.json">
+		<link rel="mask-icon" href="assets/img/maskable_icon.png" color="#ffffff">
+
+		<!-- favicon -->
+		<link rel="shortcut icon" href="favicon.ico" type="image/ico">
+		<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+		<link rel="apple-touch-icon-precomposed" sizes="152x152" href="assets/img/apple-touch-icon-152x152.png">
+		<link rel="apple-touch-icon-precomposed" sizes="152x152" href="assets/img/apple-touch-icon-152x152-precomposed.png">
+		<link rel="apple-touch-icon-precomposed" sizes="120x120" href="assets/img/apple-touch-icon-120x120.png">
+		<link rel="apple-touch-icon-precomposed" sizes="120x120" href="assets/img/apple-touch-icon-120x120-precomposed.png">
+		<link rel="apple-touch-icon-precomposed" sizes="114x114" href="assets/img/apple-touch-icon-114x114.png">
+		<link rel="apple-touch-icon-precomposed" sizes="72x72" href="assets/img/apple-touch-icon-72x72.png">
+		<link rel="apple-touch-icon-precomposed" sizes="57x57" href="assets/img/apple-touch-icon-57x57.png">
+		<link rel="apple-touch-icon-precomposed" href="assets/img/apple-touch-icon.png">
+		<link rel="apple-touch-icon-precomposed" href="assets/img/apple-touch-icon-precomposed.png">
+		<!-- end favicon -->
+
+		<title>{{ strip_tags(title) }} - {{ strip_tags(site_name) }}</title>
+
+		<!-- preconnect/prefetch -->
+		<link rel="preconnect dns-prefetch" href="//{{ parse_url(base_url).host }}"/>
+		<link rel="preconnect dns-prefetch" href="//cdn.datatables.net"/>
+		<link rel="preconnect dns-prefetch" href="//www.gstatic.com"/>
+		<link rel="preconnect dns-prefetch" href="//fonts.gstatic.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.googleapis.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.googletagmanager.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.google.com"/>
+		<link rel="preconnect dns-prefetch" href="//www.google-analytics.com"/>
+		<link rel="preconnect dns-prefetch" href="//googleusercontent.com"/>
+		<link rel="preconnect dns-prefetch" href="//lh3.googleusercontent.com"/>
+		<link rel="preconnect dns-prefetch" href="//drive-thirdparty.googleusercontent.com"/>
+		<link rel="preconnect dns-prefetch" href="//static.addtoany.com"/>
+		<!-- end preconnect/prefetch -->
+
+		<link rel="stylesheet" type="text/css" href="assets/vendor/bootstrap/4.6.2/css/bootstrap.min.css" media="all" />
+
+		<!-- Preload CSS Files -->
+		<link rel="preload" href="assets/vendor/datatables/2.3.8/datatables.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/multi-select/0.9.12/css/multi-select.dist.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/apexcharts/4.3.0/apexcharts.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/toastify-js/1.12.0/toastify.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/bootstrap-daterangepicker/3.1.0/daterangepicker.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/bootstrap-sweetalert/1.0.1/sweetalert.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/vendor/fontawesome/7.3.0/css/all.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="assets/css/bs-dark-v1.3.3.min.css" as="style" onload="this.rel='stylesheet'" />
+		<link rel="preload" href="themes/backend/default/assets/css/backend-default-v3.4.3.min.css" as="style" onload="this.rel='stylesheet'" />
+		<!-- End Preload CSS Files -->
+
+		<noscript>
+			<link rel="stylesheet" type="text/css" href="assets/vendor/datatables/2.3.8/datatables.min.css" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/multi-select/0.9.12/css/multi-select.dist.css" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/apexcharts/4.3.0/apexcharts.min.css" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/toastify-js/1.12.0/toastify.min.css" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/bootstrap-daterangepicker/3.1.0/daterangepicker.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/bootstrap-sweetalert/1.0.1/sweetalert.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="assets/vendor/fontawesome/7.3.0/css/all.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="assets/css/bs-dark-v1.3.3.min.css" media="all" />
+			<link rel="stylesheet" type="text/css" href="themes/backend/default/assets/css/backend-default-v3.4.3.min.css" media="all" />
+		</noscript>
+
+		<style>
+			:root {
+				--primary: #{{ theme_color }};
+				--primary2: #{{ theme_color2 }};
+				--rgb-color: {{ rgb_color }};
+			}
+
+			a,
+			.page-link,
+			.btn-outline-custom {
+				color: var(--primary);
+			}
+
+			.btn-outline-custom {
+				border-color: var(--primary);
+			}
+
+			a:hover,
+			.page-link:hover {
+				color: var(--primary2);
+			}
+
+			.bootstrap-dark .border-custom,
+			.border-custom {
+				border-color: var(--primary) !important;
+			}
+
+			.page-item.active .page-link,
+			.dropdown-item.active,
+			.dropdown-item:active,
+			.bg-custom,
+			.btn-custom,
+			.nav-pills .nav-link.active,
+			.nav-pills .show>.nav-link {
+				color: #fff !important;
+				border-color: var(--primary);
+				background-image: -webkit-linear-gradient(to right, var(--primary), var(--primary2));
+				background-image: -moz-linear-gradient(to right, var(--primary), var(--primary2));
+				background-image: -o-linear-gradient(to right, var(--primary), var(--primary2));
+				background-image: linear-gradient(to right, var(--primary), var(--primary2));
+				background-color: var(--primary);
+			}
+
+			.btn-outline-custom.active,
+			.btn-outline-custom:active,
+			.btn-outline-custom.focus,
+			.btn-outline-custom:focus,
+			.btn-outline-custom:not(:disabled):hover,
+			.btn-custom.focus,
+			.btn-custom:focus,
+			.btn-custom:not(:disabled):hover {
+				color: #fff !important;
+				border-color: var(--primary2);
+				background-image: -webkit-linear-gradient(to right, var(--primary2), var(--primary));
+				background-image: -moz-linear-gradient(to right, var(--primary2), var(--primary));
+				background-image: -o-linear-gradient(to right, var(--primary2), var(--primary));
+				background-image: linear-gradient(to right, var(--primary2), var(--primary));
+				background-color: var(--primary2);
+			}
+
+			.page-link:focus,
+			.btn-outline-custom.focus,
+			.btn-outline-custom:focus,
+			.btn-outline-custom:not(:disabled):hover,
+			.btn-custom.focus,
+			.btn-custom:focus {
+				box-shadow: 0 0 0 .2rem rgba(var(--rgb-color), .2);
+			}
+
+			.table-hover tbody tr:hover td {
+				background-color: rgba(var(--rgb-color), .07) !important;
+			}
+
+			.bootstrap-dark .table-hover tbody tr:hover td {
+				background-color: rgba(var(--rgb-color), .2) !important;
+			}
+
+			#footer .nav-link.active,
+			#footer .nav-link:active,
+			#footer .nav-link:focus,
+			#footer .nav-link:hover {
+				color: var(--primary) !important;
+			}
+
+			/* Bootstrap 4 Overrides to match theme color */
+			.text-primary {
+				color: var(--primary) !important;
+			}
+			.bg-primary {
+				background-color: var(--primary) !important;
+			}
+			.border-primary {
+				border-color: var(--primary) !important;
+			}
+			.btn-primary {
+				color: #fff !important;
+				background-color: var(--primary);
+				border-color: var(--primary);
+			}
+			.ms-container .ms-selectable li.ms-hover,
+			.ms-container .ms-selection li.ms-hover,
+			.btn-primary:hover {
+				color: #fff !important;
+				background-color: var(--primary2);
+				border-color: var(--primary2);
+			}
+			.btn-primary:focus, .btn-primary.focus {
+				color: #fff !important;
+				background-color: var(--primary2);
+				border-color: var(--primary2);
+				box-shadow: 0 0 0 0.2rem rgba(var(--rgb-color), 0.5) !important;
+			}
+			.btn-primary.disabled, .btn-primary:disabled {
+				color: #fff !important;
+				background-color: var(--primary) !important;
+				border-color: var(--primary) !important;
+			}
+			.btn-primary:not(:disabled):not(.disabled):active, .btn-primary:not(:disabled):not(.disabled).active,
+			.show > .btn-primary.dropdown-toggle {
+				color: #fff !important;
+				background-color: var(--primary2);
+				border-color: var(--primary2);
+			}
+			.btn-primary:not(:disabled):not(.disabled):active:focus, .btn-primary:not(:disabled):not(.disabled).active:focus,
+			.show > .btn-primary.dropdown-toggle:focus {
+				box-shadow: 0 0 0 0.2rem rgba(var(--rgb-color), 0.5) !important;
+			}
+			.btn-outline-primary {
+				color: var(--primary) !important;
+				border-color: var(--primary) !important;
+			}
+			.btn-outline-primary:hover {
+				color: #fff !important;
+				background-color: var(--primary) !important;
+				border-color: var(--primary) !important;
+			}
+			.btn-outline-primary:focus, .btn-outline-primary.focus {
+				box-shadow: 0 0 0 0.2rem rgba(var(--rgb-color), 0.5) !important;
+			}
+			.btn-outline-primary:not(:disabled):not(.disabled):active, .btn-outline-primary:not(:disabled):not(.disabled).active,
+			.show > .btn-outline-primary.dropdown-toggle {
+				color: #fff !important;
+				background-color: var(--primary) !important;
+				border-color: var(--primary) !important;
+			}
+			.badge-primary {
+				color: #fff !important;
+				background-color: var(--primary) !important;
+			}
+			a.badge-primary:hover, a.badge-primary:focus {
+				color: #fff !important;
+				background-color: var(--primary2) !important;
+			}
+			.custom-file-input:focus ~ .custom-file-label,
+			.custom-control-input:focus ~ .custom-control-label::before,
+			.page-link:focus,
+			.ms-container .ms-list.ms-focus,
+			.form-control:focus {
+				border-color: var(--primary) !important;
+				box-shadow: 0 0 0 0.2rem rgba(var(--rgb-color), 0.25) !important;
+			}
+			.custom-control-input:checked ~ .custom-control-label::before {
+				color: #fff !important;
+				border-color: var(--primary) !important;
+				background-color: var(--primary) !important;
+			}
+			.custom-control-input:focus ~ .custom-control-label::before {
+				box-shadow: 0 0 0 0.2rem rgba(var(--rgb-color), 0.25) !important;
+			}
+			.custom-control-input:focus:not(:checked) ~ .custom-control-label::before {
+				border-color: var(--primary) !important;
+			}
+			.custom-select:focus {
+				border-color: var(--primary) !important;
+				box-shadow: 0 0 0 0.2rem rgba(var(--rgb-color), 0.25) !important;
+			}
+			.list-group-item.active {
+				z-index: 2;
+				color: #fff !important;
+				background-color: var(--primary) !important;
+				border-color: var(--primary) !important;
+			}
+		</style>
+
+		<!-- Scripts -->
+		<script src="assets/vendor/jquery/3.7.1/jquery.min.js"></script>
+		<script src="assets/vendor/FormData.js"></script>
+		<script>
+			var $ = jQuery.noConflict (),
+				adminURL = '{{ backend_url }}',
+				baseURL = '{{ base_url }}',
+				imgCDNURL = baseURL,
+				uRole = {{ user_detail is not empty ? user_detail.role : '-1' }},
+				defaultTimeZone = '{{ timezone }}',
+				vidHosts = {{ supported_hosts|json_encode|raw }},
+				themeColors = ['#{{ theme_color }}', '#{{ theme_color2 }}'];
+		</script>
+		<script type="text/javascript" src="assets/vendor/globalThis.js"></script>
+		<!-- End Scripts -->
+	</head>
+	<body class="bootstrap{{ is_dark_mode ? '-dark' : '' }} mb-5">
+		<div class="container-xl rounded-bottom shadow border border-custom">
+			<header id="header" class="container-xl fixed-top shadow bg-custom">
+				{% include templates.backend_nav %}
+			</header>
+			<main id="main" class="pb-3" style="margin-top:55px">

@@ -1,0 +1,12 @@
+# DO NOT DELETE THIS FILE
+
+<Files "*">
+    <IfModule mod_headers.c>
+        Header set X-Content-Type-Options "nosniff"
+    </IfModule>
+</Files>
+<Files "*.js">
+    <IfModule mod_headers.c>
+        Header set Content-Type "application/javascript; charset=utf-8"
+    </IfModule>
+</Files>

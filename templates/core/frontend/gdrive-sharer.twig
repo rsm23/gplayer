@@ -1,0 +1,64 @@
+{% include templates.frontend_header %}
+<div class="row bg-custom text-center shadow-sm" style="border-radius: 0 0 20px 20px">
+    <div class="col py-5">
+        <h1 class="h3">Google Drive Bypass Engine</h1>
+        <p>Instantly generate clean direct streaming and download link fields to bypass Google Drive quota limit errors.</p>
+    </div>
+</div>
+{% if disable_banner_ads != 1 and sh_banner_top is not empty %}
+	<div class="row my-4">
+		<div class="col-12">{{ sh_banner_top }}</div>
+	</div>
+{% endif %}
+<div class="row my-4">
+	<div class="col-12 col-md-6">
+		<div class="card border-0 shadow-sm">
+			<div class="h5 card-header border-0">
+				<i class="fas fa-sliders-h mr-2 text-primary"></i> Configuration
+			</div>
+			<div class="card-body">
+				<form id="frmBypassLimit" method="post">
+					<input type="hidden" name="action" value="gdriveBypassLimit">
+					<div class="mb-3">
+						<label for="gdrive_id">Google Drive URL or File ID</label>
+						<input type="text" name="gdrive_id" id="gdrive_id" class="form-control form-control-lg" placeholder="Paste ID or full drive.google.com link here..." required>
+					</div>
+					<div class="mb-3 text-center">
+						{% include templates.grecaptcha %}
+						<button id="submit" type="submit" class="btn btn-custom btn-lg btn-block">
+							<em class="fab fa-google-drive mr-2"></em>Get Bypassed URL
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-6">
+		<div class="card border-0 shadow-sm">
+			<div class="h5 card-header border-0">
+				<i class="fas fa-download mr-2 text-success"></i> Direct Output Link
+			</div>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="alert alert-info border-0 shadow-sm mb-4 p-3 small d-flex align-items-start">
+						<i class="fas fa-info-circle mr-2 mt-1"></i>
+						<div>Generated file headers might load alternative string filenames than your original folder terms. Simply rename extensions when saving storage blocks locally.</div>
+					</div>
+				</div>
+				<div class="mb-3">
+					<label for="txtGDriveDL">Generated Straight Link Field</label>
+					<input id="txtGDriveDL" data-id="" type="text" onfocus="this.select()" class="form-control form-control-lg" placeholder="Bypassed link path will materialize here..." readonly>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+{% if disable_banner_ads != 1 and sh_banner_bottom is not empty %}
+	<div class="row my-4">
+		<div class="col-12 mt-3">{{ sh_banner_bottom }}</div>
+	</div>
+{% endif %}
+{% if templates.popupads %}
+	{% include templates.popupads %}
+{% endif %}
+{% include templates.frontend_footer %}

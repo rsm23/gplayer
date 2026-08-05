@@ -1,0 +1,102 @@
+<div class="row">
+    <div class="col-12">
+        <div id="headers-container">
+            <!-- Item-item dinamis akan di-render di sini oleh JS -->
+        </div>
+
+        <div class="mb-4">
+            <button type="button" class="btn btn-outline-success btn-block" id="btn-add-item">
+                <i class="fas me-1">+</i> Add New Headers
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Template komponen dinamis -->
+<template id="header-item-template">
+    <div class="card mb-3 border header-item">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong class="item-title">Item Custom Header</strong>
+            <button type="button" class="btn btn-sm btn-danger btn-remove-item">Delete</button>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="items[{INDEX}][keywords]">Keywords</label>
+                        <textarea id="items[{INDEX}][keywords]" name="items[{INDEX}][keywords]" class="form-control item-keywords" rows="5" placeholder="cdn.dzen.ru"></textarea>
+                        <small class="form-text text-muted">One keyword per line.</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="items[{INDEX}][headers]">Headers</label>
+                        <textarea id="items[{INDEX}][headers]" name="items[{INDEX}][headers]" class="form-control item-headers" rows="5" placeholder="Referer: https://dzen.ru/&#10;Origin: https://dzen.ru"></textarea>
+                        <small class="form-text text-muted">Format: <code>Header-Name: Header-Value</code> (one per line).</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const container = document.getElementById('headers-container');
+    const template = document.getElementById('header-item-template').innerHTML;
+    const btnAdd = document.getElementById('btn-add-item');
+    
+    // Data dari PHP
+    const initialData = {{ items_data|json_encode|raw }};
+
+    let itemIndex = 0;
+
+    function addItem(data = null) {
+        let html = template.replace(/{INDEX}/g, itemIndex);
+        
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        const itemNode = tempDiv.firstElementChild;
+
+        if (data) {
+            if (data.keywords) {
+                itemNode.querySelector('.item-keywords').value = data.keywords.join('\n');
+            }
+            if (data.headers) {
+                let headerLines = [];
+                for (let [key, val] of Object.entries(data.headers)) {
+                    headerLines.push(`${key}: ${val}`);
+                }
+                itemNode.querySelector('.item-headers').value = headerLines.join('\n');
+            }
+        }
+
+        // Event listener hapus item
+        itemNode.querySelector('.btn-remove-item').addEventListener('click', function () {
+            itemNode.remove();
+            updateItemTitles();
+        });
+
+        container.appendChild(itemNode);
+        itemIndex++;
+        updateItemTitles();
+    }
+
+    function updateItemTitles() {
+        const items = container.querySelectorAll('.header-item');
+        items.forEach((item, index) => {
+            item.querySelector('.item-title').textContent = `Item Custom Header #${index + 1}`;
+        });
+    }
+
+    // Render data awal jika ada
+    if (Array.isArray(initialData) && initialData.length > 0) {
+        initialData.forEach(item => addItem(item));
+    } else {
+        addItem(); // Buat 1 item kosong default
+    }
+
+    // Event listener tambah item baru
+    btnAdd.addEventListener('click', () => addItem());
+});
+</script>

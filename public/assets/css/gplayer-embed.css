@@ -1,0 +1,76 @@
+:root {
+  color-scheme: dark;
+  --bg: #050507;
+  --panel: #111118;
+  --ink: #f5f3fb;
+  --muted: #9692a4;
+  --brand: #8068ff;
+  --danger: #ff7f8d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+.player-stage {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+}
+
+.player-stage {
+  display: grid;
+  place-items: center;
+}
+
+video,
+.provider-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+  object-fit: contain;
+}
+
+.player-notice {
+  max-width: 520px;
+  padding: 32px;
+  text-align: center;
+}
+
+.player-notice span {
+  color: var(--brand);
+  font-family: "SFMono-Regular", "Cascadia Code", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.player-notice h1 {
+  margin: 13px 0 0;
+  font-size: clamp(24px, 5vw, 42px);
+  letter-spacing: -0.04em;
+}
+
+.player-notice p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.player-error span {
+  color: var(--danger);
+}

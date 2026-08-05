@@ -1,0 +1,6 @@
+{% if popupads_url is not empty %}
+    <script src="{{ popupads_url }}" data-cfasync="false" async></script>
+{% endif %}
+{% if popupads_script is not empty %}
+    {{ popupads_script|raw }}
+{% endif %}

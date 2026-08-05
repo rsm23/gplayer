@@ -1,0 +1,121 @@
+<div class="card">
+    <div class="card-header">
+        <h6 class="mb-0">
+            <em class="fas fa-server mr-2"></em>Server Status Monitor
+        </h6>
+    </div>
+    <div class="card-body" id="statusCardBody">
+        <div class="alert alert-danger d-none">Failed to fetch server status</div>
+        <div class="row">
+            <div class="col-md-4 mb-4 text-center border-right">
+                <h6 class="font-weight-bold mb-2">
+                    <i class="fas fa-microchip mr-1"></i>CPU Usage
+                </h6>
+                <div id="statusCpuValue" class="h3 font-weight-bold mb-3">0%</div>
+                <div class="progress" style="height: 10px;">
+                    <div id="statusCpuProgress" class="progress-bar bg-success" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4 text-center border-right">
+                <h6 class="font-weight-bold mb-2">
+                    <i class="fas fa-memory mr-1"></i>RAM Usage
+                </h6>
+                <div id="statusRamPercent" class="h3 font-weight-bold mb-1">0%</div>
+                <small id="statusRamText" class="d-block mb-2">0 GB / 0 GB</small>
+                <div class="progress" style="height: 10px;">
+                    <div id="statusRamProgress" class="progress-bar bg-success" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4 text-center">
+                <h6 class="font-weight-bold mb-2">
+                    <i class="fas fa-hdd mr-1"></i>Disk Usage
+                </h6>
+                <div id="statusDiskPercent" class="h3 font-weight-bold mb-1">0%</div>
+                <small id="statusDiskText" class="d-block mb-2">0 GB / 0 GB</small>
+                <div class="progress" style="height: 10px;">
+                    <div id="statusDiskProgress" class="progress-bar bg-success" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>
+        </div>
+        <hr>
+        <h6 class="font-weight-bold mb-3">
+            <i class="fas fa-tasks mr-1"></i>System Services &amp; Info
+        </h6>
+        <div class="form-row">
+            <div class="col-md-6">
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div class="font-weight-bold">
+                        <img src="data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBmaWxsPSIjRDIyMTI4IiBkPSJNMTcuODA1IDIuMTk3di4wNjZoLjE1NnYuNDRoLjA3MnYtLjQ0aC4xNTZ2LS4wNjZ6bS45IDBsLS4xNzUuMzUzLS4xNzItLjM1M2gtLjA4N3YuNTA2aC4wNjdWMi4zbC4xNzIuMzVoLjA0NWwuMTcyLS4zNXYuNDA0aC4wNjZ2LS41MDZ6bS00LjI1NyAxYy0uMjA0LjMxLS40MjQuNjYtLjY2IDEuMDZsLS4wNC4wNjJhNDQuNDU3IDQ0LjQ1NyAwIDAwLTEuMjY1IDIuMjljLS4xODcuMzYtLjM4Ljc0Mi0uNTc3IDEuMTQ2bDIuMjY3LS4yNWMuNjYtLjMwMi45NTUtLjU3OCAxLjI0Mi0uOTc2YTE1LjUgMTUuNSAwIDAwLjIzLS4zNDJjLjIzLS4zNjMuNDYtLjc2My42NjMtMS4xNi4xOTctLjM4Ni4zNy0uNzY3LjUwNS0xLjExLjA4My0uMjIuMTUtLjQyMi4xOTgtLjYuMDQyLS4xNTguMDc0LS4zMDcuMS0uNDUtLjg4NC4xNS0xLjk2NS4yOTUtMi42NjguMzN6TTExLjg5NCA3Ljc4bC0uMDc3LjE2Yy0uMDc4LjE2LS4xNTcuMzItLjIzNi40ODgtLjA4Ni4xOC0uMTcyLjM2NC0uMjYuNTUybC0uMTMyLjI4N2E3NS4yNjUgNzUuMjY1IDAgMDAtMS40MjcgMy4zYy0uMTYzLjM5Ny0uMzI3LjgwNy0uNDkzIDEuMjMtLjE1LjM4LS4yOTcuNzY1LS40NSAxLjE2NGwtLjAyLjA2Yy0uMTUuMzk2LS4zLjgwMi0uNDUzIDEuMjJsLS4wMS4wMjcuNzItLjA4YS4yMTMuMjEzIDAgMDEtLjA0Mi0uMDA2Yy44NjMtLjEwNiAyLjAxLS43NSAyLjc1LTEuNTQ3LjM0Mi0uMzY3LjY1Mi0uOC45NC0xLjMwNi4yMTMtLjM3Ny40MTMtLjc5NS42MDQtMS4yNTguMTY4LS40MDUuMzI4LS44NDMuNDgtMS4zMTgtLjE5Ni4xMDUtLjQyMy4xOC0uNjczLjIzNWEyLjE4NCAyLjE4NCAwIDAxLS4yNzMuMDQ2Yy44MDYtLjMxIDEuMzE0LS45MDUgMS42ODMtMS42NGEyLjgxNiAyLjgxNiAwIDAxLS45NjguNDI4Yy0uMDYuMDEyLS4xMTYuMDIyLS4xNzQuMDNsLS4wNDMuMDA2aC4wMDJjLjI3OC0uMTE4LjUxNC0uMjQ4LjcxOC0uNDAzYTIuNTcxIDIuNTcxIDAgMDAuNjM3LS42OThsLjA2My0uMTA0LjA3Ny0uMTU0YTguMTA3IDguMTA3IDAgMDAuMzY3LS44NWwuMDMtLjA4OGEzLjA0IDMuMDQgMCAwMC4xMjMtLjQ2My43MzMuNzMzIDAgMDEtLjA5NC4wNjVjLS4yNDMuMTQ1LS42Ni4yNzctLjk5Ni4zNGwuNjYzLS4wNzQtLjY2NC4wNzNoLS4wMTdsLS4xLjAxN2MuMDA2LS4wMDMuMDEtLjAwNi4wMTctLjAwOGwtMi4yNjUuMjUtLjAxMy4wMjJ6TTguMjcgMTYuNDVjLS4xMTcuMzIzLS4yMzYuNjU0LS4zNTUuOTkybC0uMDA1LjAxNWMtLjAxNi4wNDYtLjAzMi4wOTQtLjA1LjE0Mi0uMDguMjI3LS4xNS40MzItLjMxLjkuMjY0LjEyLjQ3NS40MzUuNjc1Ljc5M2ExLjQ0IDEuNDQgMCAwMC0uNDY2LS45OWMxLjI5My4wNiAyLjQxLS4yNyAyLjk5LTEuMjE3LjA1LS4wODQuMDk2LS4xNzMuMTQtLjI2OC0uMjYuMzMzLS41OS40NzQtMS4yLjQ0IDAgMC0uMDA0IDAtLjAwNS4wMDJsLjAwNC0uMDAyYy45LS40MDQgMS4zNTQtLjc5IDEuNzU0LTEuNDMzLjA5NC0uMTUzLjE4Ni0uMzIuMjgtLjUwMy0uNzg4LjgxLTEuNzAyIDEuMDQtMi42NjQuODY1bC0uNzIuMDc4YTYuNDMgNi40MyAwIDAwLS4wNjcuMTgzek0xNS40Mi4xMTJjLS4zNzYuMjIyLTEgLjg1LTEuNzQ4IDEuNzYzbC42ODYgMS4yOTRjLjQ4LS42ODcuOTctMS4zMDcgMS40NjItMS44MzZsLjA1OC0uMDYyYy0uMDIuMDItLjA0LjA0LS4wNTcuMDYyLS4xNi4xNzYtLjY0NC43NC0xLjM3NSAxLjg2My43MDMtLjAzNSAxLjc4NC0uMTggMi42NjYtLjMzLjI2Mi0xLjQ3LS4yNTgtMi4xNDItLjI1OC0yLjE0MnMtLjY2LTEuMDctMS40MzYtLjYxem0tMy4wODQgNi40MDJhNDAuMjUzIDQwLjI1MyAwIDAxMS4zMDYtMi4yNmwuMDQtLjA2NGMuMjI0LS4zNTIuNDUtLjY5My42NzctMS4wMmwtLjY4NS0xLjI5My0uMTU3LjE5MmMtLjE5Ny4yNDUtLjQwMy41MS0uNjEzLjc5YTM5Ljg1MyAzOS44NTMgMCAwMC0yLjAxNiAyLjk3bC0uMDIyLjAzOC44OTMgMS43NjNjLjE5LS4zNzguMzgtLjc1Mi41NzUtMS4xMTh6bS0zLjczIDguMzJjLjE1OC0uNDA2LjMxOS0uODEuNDgzLTEuMjI1LjE1Ni0uMzk0LjMyLS43OS40ODQtMS4xOWE5MS4xMzMgOTEuMTMzIDAgMDExLjYtMy42MDRsLjIwNS0uNDI0Yy4xMi0uMjQzLjIzNy0uNDg1LjM2LS43MjRhLjEyNS4xMjUgMCAwMS4wMi0uMDRsLS44OTUtMS43NjMtLjA0NC4wN2MtLjIwNy4zNC0uNDE0LjY4Ny0uNjE3IDEuMDQyYTM4LjA1NiAzOC4wNTYgMCAwMC0xLjA5MiAyLjA0bC0uMDk0LjE5M2EyNC41NzMgMjQuNTczIDAgMDAtMS4yNTggMy4wODcgMTguNDkyIDE4LjQ5MiAwIDAwLS41MiAxLjk5N2wuODk2IDEuNzdjLjExNy0uMzE3LjI0LS42MzguMzY0LS45NjN6bS0xLjM3Ni0uNDc2YTEzLjM4IDEzLjM4IDAgMDAtLjIzNCAxLjY5MmMwIC4wMi0uMDA0LjA0LS4wMDUuMDYtLjI4LS40NS0xLjAzLS44ODgtMS4wMjYtLjg4NC41MzcuNzc4Ljk0NCAxLjU1IDEuMDA1IDIuMzEtLjI5LjA1OC0uNjg0LS4wMjctMS4xNC0uMTk1LjQ3NS40MzYuODMuNTU2Ljk3LjU4OC0uNDM0LjAzLS44OS4zMjgtMS4zNDYuNjcuNjY4LS4yNyAxLjIxLS4zOCAxLjU5Ni0uMjktLjYxIDEuNzQtMS4yMyAzLjY1NS0xLjg0MyA1LjY5YS41MzguNTM4IDAgMDAuMzY0LS4zNTRjLjExLS4zNjguODQtMi43ODYgMS45NzgtNS45NjVsLjA5Ny0uMjcuMDI4LS4wNzhjLjEyLS4zMzIuMjQ2LS42NzIuMzc0LTEuMDJsLjA5LS4yMzd2LS4wMDRMNy4yNCAxNC4zYy0uMDAzLjAyLS4wMS4wNC0uMDEyLjA2eiIvPjwvc3ZnPg==" alt="Apache" height="20" class="mr-2">Apache
+                    </div>
+                    <span id="service_apache_badge" class="badge badge-danger p-2">Stopped</span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div class="font-weight-bold">
+                        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCI+PHBhdGggZD0iTTY1IDE1TDI1IDU1aDI1TDM1IDkwbDQ1LTQ1SDU1eiIgZmlsbD0iIzFBQzQwMCIgc3Ryb2tlPSIjMDAzNTgwIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4=" alt="LiteSpeed" class="mr-2" width="20">LiteSpeed
+                    </div>
+                    <span id="service_litespeed_badge" class="badge badge-danger p-2">Stopped</span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div class="font-weight-bold">
+                        <img src="data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBmaWxsPSIjMDA5NjM5IiBkPSJNMTIgMEwxLjYwNSA2djEyTDEyIDI0bDEwLjM5NS02VjZMMTIgMHptNiAxNi41OWMwIC43MDUtLjY0NiAxLjI5LTEuNTI5IDEuMjktLjYzMSAwLTEuMzUxLS4yNTUtMS44MDEtLjgxbC02LTcuMTQxdjYuNjZjMCAuNzIxLS41NyAxLjI5LTEuMjc0IDEuMjlINy4zMmMtLjcyMSAwLTEuMjktLjYtMS4yOS0xLjI5VjcuNDFjMC0uNzA1LjYzLTEuMjkgMS41LTEuMjkuNjQ2IDAgMS4zOC4yNTUgMS44My44MWw1Ljk3IDcuMTQxVjcuNDFjMC0uNzIxLjYtMS4yOSAxLjI5LTEuMjloLjA3NWMuNzIgMCAxLjI5LjYgMS4yOSAxLjI5djkuMThIMTh6Ii8+PC9zdmc+" alt="NGINX" height="20" class="mr-2">NGINX
+                    </div>
+                    <span id="service_nginx_badge" class="badge badge-danger p-2">Stopped</span>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div class="font-weight-bold">
+                        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0Ij48cGF0aCBkPSJNMTIgMkM2LjQ4IDIgMiAzLjc5IDIgNnYxMmMwIDIuMjEgNC40OCA0IDEwIDRzMTAtMS43OSAxMC00VjZjMC0yLjIxLTQuNDgtNC0xMC00em0wIDJjNC44NyAwIDggMS41NCA4IDJzLTMuMTMgMi04IDItOC0xLjU0LTgtMiAzLjEzLTIgOC0yem0wIDE2Yy00Ljg3IDAtOC0xLjU0LTgtMnYtMy4yMWMxLjk2IDEuMDUgNC43OSAxLjcxIDggMS43MXM2LjA0LS42NiA4LTEuNzFWMThjMCAuNDYtMy4xMyAyLTggMnptMC01LjVjLTQuODcgMC04LTEuNTQtOC0ydi0zLjIxYzEuOTYgMS4wNSA0Ljc5IDEuNzEgOCAxLjcxczYuMDQtLjY2IDgtMS43MVYxMi41YzAgLjQ2LTMuMTMgMi04IDJ6IiBmaWxsPSIjMDBCMEZGIi8+PC9zdmc+" alt="Memcached" width="20" class="mr-2">Memcached
+                    </div>
+                    <span id="service_memcached_badge" class="badge badge-danger p-2">Stopped</span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div class="font-weight-bold">
+                        <img class="mr-2" alt="Redis" width="20" src="data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBmaWxsPSIjREMzODJEIiBkPSJNMjIuNzEgMTMuMTQ1Yy0xLjY2IDIuMDkyLTMuNDUyIDQuNDgzLTcuMDM4IDQuNDgzLTMuMjAzIDAtNC4zOTctMi44MjUtNC40OC01LjEyLjcwMSAxLjQ4NCAyLjA3MyAyLjY4NSA0LjIxNCAyLjYzIDQuMTE3LS4xMzMgNi45NC0zLjg1MiA2Ljk0LTcuMjM5IDAtNC4wNS0zLjAyMi02Ljk3Mi04LjI2OC02Ljk3Mi0zLjc1MiAwLTguNCAxLjQyOC0xMS40NTUgMy42ODVDMi41OSA2LjkzNyAzLjg4NSA5Ljk1OCA0LjM1IDkuNjI2YzIuNjQ4LTEuOTA0IDQuNzQ4LTMuMTMgNi43ODQtMy43NDRDOC4xMiA5LjI0NC44ODYgMTcuMDUgMCAxOC40MjVjLjEgMS4yNjEgMS42NiA0LjY0OCAyLjQyNCA0LjY0OC4yMzIgMCAuNDMxLS4xMzMuNjY0LS4zNjVhMTAwLjQ5IDEwMC40OSAwIDAgMCA1LjU0LTYuNzY1Yy4yMjIgMy4xMDQgMS43NDggNi44OTggNi4wMTQgNi44OTggMy44MTkgMCA3LjYwNC0yLjc1NiA5LjMzLTguOTY1LjItLjc2NC0uNzMtMS4zNjEtMS4yNjEtLjczem0tNC4zNDktNS4wMTNjMCAxLjk1OS0xLjkyNiAyLjkyMi0zLjY4NSAyLjkyMi0uOTQxIDAtMS42NjQtLjI0Ny0yLjIzNS0uNTY4IDEuMDUxLTEuNTkyIDIuMDkyLTMuMjI1IDMuMjEtNC45NzMgMS45NzIuMzM0IDIuNzEgMS40MyAyLjcxIDIuNjE5eiIvPjwvc3ZnPg==">Redis
+                    </div>
+                    <span id="service_redis_badge" class="badge badge-danger p-2">Stopped</span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div>
+                        <img class="mr-2" alt="PHP" height="20" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiByeD0iMiIgZmlsbD0iIzRmNWI5MyIvPjxnIGZpbGw9IiNmZmYiPjxwYXRoIGQ9Ik0yLjEwOCA1Ljk2MmgyLjA3NmMuNjEuMDA1IDEuMDUxLjE4MSAxLjMyNS41MjdzLjM2NC44MTkuMjcgMS40MThhMi43MiAyLjcyIDAgMCAxLS4yNC44MDZjLS4xMTguMjYzLS4yODMuNS0uNDk1LjcxMi0uMjU4LjI2OS0uNTM1LjQ0LS44MjkuNTEycy0uNi4xMDgtLjkxNC4xMDhoLS45M2wtLjI5NCAxLjQ3MkgxbDEuMTA4LTUuNTU1bS45MDYuODg0TDIuNTUgOS4xN2EuNTcuNTcgMCAwIDAgLjA5My4wMDdoLjEwOWMuNDk2LjAwNi45MDktLjA0MyAxLjI0LS4xNDcuMzMtLjEwOC41NTItLjQ4NS42NjYtMS4xMy4wOTMtLjU0MyAwLS44NTYtLjI4LS45MzgtLjI3My0uMDgzLS42MTYtLjEyMi0xLjAzLS4xMTZhMi4xNjkgMi4xNjkgMCAwIDEtLjE3OC4wMDdoLS4xNjNsLjAwOC0uMDA3TTcuMDA3IDQuNDgzaDEuMDY5bC0uMzAyIDEuNDhoLjk2Yy41MjcuMDEuOTIuMTE4IDEuMTc4LjMyNS4yNjMuMjA2LjM0LjU5OS4yMzIgMS4xNzdsLS41MTkgMi41OEg4LjU0bC40OTYtMi40NjNjLjA1Mi0uMjU5LjAzNi0uNDQyLS4wNDYtLjU1cy0uMjYxLS4xNjMtLjUzNS0uMTYzbC0uODYtLjAwOC0uNjM1IDMuMTg0SDUuODkxbDEuMTE2LTUuNTYyTTExLjI5MiA1Ljk2MmgyLjA3NmMuNjEuMDA1IDEuMDUxLjE4MSAxLjMyNS41MjdzLjM2NC44MTkuMjcxIDEuNDE4YTIuNzIgMi43MiAwIDAgMS0uMjQuODA2Yy0uMTE5LjI2My0uMjg0LjUtLjQ5Ni43MTItLjI1OC4yNjktLjUzNC40NC0uODI5LjUxMnMtLjU5OS4xMDgtLjkxNC4xMDhoLS45M2wtLjI5NCAxLjQ3MmgtMS4wNzdsMS4xMDgtNS41NTVtLjkwNy44ODQtLjQ2NSAyLjMyNGEuNTcuNTcgMCAwIDAgLjA5My4wMDdoLjEwOGMuNDk2LjAwNi45MS0uMDQzIDEuMjQtLjE0Ny4zMy0uMTA4LjU1Mi0uNDg1LjY2Ni0xLjEzLjA5My0uNTQzIDAtLjg1Ni0uMjc5LS45MzgtLjI3NC0uMDgzLS42MTctLjEyMi0xLjAzLS4xMTZhMi4xNjkgMi4xNjkgMCAwIDEtLjE3OS4wMDdoLS4xNjJsLjAwOC0uMDA3Ii8+PC9nPjwvc3ZnPg==">
+                        <strong>PHP:</strong> <span id="service_php_name">N/A</span>,
+                        <strong>memory_limit:</strong> <span id="service_php_limit">N/A</span>
+                    </div>
+                    <span id="service_php_badge" class="badge badge-danger p-2">Stopped</span>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div>
+                        <img src="data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBmaWxsPSIjMDczNTUxIiBkPSJNLjgwMyAxNC44MTY5YzAtLjUzNDIuNDMzLS45NjY1Ljk2NjUtLjk2NjUuNTMzNSAwIC45NjY1LjQzMjMuOTY2NS45NjY1IDAgLjUzMzUtLjQzMy45NjU3LS45NjY1Ljk2NTctLjUzMzUgMC0uOTY2Ni0uNDMyMi0uOTY2Ni0uOTY1N20yLjczNiAwYzAtLjE5NjMtLjA1MzItLjM3Ni0uMTExOS0uNTUyNS0uMjM0NC0uNzAyNC0uODc2LTEuMjE2OS0xLjY1NzUtMS4yMTY5LS4xMjQ5IDAtLjIzNDQuMDQ2NS0uMzUyNC4wNzA4Qy42MTQ5IDEzLjI4NjUgMCAxMy45NjQ2IDAgMTQuODE3YzAgLjk3NjQuNzkyMyAxLjc2OTQgMS43Njk1IDEuNzY5NC45NzcyIDAgMS43Njk0LS43OTMgMS43Njk0LTEuNzY5NG0tMS43Njk0LTcuMTQ5Yy41MzM1IDAgLjk2NjUuNDMzLjk2NjUuOTY2NSAwIC41MzM1LS40MzMuOTY2NS0uOTY2NS45NjY1LS41MzQzIDAtLjk2NjYtLjQzMy0uOTY2Ni0uOTY2NSAwLS41MzM1LjQzMjMtLjk2NjUuOTY2Ni0uOTY2NW0wIDIuNzM1OWMuOTc3MiAwIDEuNzY5NC0uNzkyMyAxLjc2OTQtMS43Njk0IDAtLjE5NTYtLjA1MzItLjM3Ni0uMTExOS0uNTUyNS0uMjM0NC0uNzAyNC0uODc2Ny0xLjIxNjktMS42NTc1LTEuMjE2OS0uMTI0OSAwLS4yMzQ0LjA0NjUtLjM1MjQuMDcxNkMuNjE0OSA3LjEwNCAwIDcuNzgyIDAgOC42MzQ0YzAgLjk3NzEuNzkyMyAxLjc2OTQgMS43Njk1IDEuNzY5NG0xMy4yMjEtNS42OTRjLS41MzQyIDAtLjk2NjUtLjQzMy0uOTY2NS0uOTY2NGEuOTY2Ljk2NiAwIDAxLjk2NjYtLjk2NjVjLjUzMzUgMCAuOTY1OC40MzIyLjk2NTguOTY2NSAwIC41MzM0LS40MzIzLjk2NjQtLjk2NTguOTY2NG0tOS42IDE2LjUxMzNjLS41MzM1IDAtLjk2NjYtLjQzMy0uOTY2Ni0uOTY2NSAwLS41MzQyLjQzMy0uOTY2NS45NjY2LS45NjY1YS45NjYuOTY2IDAgMDEuOTY2NS45NjY1YzAgLjUzMzUtLjQzMjMuOTY2NS0uOTY2NS45NjY1bTkuNi0xOS4yNDkxYy0uOTc4IDAtMS43Njk1Ljc5MjItMS43Njk1IDEuNzY5NCAwIC4yMDg1LjA1MjUuNDAyNS4xMTg3LjU4ODJMNS4wMzkgMTguNTU4MWMtLjgwMy4xNjgxLTEuNDE3OS44NDYyLTEuNDE3OSAxLjY5ODUgMCAuOTc3Mi43OTIzIDEuNzY5NCAxLjc2OTUgMS43Njk0Ljk3NzIgMCAxLjc2OTQtLjc5MjIgMS43Njk0LTEuNzY5NCAwLS4xOTYzLS4wNTI1LS4zNzU5LS4xMTEtLjU1MjVsOC4zNDI3LTE0LjI3MjhjLjc3NzgtLjE4NjUgMS4zNjgzLS44NTMxIDEuMzY4My0xLjY4OCAwLS45NzctLjc5My0xLjc2OTMtMS43Njk0LTEuNzY5M203LjI0IDIuNzM1OWMtLjUzNDMgMC0uOTY2Ni0uNDMzLS45NjY2LS45NjY1YS45NjYuOTY2IDAgMDEuOTY2NS0uOTY2NWMuNTMzNSAwIC45NjY2LjQzMjIuOTY2Ni45NjY1IDAgLjUzMzQtLjQzMy45NjY1LS45NjY2Ljk2NjVNMTIuNjMxMyAyMS4yMjNjLS41MzQzIDAtLjk2NjUtLjQzMy0uOTY2NS0uOTY2NWEuOTY2Ljk2NiAwIDAxLjk2NjUtLjk2NjVjLjUzMzUgMCAuOTY1OC40MzIzLjk2NTguOTY2NSAwIC41MzM1LS40MzIzLjk2NjUtLjk2NTguOTY2NU0yMi4yMzA1IDEuOTc0Yy0uOTc3MiAwLTEuNzY5NC43OTIyLTEuNzY5NCAxLjc2OTQgMCAuMjA4NS4wNTI1LjQwMjUuMTE4Ny41ODgybC04LjMwMDkgMTQuMjI2NWMtLjgwMjEuMTY4MS0xLjQxNy44NDYyLTEuNDE3IDEuNjk4NSAwIC45NzcyLjc5MjIgMS43Njk0IDEuNzY5NCAxLjc2OTQuOTc2NCAwIDEuNzY4Ny0uNzkyMiAxLjc2ODctMS43Njk0IDAtLjE5NjMtLjA1MjUtLjM3NTktLjExMTEtLjU1MjVsOC4zNDI3LTE0LjI3MjhDMjMuNDA5NCA1LjI0NDggMjQgNC41NzgyIDI0IDMuNzQzM2MwLS45NzctLjc5MjMtMS43NjkzLTEuNzY5NS0xLjc2OTMiLz48L3N2Zz4=" alt="cURL" width="20" class="mr-2">
+                        <strong>cURL:</strong> <span id="service_php_curl">N/A</span>,
+                        <strong>SSL:</strong> <span id="service_php_ssl">N/A</span>,
+                        <strong>Brotli:</strong> <span id="service_php_brotli">N/A</span>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center justify-content-between p-2 border rounded mb-2">
+                    <div>
+                        <strong>OS:</strong> <span id="statusOS">N/A</span>,
+                        <strong>Uptime:</strong> <span id="statusUptime">0 hours</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if link is defined and link is not empty %}
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let lbStatus = setInterval(function() {
+                if (typeof load_balancers !== "undefined") {
+                    // Initial load
+                    load_balancers.loadStatusCard('{{ link }}', $('#btnLoadStatusServer'));
+                    clearInterval(lbStatus);
+                }
+            }, 500);
+        });
+    </script>
+{% endif %}

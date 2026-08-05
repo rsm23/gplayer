@@ -1,0 +1,153 @@
+{% set newTitle = isError ? title : text_title|replace({'{title}': title, '{siteName}': site_name}) %}
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		{% if isSSL %}
+			<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+		{% endif %}
+        <meta name="referrer" content="{{ isApple ? 'same-origin' : 'no-referrer' }}">
+		<meta name="robots" content="noindex">
+		<meta name="googlebot" content="noindex">
+		<meta name="description" content="{{ newTitle }}">
+		<meta name="og:sitename" content="{{ site_name }}">
+		<meta name="og:title" content='{{ title }}'>
+		<meta name="og:description" content="{{ newTitle }}">
+		<meta name="og:type" content="video.movie">
+		<meta name="og:image" content="{{ poster }}">
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="twitter:title" content='{{ title }}'>
+		<meta name="twitter:description" content="{{ newTitle }}">
+		<meta name="twitter:image" content="{{ poster }}">
+		<meta name="msapplication-TileColor" content="{{ theme_color }}">
+		<meta name="theme-color" content="{{ theme_color }}">
+		<meta name="mobile-web-app-capable" content="yes">
+		<title>{{ newTitle }}</title>
+		<link rel="preconnect dns-prefetch" href="{{ base_url }}">
+		<link rel="preconnect dns-prefetch" href="//www.gstatic.com">
+		<link rel="preconnect dns-prefetch" href="//www.googleapis.com">
+		<link rel="preconnect dns-prefetch" href="//www.googletagmanager.com">
+		<link rel="preconnect dns-prefetch" href="//www.google.com">
+		<link rel="preconnect dns-prefetch" href="//www.google-analytics.com">
+		<link rel="preconnect dns-prefetch" href="//fonts.gstatic.com">
+		<link rel="preconnect dns-prefetch" href="//googleusercontent.com">
+		<link rel="preconnect dns-prefetch" href="//lh3.googleusercontent.com">
+		<link rel="preconnect dns-prefetch" href="//drive-thirdparty.googleusercontent.com">
+		<link rel="shortcut icon" href="{{ base_url }}favicon.ico" type="image/ico">
+		<link rel="stylesheet" href="{{ base_url }}assets/vendor/bootstrap/4.6.2/css/bootstrap.min.css">
+        <style type="text/css">
+            html, body {
+                padding: 0;
+                margin: 0;
+                overflow-x: hidden;
+                width: 100%;
+            }
+            .a2a_floating_style  {
+                left: 0;
+                top: 150px;
+                position: fixed;
+                z-index: 1024 !important;
+            }
+            .a2a_floating_style a {
+                clear: left;
+                display: block;
+                overflow: hidden;
+                padding: 4px;
+                text-decoration: none;
+            }
+            @media screen and (max-width: 1099px) {
+                .a2a_floating_style {
+                    top: auto;
+                    bottom: 0;
+                    width: auto;
+                    min-width: 208px;
+                    border-radius: 0 6px 0 0 !important;
+                }
+                .a2a_floating_style a {
+                    float: left;
+                    line-height: 16px;
+                    padding: 4px;
+                    clear: none;
+                }
+            }
+        </style>
+		<script type="text/javascript" src="{{ base_url }}assets/vendor/jquery/3.7.1/jquery.min.js"></script>
+        <script type="text/javascript" src="{{ base_url }}assets/vendor/globalThis.js"></script>
+        <script type="text/javascript" src="{{ base_url }}assets/vendor/promise-polyfill/8.3.0/polyfill.min.js"></script>
+        {% if productionMode %}
+            <script type="text/javascript" src="{{ base_url }}assets/vendor/dd.js" defer></script>
+            <script type="text/javascript">
+                (function(){var devToolsOpened=false;if(typeof devtoolsDetector!=="undefined"){devtoolsDetector.addListener(function(isOpen,event){devToolsOpened=isOpen});devtoolsDetector.launch()}setInterval(function(){if(devToolsOpened){if(typeof jQuery!=="undefined"){var $=jQuery;$(".btn-watch, .alert, #title").hide();$("#dlWrapper").html('<h1 class="h3" style="text-align:center">Do not open Developer Tools! <a href="javascript:void(0)" onclick="location.href=location.href">Reload</a></h1>');$(document).ajaxSend(function(event,jqXHR,settings){jqXHR.abort()})}location.href="https://google.com"}},1000)})();
+            </script>
+        {% endif %}
+        {% if templates.blockadb %}
+            {% include templates.blockadb %}
+        {% endif %}
+		<script type="text/javascript">{{ jsVars|raw }}</script>
+        {% include templates.ga %}
+        {% include templates.gtm_head %}
+	</head>
+
+    <body class="bg-light h-100">
+        {% include templates.gtm_body %}
+        <div class="container bg-white rounded shadow py-5 my-5">
+            <div class="row">
+                <div class="col-12 text-center">
+                    <h1 id="title" class="h3 mb-2" style="word-break: break-all;">
+                        {% if isError %}
+                            <span class="text-danger">{{ message }}</span>
+                        {% else %}
+                            Download <span class="title">{{ title }}</span>
+                        {% endif %}
+                    </h1>
+                </div>
+                {% if disable_banner_ads != 1 and dl_banner_top is not empty %}
+                    <div class="col-12 mb-2">{{ dl_banner_top|raw }}</div>
+                {% endif %}
+                <div class="col-12 col-md-9 mx-auto">
+                    {% if isError %}
+                    {% else %}
+                        <div class="alert alert-success">To increase download speed in Chrome (Chromium based) browser, you just need to enable <strong>Parallel downloading</strong> feature in your <strong>chrome://flags</strong> setting page.</div>
+                        {% if servers|length > 1 %}
+                            <div id="server-list" style="display:none">
+                                <button type="button" id="btnServer" onclick="$('#servers').toggle()">
+                                    <img src="{{ base_url }}assets/img/menu.png" alt="Servers">
+                                </button>
+                                <ul id="servers" style="display:none">
+                                    {% for i, val in servers %}
+                                        <li>
+                                            <a href="{{ val.url }}" {{ val.id == selectedServer ? 'class="active"' : '' }}>
+                                                {% if hideHostname %}
+                                                    {{ val.name }}
+                                                {% else %}
+                                                    <img src="{{ base_url }}assets/img/logo/{{ val.host }}.png" alt="{{ val.name }}" width="16" height="16"/>&nbsp;{{ val.name }}
+                                                {% endif %}
+                                            </a>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                        {% if showWatchButton %}
+                            <a href="{{ embedURL }}" class="btn btn-danger btn-block btn-watch" target="_blank">Watch <span class="title">{{ title }}</span></a>
+                        {% endif %}
+                        <div id="dlWrapper" class="my-2"></div>
+                        <script type="text/javascript" src="{{ base_url }}assets/vendor/crypto-js/4.2.0/crypto-js.min.js" defer></script>
+                        <script type="text/javascript" src="{{ base_url }}assets/js/download-v{{ downloadVersion }}.min.js" async></script>
+                    {% endif %}
+                </div>
+                {% if disable_banner_ads != 1 and dl_banner_bottom is not empty %}
+                    <div class="col-12 mt-2">{{ dl_banner_bottom|raw }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% include templates.histats %}
+        {% include templates.sharer %}
+        {% if templates.popupads %}
+            {% include templates.popupads %}
+        {% endif %}
+    </body>
+</html>

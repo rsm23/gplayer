@@ -1,0 +1,59 @@
+<style>
+    .cube-spinner-1 {
+        --loader-size: clamp(80px, 20vmin, 160px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: calc(var(--loader-size) * 0.05);
+        width: var(--loader-size);
+        height: calc(var(--loader-size) * 0.25);
+        perspective: var(--loader-size);
+        margin: 0 auto;
+        box-sizing: border-box;
+    }
+
+    .cube-spinner-1 div {
+        width: calc(var(--loader-size) * 0.25);
+        height: calc(var(--loader-size) * 0.25);
+        background-color: {{ playerColor }};
+        animation: cube-spin 1.2s infinite ease-in-out;
+        will-change: transform;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+    }
+
+    .cube-spinner-1 div:nth-child(2) {
+        background-color: {{ playerColor2 }};
+        animation-delay: 0.3s;
+    }
+
+    .cube-spinner-1 div:nth-child(3) {
+        background-color: {{ playerColor }};
+        animation-delay: 0.6s;
+    }
+
+    .cube-spinner-1 div:nth-child(4) {
+        background-color: {{ playerColor2 }};
+        animation-delay: 0.9s;
+    }
+
+    @keyframes cube-spin {
+        0%,
+        100% {
+            background-color: {{ playerColor2 }};
+            transform: rotateX(0) rotateY(0);
+            -webkit-transform: rotateX(0) rotateY(0);
+        }
+        50% {
+            background-color: {{ playerColor }};
+            transform: rotateX(180deg) rotateY(180deg);
+            -webkit-transform: rotateX(180deg) rotateY(180deg);
+        }
+    }
+</style>
+<div class="cube-spinner-1">
+    <div></div>
+    <div></div>
+    <div></div>
+    <div></div>
+</div>

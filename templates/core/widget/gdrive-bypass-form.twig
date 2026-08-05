@@ -1,0 +1,13 @@
+<form id="frmBypassLimit" method="post">
+    <input type="hidden" name="action" value="gdriveBypassLimit">
+    <div class="form-group">
+        <label for="gdrive_id">Google Drive URL or File ID</label>
+        <input type="text" name="gdrive_id" id="gdrive_id" class="form-control form-control-lg" placeholder="Paste ID or full drive.google.com link here..." required>
+    </div>
+    <div class="form-group text-center">
+        {% include templates.grecaptcha %}
+        <button id="submit" type="submit" class="btn btn-custom btn-lg btn-block">
+            <em class="fab fa-google-drive mr-2"></em>Get Bypassed URL
+        </button>
+    </div>
+</form>

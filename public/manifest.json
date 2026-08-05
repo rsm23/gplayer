@@ -1,0 +1,25 @@
+{
+  "name": "GPlayer",
+  "short_name": "GPlayer",
+  "description": "The GDPlayer 4.8.3 media gateway rebuilt in Node.js, with 63 registered host adapters.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0e0c",
+  "theme_color": "#0b0e0c",
+  "icons": [
+    {
+      "src": "assets/img/film.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/img/maskable_icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

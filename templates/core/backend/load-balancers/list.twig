@@ -1,0 +1,60 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		<div class="toolbar d-flex flex-wrap mb-3 toolbar">
+			<a href="{{ backend_url }}load-balancers/new" class="btn btn-success">
+				<em class="fas fa-plus-circle mr-2"></em>Add New
+			</a>
+			<button type="button" class="btn btn-info" onclick="load_balancers.reload()">
+				<em class="fas fa-sync-alt mr-2"></em>Reload
+			</button>
+		</div>
+		<table id="tbLoadBalancers" class="table table-striped table-bordered table-hover m-0 w-100">
+			<thead>
+				<tr>
+					<th scope="col" data-priority="0">Name</th>
+					<th scope="col" data-priority="1">URL</th>
+					<th scope="col" data-priority="3">Connections</th>
+					<th scope="col" data-priority="4">Playbacks</th>
+					<th scope="col" data-priority="5">Status</th>
+					<th scope="col" data-priority="6">Created</th>
+					<th scope="col" data-priority="7">Updated</th>
+					<th scope="col" data-priority="2">Actions</th>
+				</tr>
+			</thead>
+			<tfoot>
+				<tr>
+					<th scope="col" data-priority="0">Name</th>
+					<th scope="col" data-priority="1">URL</th>
+					<th scope="col" data-priority="3">Connections</th>
+					<th scope="col" data-priority="4">Playbacks</th>
+					<th scope="col" data-priority="5">Status</th>
+					<th scope="col" data-priority="6">Created</th>
+					<th scope="col" data-priority="7">Updated</th>
+					<th scope="col" data-priority="2">Actions</th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+</div>
+
+<div class="modal fade" id="mdlServerStatus" data-backdrop="static" data-keyboard="false" tabindex="-1" aria-labelledby="mdlServerStatusTitle" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered modal-lg">
+		<div class="modal-content">
+			<div class="modal-body p-2" id="mdlServerStatusBody">
+				{% if server_status is defined %}
+					{% include server_status %}
+				{% endif %}
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+	</div>
+</div>
+
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot('backend.load_balancers.list.bottom') }}
+
+{% include templates.backend_footer %}

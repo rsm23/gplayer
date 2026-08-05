@@ -1,0 +1,4 @@
+title,video_url,subtitle_url,subtitle_label,video_url,subtitle_json,slug,subtitle_url,subtitle_label
+video 1,https://cyberfile.me/788e,https://example.com/subtitles/en.vtt,English,https://www.aparat.com/v/DnFUp,https://example.com/subtitles/subs.json,slug-1,https://example.com/subtitles/id.vtt,Indonesia
+video 2,https://dropden.com/917734bb2b58,https://example.com/subtitles/id2.vtt,Indonesia,https://darkibox.com/ev9tdsfncemw,,,https://example.com/subtitles/en2.vtt,English
+video 3,https://darkibox.com/ev9tdsfncemw,,,,,,https://example.com/subtitles/id3.vtt,Indonesia

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<meta name="robots" content="noindex">
+		<meta name="googlebot" content="noindex">
+		<meta name="description" content="{{ title ~ ' - ' ~ site_name }}">
+		<meta name="msapplication-TileColor" content="{{ themeColor }}">
+		<meta name="theme-color" content="{{ themeColor }}">
+		<meta name="mobile-web-app-capable" content="yes">
+		<link rel="manifest" href="{{ base_url }}manifest.json">
+		<link rel="mask-icon" href="{{ base_url }}assets/img/maskable_icon.png" color="#ffffff">
+		<link rel="shortcut icon" href="{{ base_url }}favicon.ico" type="image/ico">
+		<title>{{ title ~ ' - ' ~ site_name }}</title>
+		<style type="text/css">
+			body {
+				padding: 0;
+				margin: 0;
+				box-sizing: border-box;
+				font-size: 15px;
+				overflow: hidden;
+				background: #000;
+			}
+
+			#videoContainer {
+				position: absolute !important;
+				width: 100% !important;
+				height: 100% !important;
+				z-index: 2;
+			}
+
+			#mContainer #message {
+				display: none;
+				text-align: center;
+				font-size: 1.5em;
+				word-break: break-word;
+			}
+
+			.embed-container {
+				text-align: center;
+				width: 100%;
+				height: 100%;
+				padding: 0;
+				margin: 0;
+				background: #000;
+				position: absolute;
+				color: #fff;
+				z-index: 3;
+				line-height: 1.4;
+			}
+
+			.embed-wrapper {
+				position: fixed;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				width: 90%;
+			}
+		</style>
+		{{ GA }}
+		{{ GTM_Head }}
+		<script type="text/javascript" src="{{ base_url }}assets/vendor/globalThis.js"></script>
+	</head>
+
+	<body class="videoplayer">
+		{{ GTM_Body }}
+		<div id="mContainer" class="embed-container">
+			<div class="embed-wrapper">
+				<h1 id="message" style="{{ isError ? 'display:block' : '' }}">{{ message }}</h1>
+			</div>
+		</div>
+		{{ Histats }}
+	</body>
+
+</html>

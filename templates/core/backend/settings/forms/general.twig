@@ -1,0 +1,231 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">General Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="main_site">Main Site Homepage URL</label>
+					<input type="url" name="main_site" id="main_site" placeholder="Example: http://mainsite.com/" class="form-control" value="{{ main_site }}" required>
+					<small class="form-text text-muted">The main site that acts as the public video player generator. If someone accesses the video player generator from a load balancer site, they will be redirected to this main site.</small>
+				</div>
+				<div class="mb-3">
+					<label for="timezone">Timezone</label>
+					<select name="timezone" id="timezone" class="form-control select2">
+						{% for dt in timezone_list %}
+							<option value="{{ dt }}" {{ dt == timezone ? 'selected' : '' }}>{{ dt }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="production_mode" value="false">
+						<input type="checkbox" class="custom-control-input" id="production_mode" name="production_mode" value="true" {{ production_mode ? 'checked' : '' }}>
+						<label class="custom-control-label" for="production_mode">Production Mode</label>
+					</div>
+					<small class="form-text text-muted">If enabled, JavaScript code will be encrypted.</small>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Cache Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_cache_file" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_cache_file" name="enable_cache_file" value="true" {{ enable_cache_file ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_cache_file">Enable Proxy Cache Files</label>
+					</div>
+					<small class="form-text text-muted">If enabled, video files from the database will be cached locally on your server.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="enable_bg_download" value="false">
+						<input type="checkbox" class="custom-control-input" id="enable_bg_download" name="enable_bg_download" value="true" {{ enable_bg_download ? 'checked' : '' }}>
+						<label class="custom-control-label" for="enable_bg_download">Enable Background MP4 Video Download</label>
+					</div>
+					<small class="form-text text-muted">If enabled, MP4 video files will be cached locally. HLS/MPD videos are not affected by this option.</small>
+				</div>
+				<div class="mb-3">
+					<label for="cache_file_timeout">Proxy Cache Files Timeout</label>
+					<div class="input-group">
+						<input type="number" class="form-control" name="cache_file_timeout" id="cache_file_timeout" placeholder="Insert Proxy Cache Timeout" value="{{ cache_file_timeout is not empty ? cache_file_timeout : 3600 }}">
+						<div class="input-group-append">
+							<div class="input-group-text">Seconds</div>
+						</div>
+					</div>
+					<small class="form-text text-muted">Cache files will be deleted after they expire to free up storage space. Default: 3600 seconds.</small>
+				</div>
+				<div class="mb-3">
+					<label for="cache_mode">Proxy Cache Files Read Mode</label>
+					<select name="cache_mode" id="cache_mode" class="form-control">
+						<option value="php" {{ 'php' == cache_mode ? 'selected' : '' }}>PHP File Handler</option>
+						<option value="apache" {{ 'apache' == cache_mode ? 'selected' : '' }}>Apache X-Sendfile</option>
+						<option value="litespeed" {{ 'litespeed' == cache_mode ? 'selected' : '' }}>Litespeed X-Litespeed-Location</option>
+						<option value="nginx" {{ 'nginx' == cache_mode ? 'selected' : '' }}>Nginx X-Accel-Redirect</option>
+					</select>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Google Drive & Photos Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="gphotos_hls" value="false">
+						<input type="checkbox" class="custom-control-input" id="gphotos_hls" name="gphotos_hls" value="true" {{ gphotos_hls ? 'checked' : '' }}>
+						<label class="custom-control-label" for="gphotos_hls">Enable Google Photos HLS Mode</label>
+					</div>
+					<small class="form-text text-muted">If enabled, Google Photos will prioritize using HLS stream mode if Google Photos proxying is bypassed.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="gdrive_hls" value="false">
+						<input type="checkbox" class="custom-control-input" id="gdrive_hls" name="gdrive_hls" value="true" {{ gdrive_hls ? 'checked' : '' }}>
+						<label class="custom-control-label" for="gdrive_hls">Enable Google Drive HLS Mode</label>
+					</div>
+					<small class="form-text text-muted">If enabled, Google Drive will prioritize using HLS stream mode if Google Drive proxying is bypassed.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="gdrive_copy" value="false">
+						<input type="checkbox" class="custom-control-input" id="gdrive_copy" name="gdrive_copy" value="true" {{ gdrive_copy ? 'checked' : '' }}>
+						<label class="custom-control-label" for="gdrive_copy">Enable Always Copy Google Drive Files</label>
+					</div>
+					<small class="form-text text-muted">If enabled, embedded Google Drive videos will be backed up to a Google Drive account.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="gdrive_copy_all" value="false">
+						<input type="checkbox" class="custom-control-input" id="gdrive_copy_all" name="gdrive_copy_all" value="true" {{ gdrive_copy_all ? 'checked' : '' }}>
+						<label class="custom-control-label" for="gdrive_copy_all">Enable Always Copy Google Drive Files to All Accounts</label>
+					</div>
+					<small class="form-text text-muted">If enabled, embedded Google Drive videos will be backed up to all connected Google Drive accounts.</small>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">Load Balancer & Security</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="load_balancer_rand" value="false">
+						<input type="checkbox" class="custom-control-input" id="load_balancer_rand" name="load_balancer_rand" value="true" {{ load_balancer_rand ? 'checked' : '' }}>
+						<label class="custom-control-label" for="load_balancer_rand">Video Stream Rand</label>
+					</div>
+					<small class="form-text text-muted">If enabled, the direct video stream URL will be selected randomly from alternative sources. If disabled, a list of alternative hosts will be displayed on the embed page.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="disable_validation" value="false">
+						<input type="checkbox" class="custom-control-input" id="disable_validation" name="disable_validation" value="true" {{ disable_validation ? 'checked' : '' }}>
+						<label class="custom-control-label" for="disable_validation">Disable Validation</label>
+					</div>
+					<small class="form-text text-muted">If enabled, CORS policy and token validation will be disabled. Use this option with caution as it makes your site more vulnerable to DDoS attacks.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="select_active_connections" value="false">
+						<input type="checkbox" class="custom-control-input" id="select_active_connections" name="select_active_connections" value="true" {{ select_active_connections ? 'checked' : '' }}>
+						<label class="custom-control-label" for="select_active_connections">Enable Least Connections Mode</label>
+					</div>
+					<small class="form-text text-muted">If enabled, the load balancer with the lowest resource usage will be selected.</small>
+				</div>
+				<div class="mb-3">
+					<label for="maxmind_license_key">MaxMind License Key</label>
+					<input type="text" class="form-control" name="maxmind_license_key" id="maxmind_license_key" value="{{ maxmind_license_key }}" placeholder="Insert MaxMind License Key">
+					<small class="form-text text-muted">A MaxMind License Key is required to update GeoIP information, ensuring the validation system functions correctly to prevent DDoS attacks.</small>
+				</div>
+				<div class="mb-3">
+					<label for="anti_captcha">
+						<a href="https://bit.ly/3rCQPtU" target="_blank" rel="noopener">Anti-Captcha</a> API Key
+					</label>
+					<input type="text" class="form-control" name="anti_captcha" id="anti_captcha" value="{{ anti_captcha }}" placeholder="Insert Anti-Captcha API Key">
+					<small class="form-text text-muted">This Anti-Captcha API key is used to bypass captchas when fetching videos from external hosts (e.g., retrieving DoodStream sources or Uptobox multi-resolution links).</small>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Import & Visit Counter Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="visit_counter">Visit Counter</label>
+					<input type="number" min="1" class="form-control" name="visit_counter" id="visit_counter" placeholder="Insert Max. Views Per Video/IP" value="{{ visit_counter is not empty ? visit_counter : 1 }}">
+					<small class="form-text text-muted">The maximum number of views allowed per video/IP address within 24 hours.</small>
+				</div>
+				<div class="mb-3">
+					<label for="visit_counter_runtime">Visit Counter Running Time</label>
+					<div class="input-group">
+						<input type="number" class="form-control" name="visit_counter_runtime" id="visit_counter_runtime" placeholder="Insert Visit Counter Running Time" value="{{ visit_counter_runtime is not empty ? visit_counter_runtime : 10 }}">
+						<div class="input-group-append">
+							<div class="input-group-text">Seconds</div>
+						</div>
+					</div>
+					<small class="form-text text-muted">The visit counter will register a view once the video play time reaches or exceeds this duration.</small>
+				</div>
+				<div class="mb-3">
+					<label for="import_filesize">Import Videos Max. Filesize</label>
+					<div class="input-group">
+						<input type="number" class="form-control" name="import_filesize" id="import_filesize" placeholder="Import Videos Per Page" min="1" step="3" value="{{ import_filesize is not empty ? import_filesize : 1024 }}">
+						<div class="input-group-append">
+							<div class="input-group-text">kB</div>
+						</div>
+					</div>
+					<small class="form-text text-muted">Limit the maximum size of imported CSV files to prevent degradation of server performance. Default: 1024 kB.</small>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Third-Party Integrations</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="google_analytics_id">
+						<a href="https://analytics.google.com/" target="_blank" rel="noopener">Google Analytics</a> ID
+					</label>
+					<input type="text" class="form-control" name="google_analytics_id" id="google_analytics_id" placeholder="Example: UA-123456" value="{{ google_analytics_id }}">
+				</div>
+				<div class="mb-3">
+					<label for="google_tag_manager">
+						<a href="https://tagmanager.google.com/" target="_blank" rel="noopener">Google Tag Manager</a> ID
+					</label>
+					<input type="text" class="form-control" name="google_tag_manager" id="google_tag_manager" placeholder="Example: GTM-123456" value="{{ google_tag_manager }}">
+				</div>
+				<div class="mb-3">
+					<label for="histats_id">
+						<a href="https://www.histats.com/" target="_blank" rel="noopener">Histats</a> SID
+					</label>
+					<input type="text" class="form-control" name="histats_id" id="histats_id" placeholder="Insert Histats SID" value="{{ histats_id }}">
+				</div>
+				<div class="mb-3">
+					<label for="recaptcha_site_key">
+						<a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener">Google ReCaptcha</a> Site Key
+					</label>
+					<input type="text" class="form-control" name="recaptcha_site_key" id="recaptcha_site_key" placeholder="Insert Google ReCaptcha Site Key" value="{{ recaptcha_site_key }}">
+				</div>
+				<div class="mb-3">
+					<label for="recaptcha_secret_key">Google ReCaptcha Secret Key</label>
+					<input type="text" class="form-control" name="recaptcha_secret_key" id="recaptcha_secret_key" placeholder="Insert Google ReCaptcha Secret Key" value="{{ recaptcha_secret_key }}">
+				</div>
+				<div class="mb-3">
+					<label for="disqus_shortname">Disqus Shortname</label>
+					<div class="input-group">
+						<input type="text" name="disqus_shortname" id="disqus_shortname" placeholder="Insert Disqus Shortname" class="form-control" value="{{ disqus_shortname }}">
+						<div class="input-group-append">
+							<div class="input-group-text">.disqus.com</div>
+						</div>
+					</div>
+				</div>
+				<div class="mb-0">
+					<label for="chat_widget">Chat Widget Script</label>
+					<textarea name="chat_widget" id="chat_widget" cols="30" rows="5" class="form-control" placeholder="Enter the Chat Widget javascript code (with the <script> tag)">{{ chat_widget }}</textarea>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

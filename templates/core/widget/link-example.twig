@@ -1,0 +1,66 @@
+{% if link_examples is not empty %}
+	<div id="hostIDFormat" class="row my-3">
+		<div class="col">
+			<div class="card border-custom">
+				<div class="card-header border-0 bg-custom">
+					<div class="d-flex align-items-center">
+						<div class="h6 mb-0 flex-grow-1 text-white mr-2">
+							<i class="fas fa-bolt mr-2"></i>Supported Sites</div>
+						<button class="btn btn-outline-light" data-toggle="collapse" data-target="#collapseSites" aria-expanded="true">
+							Show/Hide
+						</button>
+					</div>
+				</div>
+				<div id="collapseSites" class="card-body p-0 collapse">
+					<div class="card-content px-3 pt-3">This tool supports creating streaming links on 40+ websites listed below. We are always developing to support more websites in the future. You may use them but please support these sites by visiting their sponsors or donate in order to keep these sites available. If the site you want to use is not listed below. Please don't hesitate to contact us.</div>
+					<div class="card-content p-3">
+						<div class="input-group">
+							<div class="input-group-prepend">
+								<span class="input-group-text" id="search-host">
+									<em class="fas fa-magnifying-glass"></em>
+								</span>
+							</div>
+							<input id="txtSearchHost" type="search" class="form-control" placeholder="Search..." aria-label="Search">
+						</div>
+					</div>
+					<div class="table-responsive">
+						<table id="tbHost" class="table table-striped table-hover mb-0" style="font-size:14px!important; min-width:640px" aria-label="Example Links">
+							<thead class="thead-dark">
+								<tr>
+									<th style="width:45px;"></th>
+									<th style="width:125px;">Host</th>
+									<th style="width:110px;">Status</th>
+									<th>URL Format</th>
+								</tr>
+							</thead>
+							<tbody>
+								{% for dt in link_examples %}
+									<tr data-host="{{ dt.key }}">
+										<td>
+											<img alt="{{ dt.name }}" title="{{ dt.name }}" width="16" height="16" src="{{ dt.img_src }}">
+										</td>
+										<td>
+											{{ dt.name }}
+											<span class="badge badge-{{ dt.badge == 'New' ? 'danger' : 'primary' }}">{{ dt.badge }}</span>
+										</td>
+										<td>
+											<span class="text-{{ dt.status.text_color }}">
+												<i aria-hidden="true" class="fas fa-lg fa-{{ dt.status.icon }}"></i>
+												<span class="ml-1">{{ dt.status.text }}</span>
+											</span>
+										</td>
+										<td>
+											{% for link in dt.links %}
+												<input type="url" onfocus="this.select()" class="form-control mb-1" value="{{ link }}" aria-label="{{ dt.name }} Example URL" readonly>
+											{% endfor %}
+										</td>
+									</tr>
+								{% endfor %}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+{% endif %}

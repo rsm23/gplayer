@@ -1,0 +1,21 @@
+{% if servers|length > 1 %}
+    <div id="server-list" style="{{ randomSource ? 'display:none' : '' }}">
+        <button type="button" id="btnServer" onclick="$('#servers').toggleClass('show')">
+            <img src="{{ base_url }}assets/img/menu.png" width="29" height="21" alt="Servers">
+        </button>
+        <ul id="servers">
+            {% for i, val in servers %}
+                <li {{ val.disable ? 'style="display:none"' : '' }}>
+                    <a href="javascript:void(0)" data-url="{{ val.url }}" onclick="$('#frmValidation').attr('action', $(this).data('url'));$('#frmValidation').trigger('submit');return false;" {{ val.id == selectedServer ? 'class="active"' : '' }} rel="nofollow">
+                        {% if hideHostname %}
+                            {{ val.name }}
+                        {% else %}
+                            <img src="{{ base_url }}assets/img/logo/{{ val.host }}.png" alt="{{ val.name }}" width="16" height="16"/>&nbsp;{{ val.name }}
+                        {% endif %}
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+<script type="text/javascript" src="{{ base_url }}assets/vendor/crypto-js/4.2.0/crypto-js.min.js" defer></script>

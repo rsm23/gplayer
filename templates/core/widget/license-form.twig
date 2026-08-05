@@ -1,0 +1,57 @@
+{% if gdplayer_license is empty and user_detail is not empty %}
+    <div class="modal fade" id="mdLicence" data-backdrop="static" data-keyboard="false" tabindex="-1">
+        <div class="modal-dialog model-sm">
+            <form class="modal-content needs-validation" id="frmLicense" novalidate>
+                <div class="modal-header">
+                    <h5 class="modal-title">GDPlayer Activation</h5>
+                </div>
+                <div class="modal-body">
+                    <label for="licenseKey">License Key</label>
+            		<input type="text" class="form-control" id="licenseKey" name="gdplayer_license" placeholder="Insert license key here" aria-label="License Key" required>
+					<div class="invalid-feedback">Please provide a valid license key.</div>
+                </div>
+                <div class="modal-footer">
+                    <input type="hidden" name="action" value="saveLicense">
+                    <button type="submit" class="btn btn-success btn-block"><i class="fas fa-save mr-2"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        $(document).ready(function(){
+            $('#mdLicence').modal('show');
+			$("#frmLicense").on("submit", function (e) {
+				e.preventDefault();
+				e.stopPropagation();
+
+				if (this.checkValidity() === false) {
+					$(this).addClass("was-validated");
+					return;
+				}
+				$(this).addClass("was-validated");
+
+				const $btn = $(this).find("button"),
+					btnText = $btn.html();
+				$btn.html(
+					'<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="sr-only">Loading...</span>',
+				).prop("disabled", true);
+
+				ajaxPOST(
+					settings.url,
+					$(this).serialize(),
+					function (res) {
+						if (res.status === "ok") {
+							location.reload();
+						} else {
+							swalError(res.message);
+							$btn.html(btnText).prop("disabled", false);
+						}
+					},
+					function (xhr) {
+						swalError(xhr.responseText);
+					},
+				);
+			});
+        });
+    </script>
+{% endif %}

@@ -1,0 +1,62 @@
+<div class="row mb-3">
+    <div class="col-3 col-sm-3">
+        <div class="input-group mb-3 d-none d-md-flex">
+            <div class="input-group-prepend">
+                <span class="input-group-text">
+                    <i class="fas fa-search fa-lg"></i>
+                </span>
+            </div>
+            <input type="search" class="form-control" id="searchHost" placeholder="Search..." onblur="settings.searchHost($(this).val())" onkeyup="settings.searchHost($(this).val())" aria-label="Search">
+        </div>
+        <div class="overflow-auto" style="height:550px">
+            <div class="nav flex-column nav-pills" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+            {% for k, v in supported_sites %}
+                {% set newVal = v|replace({'|New': '', '|Additional Host': ''}) %}
+                <button class="nav-link nav-host d-flex justify-content-center align-items-center {{ loop.first ? 'active' : '' }}" id="v-pills-{{ k }}-tab" data-toggle="pill" data-target="#v-pills-{{ k }}" type="button" role="tab" aria-controls="v-pills-{{ k }}" aria-selected="{{ loop.first ? 'true' : 'false' }}" title="{{ newVal }}">
+                    <img src="{{ base_url }}assets/img/logo/{{ k }}.png" width="16" height="16" alt="{{ newVal }}">
+                    <span class="d-none d-md-inline ml-2">{{ newVal }}</span>
+                </button>
+            {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-9 col-sm-9">
+        <div class="tab-content" id="v-pills-tabContent">
+            {% for k, v in supported_sites %}
+                {% set newKey = 'cookie_' ~ k %}
+                {% set newVal = v|replace({'|New': '', '|Additional Host': ''}) %}
+                <div class="tab-pane fade {{ loop.first ? 'show active' : '' }}" id="v-pills-{{ k }}" role="tabpanel" aria-labelledby="v-pills-{{ k }}-tab">
+                    <div class="card">
+                        <h6 class="card-header">{{ newVal }} Settings</h6>
+                        <div class="card-body">
+                            {% if k != 'direct' %}
+                                <div class="mb-3">
+                                    <label for="cookie-{{ k }}">Cookies</label>
+                                    <textarea name="cookie_{{ k }}" id="cookie-{{ k }}" placeholder="Insert Cookies" class="form-control" rows="5">{{ settings[newKey] ?? '' }}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="domain-{{ k }}">Custom Domains</label>
+                                    <textarea name="custom-hostnames[{{ k }}]" id="domain-{{ k }}" placeholder="Insert Custom Domains. One per line" class="form-control" rows="5">{{ supported_domains[k] ?? '' }}</textarea>
+                                </div>
+                            {% endif %}
+                            <div class="mb-3">
+                                <label for="download-url-{{ k }}">Download Url</label>
+                                <input type="text" name="download-urls[{{ k }}]" id="download-url-{{ k }}" placeholder="Insert Download Url" class="form-control" value="{{ download_urls[k] is defined and download_urls[k] is not empty  ? download_urls[k] : '%s' }}" required>
+                                <small class="text-muted">%s must be prepared which will be replaced with the original video ID.</small>
+                            </div>
+                            <div class="mb-3">
+                                <label for="custom-name-{{ k }}">Custom Name</label>
+                                <div class="input-group">
+                                    <input type="text" name="custom_names[{{ k }}]" id="custom-name-{{ k }}" placeholder="E.g. Server 1" class="form-control" value="{{ custom_names[k] ?? newVal }}" required>
+                                    <div class="input-group-append">
+                                        <button type="button" data-name="{{ newVal }}" class="btn btn-outline-secondary" data-title="Original Name" data-parent="custom-name-{{ k }}" data-toggle="tooltip" onclick="$('#custom-name-{{ k }}').val($(this).data('name'))"><i class="fa fa-circle-left"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

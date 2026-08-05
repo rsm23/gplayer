@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+coverage/
+tmp/
+cache/
+public/uploads/
+*.log
+.DS_Store

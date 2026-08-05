@@ -1,0 +1,69 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">General</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="site_name">Site Name</label>
+					<input type="text" name="site_name" id="site_name" placeholder="Insert site name" class="form-control" value="{{ site_name ? site_name : 'GDPlayer' }}" required>
+				</div>
+				<div class="mb-3">
+					<label for="site_slogan">Slogan</label>
+					<input type="text" name="site_slogan" id="site_slogan" placeholder="Insert site slogan" class="form-control" value="{{ site_slogan ? site_slogan : 'Google Drive Video Player' }}" required>
+				</div>
+				<div class="mb-3">
+					<label for="site_description">Site Description</label>
+					<textarea name="site_description" id="site_description" placeholder="Insert site description" class="form-control" required>{{ site_description ? site_description : 'Google Drive Video Player' }}</textarea>
+				</div>
+				<div class="mb-3 form-row">
+					<label for="favicon">Logo</label>
+					<div class="custom-file">
+						<input type="file" class="custom-file-input" id="favicon" name="favicon" accept=".png">
+						<label class="custom-file-label" for="favicon">Choose file</label>
+					</div>
+					<small class="form-text text-muted">Upload a favicon image as your website identity. Image format must be PNG. The dimensions should be 512x512px.</small>
+				</div>
+				{% if imgURL %}
+					<div class="mb-3"><img width="64" height="64" src="{{ imgURL }}" class="rounded" data-toggle="tooltip" title="Logo" alt="Logo"></div>
+				{% endif %}
+				<div class="mb-3 form-row mb-0">
+					<div class="col-6">
+						<label for="custom_color">Color 1</label>
+						<input type="color" name="custom_color" id="custom_color" placeholder="Example: #673ab7" class="form-control" value="{{ custom_color ? '#' ~ custom_color : '#673ab7' }}">
+					</div>
+					<div class="col-6">
+						<label for="custom_color2">Color 2</label>
+						<input type="color" name="custom_color2" id="custom_color2" placeholder="Example: #3f51b5" class="form-control" value="{{ custom_color2 ? '#' ~ custom_color2 : '#3f51b5' }}">
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">PWA</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="pwa_shortname">Short Name</label>
+					<input type="text" name="pwa_shortname" id="pwa_shortname" placeholder="Insert short name" class="form-control" value="{{ pwa_shortname ? pwa_shortname : 'GDPlayer' }}" required>
+				</div>
+				<div class="mb-3">
+					<label for="pwa_themecolor">Theme Color</label>
+					<input type="color" name="pwa_themecolor" id="pwa_themecolor" placeholder="Example: #673ab7" class="form-control" value="{{ pwa_themecolor ? '#' ~ pwa_themecolor : '#673ab7' }}">
+				</div>
+				<div class="mb-3">
+					<label for="pwa_backgroundcolor">Background Color</label>
+					<input type="color" name="pwa_backgroundcolor" id="pwa_backgroundcolor" placeholder="Example: #ffffff" class="form-control" value="{{ pwa_backgroundcolor ? '#' ~ pwa_backgroundcolor : '#ffffff' }}">
+				</div>
+				<div class="mb-0">
+					<label for="pwa_display">Display UI</label>
+					<select name="pwa_display" id="pwa_display" class="form-control">
+						<option value="standalone">Standalone (Default)</option>
+						<option value="fullscreen" {{ pwa_display == 'fullscreen' ? 'selected' : '' }}>Fullscreen</option>
+						<option value="minimal-ui" {{ pwa_display == 'minimal-ui' ? 'selected' : '' }}>Minimal</option>
+					</select>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

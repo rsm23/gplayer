@@ -1,0 +1,39 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12 col-md-6 col-lg-4 mx-auto">
+		<h1 class="h3 my-3 text-center">Reset Password</h1>
+		{% autoescape %}
+			{{ message|raw }}
+		{% endautoescape %}
+		<div class="mb-3">
+			<em class="fas fa-asterisk fa-xs text-danger mr-2"></em>Required
+		</div>
+		<form id="frm" action="{{ resetPasswordURL }}?token={{ token }}" method="post" class="needs-validation" autocomplete="off" novalidate>
+			<div class="mb-3">
+				<label for="password">
+					Password<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="password" autocomplete="off" id="password" name="password" class="form-control" placeholder="New Password" onchange="if($(this).val() === $('#retype_password').val()) $('#retype_password').removeClass('is-invalid').addClass('is-valid'); else $('#retype_password').removeClass('is-valid').addClass('is-invalid');" required>
+			</div>
+			<div class="mb-3">
+				<label for="retype_password">
+					Confirm Password<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="password" autocomplete="off" id="retype_password" name="retype_password" class="form-control" placeholder="Confirm New Password" onchange="if($(this).val() !== $('#password').val()) $(this).removeClass('is-valid').addClass('is-invalid'); else $(this).removeClass('is-invalid').addClass('is-valid');" required>
+			</div>
+			<div class="text-center">
+				<div class="row">
+					<div class="col-12">
+						{% include templates.recaptcha %}
+						<input type="hidden" name="action" value="save">
+						<input type="hidden" name="token" value="{{ token }}">
+						<button type="submit" name="submit" class="btn btn-custom btn-block">
+							<em class="fas fa-sync-alt mr-2"></em>Reset Password
+						</button>
+					</div>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{% include templates.backend_footer %}

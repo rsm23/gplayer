@@ -1,0 +1,43 @@
+<div class="row mb-3">
+	<div class="col">
+		<ul class="nav nav-pills nav-justified mb-3" aria-owns="url-tab embed-tab dl-tab req-tab json-tab">
+			<li class="nav-item">
+				<a role="tab" class="nav-link active" id="url-tab" data-toggle="tab" href="#turl" aria-controls="turl">Embed URL</a>
+			</li>
+			<li class="nav-item">
+				<a role="tab" class="nav-link" id="embed-tab" data-toggle="tab" href="#tembed" aria-controls="tembed">Embed Code</a>
+			</li>
+			<li class="nav-item">
+				<a role="tab" class="nav-link" id="dl-tab" data-toggle="tab" href="#tdl" aria-controls="tdl">Download URL</a>
+			</li>
+			<li class="nav-item">
+				<a role="tab" class="nav-link" id="req-tab" data-toggle="tab" href="#treq" aria-controls="treq">Request URL</a>
+			</li>
+		</ul>
+		<div class="tab-content" id="myTabContent">
+			<div class="tab-pane fade show active" id="turl" role="tabpanel" aria-labelledby="url-tab">
+				<label for="txtEmbed">Embed URL</label>
+				<textarea onfocus="this.select()" id="txtEmbed" cols="30" rows="6" class="form-control" readonly></textarea>
+			</div>
+			<div class="tab-pane fade" id="tembed" role="tabpanel" aria-labelledby="embed-tab">
+				<label for="txtEmbedCode">Embed Code</label>
+				<textarea onfocus="this.select()" id="txtEmbedCode" cols="30" rows="6" class="form-control" readonly></textarea>
+			</div>
+			<div class="tab-pane fade" id="tdl" role="tabpanel" aria-labelledby="dl-tab">
+				<label for="txtDl">Download URL</label>
+				<textarea onfocus="this.select()" id="txtDl" cols="30" rows="6" class="form-control" readonly></textarea>
+			</div>
+			<div class="tab-pane fade" id="treq" role="tabpanel" aria-labelledby="req-tab">
+				<label for="txtReq">Request URL</label>
+				<textarea onfocus="this.select()" id="txtReq" cols="30" rows="6" class="form-control" readonly></textarea>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="row text-center">
+	<div class="col-12">
+		<div class="embed-responsive embed-responsive-16by9 rounded">
+			<iframe id="embedIframe" title="Video Player" class="embed-responsive-item rounded" allowfullscreen allow="encrypted-media *;" style="overflow:hidden;border:0"></iframe>
+		</div>
+	</div>
+</div>

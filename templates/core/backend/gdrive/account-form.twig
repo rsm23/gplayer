@@ -1,0 +1,67 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12">
+		<h1 class="h4 mb-3">{{ title }}</h1>
+		<form action="{{ backend_url }}gdrive/{{ edit ? 'edit/?id=' ~ id : 'new/' }}" method="post" class="needs-validation" novalidate>
+			<div class="row">
+				<div class="col-12 col-md-6 mr-auto">
+					<div class="mb-3">
+						<label for="email">Email</label>
+						<input type="email" name="email" id="email" class="form-control" value="{{ email|default('') }}" maxlength="100" required>
+					</div>
+					<div class="mb-3">
+						<label for="api_key">API Key</label>
+						<input type="text" name="api_key" id="api_key" class="form-control" value="{{ api_key|default('') }}" maxlength="50" required>
+					</div>
+					<div class="mb-3">
+						<label for="client_id">Client ID</label>
+						<input type="text" name="client_id" id="client_id" class="form-control" value="{{ client_id|default('') }}" maxlength="100" required>
+					</div>
+					<div class="mb-3">
+						<label for="client_secret">Client Secret</label>
+						<input type="text" name="client_secret" id="client_secret" class="form-control" value="{{ client_secret|default('') }}" maxlength="50" required>
+					</div>
+					<div class="mb-3">
+						<label for="refresh_token">Refresh Token</label>
+						<input type="text" name="refresh_token" id="refresh_token" class="form-control" maxlength="150" value="{{ refresh_token|default('') }}" required>
+					</div>
+					<div class="mb-3 form-row">
+						<label for="bypass" class="col-6 text-right">Bypass Limit Account Type</label>
+						<div class="col-6">
+							<div class="custom-control custom-checkbox">
+                                <input type="hidden" name="bypass" value="0">
+								<input type="checkbox" class="custom-control-input" name="bypass" id="bypass" value="1" {{ bypass|default(0) == 1 ? 'checked' : '' }}>
+								<label class="custom-control-label" for="bypass">Yes</label>
+							</div>
+						</div>
+					</div>
+					<div class="mb-3 form-row">
+						<label for="status" class="col-6 text-right">Status</label>
+						<div class="col-6">
+							<div class="custom-control custom-checkbox">
+                                <input type="hidden" name="status" value="0">
+								<input type="checkbox" class="custom-control-input" name="status" id="status" value="1" {{ status|default(0) == 1 ? 'checked' : '' }}>
+								<label class="custom-control-label" for="status">Enable</label>
+							</div>
+						</div>
+					</div>
+					{# Plugin Widget Slot: form bottom #}
+					{{ render_slot(edit ? 'backend.gdrive.edit.form_bottom' : 'backend.gdrive.new.form_bottom') }}
+
+					<div class="mb-3">
+						{% if edit %}
+							<input type="hidden" name="id" value="{{ id }}" required>
+						{% endif %}
+						<button type="submit" class="btn btn-success">
+							<em class="fas fa-save mr-2"></em>{{ edit ? 'Update' : 'Save' }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot(edit ? 'backend.gdrive.edit.bottom' : 'backend.gdrive.new.bottom') }}
+
+{% include templates.backend_footer %}

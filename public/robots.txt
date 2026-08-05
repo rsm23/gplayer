@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://rsm23.github.io/gplayer/sitemap.xml

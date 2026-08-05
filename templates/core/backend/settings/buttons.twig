@@ -1,0 +1,19 @@
+<div class="row" id="actions-buttons">
+    <div class="col-12">
+        <button type="submit" class="btn btn-success mr-2">
+            <em class="fas fa-save mr-2"></em>Update
+        </button>
+        <div class="btn-group dropup">
+            <button type="button" id="clearCache" class="btn btn-danger dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+                <em class="fas fa-trash-alt mr-2"></em>Clear Cache
+            </button>
+            <div class="dropdown-menu dropdown-menu-right shadow border-0">
+                <button type="button" class="dropdown-item" onclick="settings.clearCache.videosFiles()">Clear Cache Files</button>
+                <button type="button" class="dropdown-item" onclick="settings.clearCache.videos()">Clear Videos Cache</button>
+                <button type="button" class="dropdown-item" onclick="settings.clearCache.settings()">Clear Settings Cache</button>
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-item" onclick="settings.clearCache.all()">Clear All Cache</button>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,40 @@
+<style>
+    .multi-color-spinner-1 {
+        --loader-size: clamp(48px, 12vmin, 96px);
+        width: var(--loader-size);
+        height: var(--loader-size);
+        display: inline-block;
+        position: relative;
+        margin: 0 auto;
+        box-sizing: border-box;
+        animation: rotation 1s linear infinite;
+        will-change: transform;
+    }
+    .multi-color-spinner-1::before,
+    .multi-color-spinner-1::after {
+        content: '';  
+        box-sizing: border-box;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: calc(var(--loader-size) * 0.08) solid transparent;
+    }
+    .multi-color-spinner-1::before {
+        border-top-color: {{ playerColor }};
+    }
+    .multi-color-spinner-1::after {
+        border-bottom-color: {{ playerColor2 }};
+    }
+    @keyframes rotation {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+<div class="multi-color-spinner-1"></div>

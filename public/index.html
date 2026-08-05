@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="GPlayer is the full Node.js rewrite of GDPlayer 4.8.3: 63 media hosts, HLS, DASH, MP4, and authenticated embeds without a PHP runtime.">
+  <meta name="theme-color" content="#0b0e0c">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GPlayer - 63 sources, one Node.js player">
+  <meta property="og:description" content="A Node-native media gateway for provider links, adaptive streams, and direct video.">
+  <meta property="og:image" content="https://rsm23.github.io/gplayer/assets/img/film.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="GPlayer - 63 sources, one Node.js player">
+  <meta name="twitter:description" content="The GDPlayer 4.8.3 runtime, rebuilt in Node.js.">
+  <title>GPlayer | 63 sources, one Node.js player</title>
+  <link rel="icon" href="./assets/img/logo/rr.ico">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./assets/img/film.png">
+  <link rel="stylesheet" href="./assets/css/gplayer-landing.css">
+  <script src="./assets/js/gplayer-landing.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#generator">Skip to player generator</a>
+
+  <header class="site-header">
+    <a class="wordmark" href="./" aria-label="GPlayer home">
+      <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span>G<span>PLAYER</span><small>NODE</small></span>
+    </a>
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation">Menu</button>
+    <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
+      <a href="#workflow">How it works</a>
+      <a href="#hosts">Supported hosts</a>
+      <a href="#product-demo">Product UI</a>
+      <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">Source</a>
+      <a class="nav-cta" href="#generator">Build a player</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span></span> GDPlayer 4.8.3 · rebuilt in Node.js</p>
+        <h1 id="hero-title">One runtime. Every source.</h1>
+        <p class="hero-lede">Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.</p>
+        <p class="hero-proof"><span aria-hidden="true">●</span> Encrypted queries. DNS-pinned delivery. Portable embeds.</p>
+        <div class="hero-actions">
+          <a class="hero-link-primary" href="#generator">Build a player <span aria-hidden="true">↘</span></a>
+          <a class="hero-link-secondary" href="#product-demo">See the real product UI ↓</a>
+        </div>
+      </div>
+
+      <div id="generator" class="generator-shell reveal" data-reveal-delay="1">
+        <div class="panel-topline">
+          <div>
+            <p class="panel-kicker">Node player generator</p>
+            <h2>Configure a source</h2>
+          </div>
+          <span class="secure-chip"><span aria-hidden="true"></span> Ready</span>
+        </div>
+
+        <form id="player-form" novalidate>
+          <p id="static-generator-notice" class="static-generator-notice" hidden>This static GitHub Pages build shows the real interface below. Run the Node app to generate authenticated player links.</p>
+          <div class="field field-main">
+            <label for="video-url">Main video URL <span aria-hidden="true">*</span></label>
+            <input id="video-url" name="id" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/video" required>
+            <p class="field-hint">Paste a supported host link or a direct media URL.</p>
+          </div>
+
+          <details class="advanced-options">
+            <summary>Poster, fallback, and subtitles <span>Optional</span></summary>
+            <div class="advanced-grid">
+              <div class="field">
+                <label for="alternative-url">Alternative source URL</label>
+                <input id="alternative-url" name="aid" type="url" inputmode="url" placeholder="https://backup.example.com/video">
+              </div>
+              <div class="field">
+                <label for="poster-url">Poster URL</label>
+                <input id="poster-url" name="poster" type="url" inputmode="url" placeholder="https://example.com/poster.jpg">
+              </div>
+            </div>
+
+            <div class="subtitle-heading">
+              <div>
+                <p class="field-label">Subtitle tracks</p>
+                <p class="field-hint">Add WebVTT, SRT, or supported subtitle URLs.</p>
+              </div>
+              <button id="add-subtitle" class="text-button" type="button">+ Add track</button>
+            </div>
+            <div id="subtitle-list" class="subtitle-list"></div>
+          </details>
+
+          <div id="form-message" class="form-message" role="status" aria-live="polite"></div>
+          <button id="generate-button" class="generate-button" type="submit">
+            <span class="button-label">Generate player</span>
+            <span class="button-arrow" aria-hidden="true">↗</span>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section class="proof-strip" aria-label="Rewrite facts">
+      <div><strong>63</strong><span>registered host adapters</span></div>
+      <div><strong>3</strong><span>stream modes · HLS, DASH, MP4</span></div>
+      <div><strong>Node 24</strong><span>single application runtime</span></div>
+      <div><strong>0</strong><span>PHP or system-Python calls</span></div>
+    </section>
+
+    <section id="product-demo" class="product-demo-section" aria-labelledby="product-demo-title">
+      <div class="section-heading reveal">
+        <div>
+          <p class="section-index">01 / Product UI</p>
+          <h2 id="product-demo-title">The actual app, not a placeholder.</h2>
+        </div>
+        <p>Captured directly from this Node.js build: the public generator and the protected administration boundary.</p>
+      </div>
+      <div class="product-demo-grid">
+        <figure class="product-shot product-shot-wide reveal" data-reveal-delay="1">
+          <div class="product-shot-bar"><span><i></i><i></i><i></i></span><strong>Public generator</strong><em>GPlayer Node</em></div>
+          <img src="./assets/img/product/gplayer-generator.png" alt="GPlayer public generator running from the Node application" loading="lazy">
+          <figcaption><strong>Source to embed</strong><span>Provider detection, advanced tracks, and authenticated output from one surface.</span></figcaption>
+        </figure>
+        <figure class="product-shot reveal" data-reveal-delay="2">
+          <div class="product-shot-bar"><span><i></i><i></i><i></i></span><strong>Administration</strong><em>Protected</em></div>
+          <img src="./assets/img/product/gplayer-admin.png" alt="GPlayer secure administration login running from the Node application" loading="lazy">
+          <figcaption><strong>Node-native control plane</strong><span>Legacy-compatible bcrypt and sessions behind a hardened login boundary.</span></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="output" class="output-section" aria-labelledby="output-title">
+      <div class="section-heading reveal">
+        <div>
+          <p class="section-index">02 / Output</p>
+          <h2 id="output-title">Your delivery package</h2>
+        </div>
+        <p>Every generated URL carries the same authenticated player configuration.</p>
+      </div>
+
+      <div class="output-frame reveal" data-reveal-delay="1">
+        <div id="output-empty" class="output-empty">
+          <div class="empty-signal" aria-hidden="true"><span></span></div>
+          <p>No player generated yet</p>
+          <span>Your embed, download, request link, and preview will appear here.</span>
+        </div>
+
+        <div id="output-result" class="output-result" hidden>
+          <div class="result-fields">
+            <div class="result-field">
+              <label for="embed-url">Embed URL</label>
+              <div class="copy-control">
+                <input id="embed-url" type="text" readonly>
+                <button type="button" data-copy="embed-url">Copy</button>
+              </div>
+            </div>
+            <div class="result-field">
+              <label for="embed-code">Iframe code</label>
+              <div class="copy-control">
+                <input id="embed-code" type="text" readonly>
+                <button type="button" data-copy="embed-code">Copy</button>
+              </div>
+            </div>
+            <div class="result-field result-field-split">
+              <div>
+                <label for="download-url">Download URL</label>
+                <div class="copy-control">
+                  <input id="download-url" type="text" readonly>
+                  <button type="button" data-copy="download-url">Copy</button>
+                </div>
+              </div>
+              <div>
+                <label for="request-url">Request URL</label>
+                <div class="copy-control">
+                  <input id="request-url" type="text" readonly>
+                  <button type="button" data-copy="request-url">Copy</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="preview-wrap">
+            <div class="preview-bar">
+              <span><i aria-hidden="true"></i> Live preview</span>
+              <a id="open-player" href="#" target="_blank" rel="noopener">Open player ↗</a>
+            </div>
+            <iframe id="player-preview" title="Generated player preview" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="workflow-section" aria-labelledby="workflow-title">
+      <div class="section-heading section-heading-narrow reveal">
+        <div>
+          <p class="section-index">03 / Signal path</p>
+          <h2 id="workflow-title">One input. A controlled output.</h2>
+        </div>
+      </div>
+
+      <div class="signal-board reveal" data-reveal-delay="1">
+        <div class="signal-source">
+          <p class="signal-label">Input</p>
+          <div class="source-token">
+            <img src="./assets/img/logo/gdrive.png" alt="">
+            <span>Host URL</span>
+            <small>Identified</small>
+          </div>
+          <div class="source-token">
+            <img src="./assets/img/logo/m3u.png" alt="">
+            <span>HLS stream</span>
+            <small>Normalized</small>
+          </div>
+          <div class="source-token">
+            <img src="./assets/img/logo/mpd.png" alt="">
+            <span>DASH stream</span>
+            <small>Normalized</small>
+          </div>
+        </div>
+        <div class="signal-core">
+        <div class="pulse-ring"><span>G</span></div>
+          <p>Authenticated player query</p>
+          <code>host + id + tracks + poster</code>
+        </div>
+        <div class="signal-output">
+          <p class="signal-label">Output</p>
+          <div class="output-token output-token-primary"><span>01</span><strong>Responsive embed</strong></div>
+          <div class="output-token"><span>02</span><strong>Download route</strong></div>
+          <div class="output-token"><span>03</span><strong>Shareable request</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="hosts" class="hosts-section" aria-labelledby="hosts-title">
+      <div class="hosts-copy reveal">
+        <p class="section-index">04 / Source network</p>
+        <h2 id="hosts-title">Built for the links you already use.</h2>
+        <p>GPlayer recognizes provider URLs, direct media files, and adaptive manifests through a single generator.</p>
+        <a href="#generator">Try your source ↗</a>
+      </div>
+      <div class="host-wall reveal" data-reveal-delay="1" role="group" aria-label="Example supported providers">
+        <div><img src="./assets/img/logo/gdrive.png" alt="Google Drive"><span>Google Drive</span></div>
+        <div><img src="./assets/img/logo/youtube.png" alt="YouTube"><span>YouTube</span></div>
+        <div><img src="./assets/img/logo/vimeo.png" alt="Vimeo"><span>Vimeo</span></div>
+        <div><img src="./assets/img/logo/dailymotion.png" alt="Dailymotion"><span>Dailymotion</span></div>
+        <div><img src="./assets/img/logo/facebook.png" alt="Facebook"><span>Facebook</span></div>
+        <div><img src="./assets/img/logo/dropbox.png" alt="Dropbox"><span>Dropbox</span></div>
+        <div><img src="./assets/img/logo/mediafire.png" alt="MediaFire"><span>MediaFire</span></div>
+        <div><img src="./assets/img/logo/streamtape.png" alt="Streamtape"><span>Streamtape</span></div>
+        <div><img src="./assets/img/logo/m3u.png" alt="HLS"><span>HLS</span></div>
+        <div><img src="./assets/img/logo/mpd.png" alt="MPEG DASH"><span>MPEG DASH</span></div>
+        <div><img src="./assets/img/logo/direct.png" alt="Direct video"><span>Direct video</span></div>
+        <div class="host-more"><span>63</span><strong>adapters total</strong></div>
+      </div>
+    </section>
+
+    <section class="format-band" aria-label="Delivery capabilities">
+      <p>Static and live streams</p>
+      <span aria-hidden="true"></span>
+      <p>Multiple subtitle tracks</p>
+      <span aria-hidden="true"></span>
+      <p>Poster and fallback source</p>
+      <span aria-hidden="true"></span>
+      <p>Responsive iframe output</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div>
+      <a class="wordmark wordmark-footer" href="./" aria-label="GPlayer home">
+        <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span>G<span>PLAYER</span><small>NODE</small></span>
+      </a>
+      <p>Node-native video delivery for the web.</p>
+    </div>
+    <nav aria-label="Legal navigation">
+       <a href="#workflow">How it works</a>
+       <a href="#hosts">Supported hosts</a>
+       <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <p class="copyright">© <span id="copyright-year"></span> GPlayer</p>
+  </footer>
+
+  <template id="subtitle-template">
+    <div class="subtitle-item">
+      <div class="field">
+        <label>Track label</label>
+        <input data-subtitle-label type="text" placeholder="English">
+      </div>
+      <div class="field subtitle-url-field">
+        <label>Subtitle URL</label>
+        <input data-subtitle-url type="url" inputmode="url" placeholder="https://example.com/subtitles.vtt">
+      </div>
+      <button class="remove-subtitle" type="button" aria-label="Remove subtitle track">Remove</button>
+    </div>
+  </template>
+</body>
+</html>

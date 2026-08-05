@@ -1,0 +1,71 @@
+{% include templates.backend_header %}
+<div class="row pt-3 mt-5">
+	<div class="col-12 col-md-6 col-lg-4 mx-auto">
+		<h1 class="h3 my-3 text-center">Register</h1>
+		{% autoescape %}
+			{{ message|raw }}
+		{% endautoescape %}
+		<div class="mb-3">
+			<em class="fas fa-asterisk fa-xs text-danger mr-2"></em>Required
+		</div>
+		<form id="frmRegister" action="{{ registerURL }}" method="post" class="needs-validation" novalidate>
+			<div class="mb-3">
+				<label for="name">Full Name<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="text" id="name" name="name" class="form-control" placeholder="Insert your full name" value="{{ name }}" data-error-required="The full name is required" autocomplete="name" required>
+				<div class="invalid-feedback"></div>
+			</div>
+			<div class="mb-3">
+				<label for="user">Username<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="text" id="user" name="user" class="form-control" placeholder="Insert your username" value="{{ username }}" data-error-required="The username is required" autocomplete="username" required>
+				<div class="invalid-feedback"></div>
+			</div>
+			<div class="mb-3">
+				<label for="email">Email<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<input type="email" autocomplete="email" id="email" name="email" class="form-control" placeholder="Insert your email address" value="{{ email }}" pattern="^[a-zA-Z0-9!#$%&'*+\/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+\/=?^_`{|}~-]+)*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$" data-error-required="The email is required" data-error-pattern="The email is invalid" required>
+				<div class="invalid-feedback"></div>
+			</div>
+			<div class="mb-3">
+				<label for="password">New Password<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<div class="input-group">
+					<div class="input-group-prepend">
+						<button class="btn btn-outline-custom btn-shp" data-shp="#password" type="button" data-toggle="tooltip" title="Show/hide New Password"><em class="fas fa-eye"></em></button>
+					</div>
+				    <input type="password" id="password" name="password" class="form-control" placeholder="Insert your new password" data-error-required="The password is required" data-error-pattern="The new password must contain at least 8 characters" pattern="[^ ]{8,}" autocomplete="new-password" required>
+				    <div class="invalid-feedback"></div>
+				</div>
+			</div>
+			<div class="mb-3">
+				<label for="retype_password">
+					Confirm New Password<em class="fas fa-asterisk fa-xs text-danger ml-2"></em>
+				</label>
+				<div class="input-group">
+					<div class="input-group-prepend">
+						<button class="btn btn-outline-custom btn-shp" data-shp="#retype_password" type="button" data-toggle="tooltip" title="Show/hide Confirm New Password"><em class="fas fa-eye"></em></button>
+					</div>
+				    <input type="password" id="retype_password" name="retype_password" class="form-control" placeholder="Confirm your new password" data-error-required="The confirm new password is required" data-error-pattern="The confirm new password must contain at least 8 characters" pattern="[^ ]{8,}" autocomplete="new-password" required>
+				    <div class="invalid-feedback"></div>
+				</div>
+			</div>
+			<div class="mb-3 text-center">
+				<div class="form-row">
+					<div class="col-6">
+						<a href="{{ loginURL }}" class="btn btn-block btn-secondary">
+							<em class="fas fa-arrow-left mr-2"></em>Login
+						</a>
+					</div>
+					<div class="col-6">
+						{% include templates.recaptcha %}
+						<button type="submit" name="submit" class="btn btn-block btn-custom">
+							<em class="fas fa-check mr-2"></em>Register
+						</button>
+					</div>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{% include templates.backend_footer %}

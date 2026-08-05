@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<meta name="robots" content="noindex">
+		<meta name="googlebot" content="noindex">
+		<meta name="description" content="{{ title ~ ' - ' ~ site_name }}">
+		<meta name="msapplication-TileColor" content="{{ theme_color }}">
+		<meta name="theme-color" content="{{ theme_color }}">
+		<meta name="mobile-web-app-capable" content="yes">
+		<link rel="manifest" href="{{ base_url }}manifest.json">
+		<link rel="mask-icon" href="{{ base_url }}assets/img/maskable_icon.png" color="#ffffff">
+		<link rel="shortcut icon" href="{{ base_url }}favicon.ico" type="image/ico">
+		<title>{{ title ~ ' - ' ~ site_name }}</title>
+		<link rel="preconnect dns-prefetch" href="{{ base_url }}">
+		<link rel="preconnect dns-prefetch" href="//www.gstatic.com">
+		<link rel="preconnect dns-prefetch" href="//fonts.gstatic.com">
+		<link rel="preconnect dns-prefetch" href="//www.googleapis.com">
+		<link rel="preconnect dns-prefetch" href="//www.googletagmanager.com">
+		<link rel="preconnect dns-prefetch" href="//www.google.com">
+		<link rel="preconnect dns-prefetch" href="//www.google-analytics.com">
+		<link rel="preconnect dns-prefetch" href="//googleusercontent.com">
+		<link rel="preconnect dns-prefetch" href="//lh3.googleusercontent.com">
+		<link rel="preconnect dns-prefetch" href="//drive-thirdparty.googleusercontent.com">
+		<link rel="preconnect dns-prefetch" href="//static.addtoany.com">
+		<link rel="stylesheet" href="{{ base_url }}assets/vendor/bootstrap/4.6.2/css/bootstrap.min.css">
+		{{ GA }}
+		{{ GTM_Head }}
+		<script type="text/javascript" src="{{ base_url }}assets/vendor/globalThis.js"></script>
+	</head>
+	<body class="bg-light h-100">
+		{{ GTM_Body }}
+		<div class="container bg-white rounded shadow py-5 my-5">
+            <div class="row">
+                <div class="col-12 mb-2">{{ topBanner }}</div>
+                <div class="col-12 mb-2 text-center">
+                    <h1 class="h3 text-danger">{{ message }}</h1>
+                </div>
+                <div class="col-12">{{ bottomBanner }}</div>
+            </div>
+        </div>
+		{% if 'histats' in templates %}
+			{% include templates.histats %}
+		{% endif %}
+		{% if 'popupads' in templates %}
+			{% include templates.popupads %}
+		{% endif %}
+	</body>
+
+</html>

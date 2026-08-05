@@ -1,0 +1,81 @@
+<style>
+    .ellipsis-spinner-3 {
+        --loader-size: clamp(60px, 15vmin, 120px);
+        display: block;
+        position: relative;
+        width: var(--loader-size);
+        height: calc(var(--loader-size) * 0.25);
+        margin: 0 auto;
+        box-sizing: border-box;
+    }
+
+    .ellipsis-spinner-3 div {
+        position: absolute;
+        width: calc(var(--loader-size) * 0.25);
+        height: calc(var(--loader-size) * 0.25);
+        border-radius: 50%;
+        animation-timing-function: cubic-bezier(0, 1, 1, 0);
+        will-change: transform;
+    }
+
+    .ellipsis-spinner-3 div:nth-child(1) {
+        left: 0;
+        animation: ellipsis1 0.6s infinite;
+        background: {{ playerColor }};
+    }
+
+    .ellipsis-spinner-3 div:nth-child(2) {
+        left: calc(var(--loader-size) * 0.0875);
+        animation: ellipsis2 0.6s infinite;
+        background: {{ playerColor2 }};
+    }
+
+    .ellipsis-spinner-3 div:nth-child(3) {
+        left: calc(var(--loader-size) * 0.4375);
+        animation: ellipsis2 0.6s infinite;
+        background: {{ playerColor }};
+    }
+
+    .ellipsis-spinner-3 div:nth-child(4) {
+        left: calc(var(--loader-size) * 0.75);
+        animation: ellipsis3 0.6s infinite;
+        background: {{ playerColor2 }};
+    }
+
+    @keyframes ellipsis1 {
+        0% {
+            transform: scale(0);
+            -webkit-transform: scale(0);
+        }
+        100% {
+            transform: scale(1);
+            -webkit-transform: scale(1);
+        }
+    }
+    @keyframes ellipsis3 {
+        0% {
+            transform: scale(1);
+            -webkit-transform: scale(1);
+        }
+        100% {
+            transform: scale(0);
+            -webkit-transform: scale(0);
+        }
+    }
+    @keyframes ellipsis2 {
+        0% {
+            transform: translate(0, 0);
+            -webkit-transform: translate(0, 0);
+        }
+        100% {
+            transform: translate(calc(var(--loader-size) * 0.3), 0);
+            -webkit-transform: translate(calc(var(--loader-size) * 0.3), 0);
+        }
+    }
+</style>
+<div class="ellipsis-spinner-3">
+    <div></div>
+    <div></div>
+    <div></div>
+    <div></div>
+</div>

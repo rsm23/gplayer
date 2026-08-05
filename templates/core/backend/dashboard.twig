@@ -1,0 +1,518 @@
+{% include templates.backend_header %}
+
+<div class="row pt-3 mt-5">
+	<div class="col-12 col-md-4 col-lg-3">
+		<div class="card">
+			<div class="card-body py-2">
+				<div class="media">
+					<em class="fas fa-film fa-2x align-self-center mr-3 text-success"></em>
+					<div class="media-body">
+						<a href="{{ backend_url }}videos/list/">
+							<h4 id="numVideos" class="m-0">0</h4>
+						</a>
+						<small class="text-muted">Total Links</small>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="card mt-3">
+			<div class="card-body py-2">
+				<div class="media">
+					<em class="fas fa-film fa-2x align-self-center mr-3 text-danger"></em>
+					<div class="media-body">
+						<a href="{{ backend_url }}videos/list/?status=1">
+							<h4 id="numBrokenVideos" class="m-0">0</h4>
+						</a>
+						<small class="text-muted">Broken Links</small>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="card mt-3">
+			<div class="card-header">
+				<div class="d-flex justify-content-between align-items-center">
+					<h6 class="mb-0">Videos Status</h6>
+					<button class="btn btn-outline-secondary" onclick="dashboard.chart.videoStatus('.video-status')" data-toggle="tooltip" title="Reload">
+						<em class="fas fa-sync-alt"></em>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-2">
+				<div class="video-status mx-auto text-center">
+					<em class="fas fa-spin fa-sync-alt text-primary" style="font-size:50px"></em>
+					<div class="chart"></div>
+				</div>
+			</div>
+		</div>
+		{% if is_admin %}
+			<div class="card mt-3">
+				<div class="card-body py-2">
+					<div class="media">
+						<em class="fab fa-google-drive fa-2x text-primary align-self-center mr-3"></em>
+						<div class="media-body">
+							<a href="{{ backend_url }}gdrive/list/">
+								<h4 id="numGDrives" class="m-0">0</h4>
+							</a>
+							<small class="text-muted">Google Drive Accounts</small>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="card mt-3">
+				<div class="card-body py-2">
+					<div class="media">
+						<em class="fas fa-server fa-2x align-self-center mr-3"></em>
+						<div class="media-body">
+							<a href="{{ backend_url }}load-balancers/list/">
+								<h4 id="numServers" class="m-0">0</h4>
+							</a>
+							<small class="text-muted">Total Servers</small>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="card mt-3">
+				<div class="card-header">
+					<div class="d-flex justify-content-between align-items-center">
+						<h6 class="mb-0">Servers Usage</h6>
+						<button class="btn btn-outline-secondary" onclick="dashboard.chart.serverStatus('.server-status')" data-toggle="tooltip" title="Reload">
+							<em class="fas fa-sync-alt"></em>
+						</button>
+					</div>
+				</div>
+				<div class="card-body p-2">
+					<div class="server-status mx-auto text-center">
+						<em class="fas fa-spin fa-sync-alt text-primary" style="font-size:50px"></em>
+						<div class="chart"></div>
+					</div>
+				</div>
+			</div>
+		{% endif %}
+		{# Plugin Widget Slot: sidebar bottom #}
+		{{ render_slot('backend.dashboard.sidebar_bottom') }}
+	</div>
+	<div class="col-12 col-md-8 col-lg-9">
+		<div class="card">
+			<div class="card-header">
+				<div class="d-flex justify-content-between align-items-center">
+					<h6 class="mb-0"><i class="fas fa-fire mr-2 text-danger"></i> Popular Videos</h6>
+					<button class="btn btn-outline-secondary" onclick="$('#popularVideosOptions').trigger('change')" data-toggle="tooltip" title="Reload">
+						<em class="fas fa-sync-alt"></em>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-2">
+				<div class="form-row">
+					<div class="col-12 col-md-6">
+						<div class="input-group mb-2">
+							<div class="input-group-prepend">
+								<span class="input-group-text">
+									<i class="fas fa-search fa-lg"></i>
+								</span>
+							</div>
+							<select class="form-control" id="popularVideosOptions" name="popularVideosOptions" aria-label="Popular Videos Filter">
+								<option value="today" selected>Today</option>
+								<option value="yesterday">Yesterday</option>
+								<option value="last_month">Last Month</option>
+								<option value="last_weekend">Last Weekend</option>
+								<option value="7_days">Last 7 Days</option>
+								<option value="30_days">Last 30 Days</option>
+								<option value="60_days">Last 60 Days</option>
+								<option value="custom">Custom</option>
+							</select>
+						</div>
+					</div>
+					<div class="col-12 col-md-6">
+						<div class="input-group mb-2 d-none">
+							<div class="input-group-prepend">
+								<span class="input-group-text">
+									<i class="fas fa-calendar fa-lg"></i>
+								</span>
+							</div>
+							<input type="text" id="popularVideosDatePicker" maxlength="23" data-toggle="daterangepicker" class="form-control" aria-label="Popular Videos Date Range Filter">
+						</div>
+					</div>
+				</div>
+				<table id="tbPopularVideos" class="table table-striped table-bordered table-hover m-0 w-100" aria-label="Popular Videos">
+					<thead>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="2">Sources</th>
+							<th scope="col" data-priority="4">Views</th>
+							<th scope="col" data-priority="3">User</th>
+							<th scope="col" data-priority="5">Created</th>
+							<th scope="col" data-priority="1">Actions</th>
+						</tr>
+					</thead>
+					<tfoot>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="2">Sources</th>
+							<th scope="col" data-priority="4">Views</th>
+							<th scope="col" data-priority="3">User</th>
+							<th scope="col" data-priority="5">Created</th>
+							<th scope="col" data-priority="1">Actions</th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</div>
+		<div class="card mt-3">
+			<div class="card-header">
+				<div class="d-flex justify-content-between align-items-center">
+					<h6 class="mb-0">
+						<i class="fas fa-play mr-2 text-success"></i>
+						Recently Added Videos
+					</h6>
+					<button class="btn btn-outline-secondary" onclick="$('#tbRecentVideos').DataTable().ajax.reload(null, false)" data-toggle="tooltip" title="Reload">
+						<em class="fas fa-sync-alt"></em>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-2">
+				<table id="tbRecentVideos" class="table table-striped table-bordered table-hover m-0 w-100" aria-label="Recently Added Videos">
+					<thead>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="2">Sources</th>
+							<th scope="col" data-priority="4">Views</th>
+							<th scope="col" data-priority="3">User</th>
+							<th scope="col" data-priority="5">Created</th>
+							<th scope="col" data-priority="1">Actions</th>
+						</tr>
+					</thead>
+					<tfoot>
+						<tr>
+							<th scope="col" data-priority="0">Title</th>
+							<th scope="col" data-priority="2">Sources</th>
+							<th scope="col" data-priority="4">Views</th>
+							<th scope="col" data-priority="3">User</th>
+							<th scope="col" data-priority="5">Created</th>
+							<th scope="col" data-priority="1">Actions</th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</div>
+		{# Plugin Widget Slot: main column bottom #}
+		{{ render_slot('backend.dashboard.main_bottom') }}
+	</div>
+</div>
+
+<div class="row mt-3">
+	<div class="col-12">
+		<div class="card">
+			<div class="card-header">
+				<div class="d-flex justify-content-between align-items-center">
+					<h6 class="mb-0"><i class="fas fa-chart-line mr-2 text-primary"></i> Statistics</h6>
+					<button class="btn btn-outline-secondary" onclick="$('#views select[name=options]').trigger('change')" data-toggle="tooltip" title="Reload">
+						<em class="fas fa-sync-alt"></em>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-2">
+				<div id="views" class="mx-auto text-center">
+					<div class="d-flex justify-content-between align-items-center mx-auto mb-2" style="max-width:250px">
+						<div class="input-group">
+							<div class="input-group-prepend">
+								<span class="input-group-text">
+									<i class="fas fa-search fa-lg"></i>
+								</span>
+							</div>
+							<select class="form-control" id="options" name="options" aria-label="Daily Statistics Filter">
+								<option value="this_year">This Year</option>
+								<option value="this_month">This Month</option>
+								<option value="7_days" selected>Last 7 Days</option>
+								<option value="last_month">Last Month</option>
+								<option value="30_days">Last 30 Days</option>
+								<option value="3_months">Last 3 Months</option>
+								<option value="6_months">Last 6 Months</option>
+								<option value="last_year">Last Year</option>
+							</select>
+						</div>
+						<div class="ml-3">
+							<i class="fas fa-spin fa-sync-alt text-primary" id="statisticsLoader"></i>
+						</div>
+					</div>
+					<div class="chart"></div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mt-3">
+			<div class="card-header">
+				<div class="d-flex justify-content-between align-items-center">
+					<h6 class="mb-0"><i class="fas fa-globe mr-2 text-info"></i> Popular Browsers</h6>
+					<button class="btn btn-outline-secondary" onclick="$('#popularBrowsersOptions').trigger('change')" data-toggle="tooltip" title="Reload">
+						<em class="fas fa-sync-alt"></em>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-2">
+				<div class="form-row">
+					<div class="col-12 col-lg-6">
+						<div class="input-group mb-2">
+							<div class="input-group-prepend">
+								<span class="input-group-text">
+									<i class="fas fa-search fa-lg"></i>
+								</span>
+							</div>
+							<select class="form-control" id="popularBrowsersOptions" name="popularBrowsersOptions" aria-label="Popular Browsers Filter">
+								<option value="today" selected>Today</option>
+								<option value="yesterday">Yesterday</option>
+								<option value="last_month">Last Month</option>
+								<option value="last_weekend">Last Weekend</option>
+								<option value="7_days">Last 7 Days</option>
+								<option value="30_days">Last 30 Days</option>
+								<option value="60_days">Last 60 Days</option>
+								<option value="custom">Custom</option>
+							</select>
+						</div>
+					</div>
+					<div class="col-12 col-lg-6">
+						<div class="input-group mb-2 d-none">
+							<div class="input-group-prepend">
+								<span class="input-group-text">
+									<i class="fas fa-calendar fa-lg"></i>
+								</span>
+							</div>
+							<input type="text" id="popularBrowsersDatePicker" maxlength="23" data-toggle="daterangepicker" class="form-control" aria-label="Popular Browsers Date Range Filter">
+						</div>
+					</div>
+				</div>
+				<table id="tbPopularBrowsers" class="table table-bordered table-striped table-hover m-0 w-100" aria-label="Popular Browsers">
+					<thead>
+						<tr>
+							<th scope="col" data-priority="0">Browser</th>
+							<th scope="col" data-priority="2">OS</th>
+							<th scope="col" data-priority="3">Device</th>
+							<th scope="col" data-priority="1">Views</th>
+						</tr>
+					</thead>
+					<tfoot>
+						<tr>
+							<th scope="col" data-priority="0">Browser</th>
+							<th scope="col" data-priority="2">OS</th>
+							<th scope="col" data-priority="3">Device</th>
+							<th scope="col" data-priority="1">Views</th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-6">
+		<div class="card mt-3">
+			<div class="card-header">
+				<div class="d-flex justify-content-between align-items-center">
+					<h6 class="mb-0">
+						<i class="fas fa-flag mr-2 text-info"></i> 
+						Popular Countries/ASNs
+					</h6>
+					<button class="btn btn-outline-secondary" onclick="$('#popularCountryAsnFilterOptions').trigger('change')" data-toggle="tooltip" title="Reload">
+						<em class="fas fa-sync-alt"></em>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-2">
+				<div class="input-group mb-2">
+					<div class="input-group-prepend">
+						<span class="input-group-text">
+							<i class="fas fa-search fa-lg"></i>
+						</span>
+					</div>
+					<select class="form-control" id="popularCountryASNOptions" name="popularCountryASNOptions" aria-label="Select Country/ASN">
+						<option value="popularCountries" selected>Country</option>
+						<option value="popularASN">ASN</option>
+					</select>
+					<select class="form-control" id="popularCountryAsnFilterOptions" name="popularCountryAsnFilterOptions" aria-label="Popular Countries/ASNs Filter">
+						<option value="today" selected>Today</option>
+						<option value="yesterday">Yesterday</option>
+						<option value="last_month">Last Month</option>
+						<option value="last_weekend">Last Weekend</option>
+						<option value="7_days">Last 7 Days</option>
+						<option value="30_days">Last 30 Days</option>
+						<option value="60_days">Last 60 Days</option>
+						<option value="custom">Custom</option>
+					</select>
+				</div>
+				<div class="input-group mb-2 d-none">
+					<div class="input-group-prepend">
+						<span class="input-group-text">
+							<i class="fas fa-calendar fa-lg"></i>
+						</span>
+					</div>
+					<input type="text" id="popularCountryAsnDatePicker" maxlength="23" data-toggle="daterangepicker" class="form-control" aria-label="Popular Countries/ASNs Date Range Filter">
+				</div>
+				<table id="tbPopularCountries" class="table table-bordered table-striped table-hover m-0 w-100" aria-label="Popular Countries / ASN">
+					<thead>
+						<tr>
+							<th scope="col" data-priority="0">Country / ASN</th>
+							<th scope="col" data-priority="1">Views</th>
+						</tr>
+					</thead>
+					<tfoot>
+						<tr>
+							<th scope="col" data-priority="0">Country / ASN</th>
+							<th scope="col" data-priority="1">Views</th>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>
+
+{% if is_admin and server_status is defined %}
+	<div class="row mt-3">
+		<div class="col-12">
+			{% include server_status with {link: base_url} %}
+		</div>
+	</div>
+	<script>
+		$(document).ready(function() {
+			setInterval(function() {
+				if (typeof load_balancers !== 'undefined') {
+					load_balancers.loadStatusCard('{{ base_url }}');
+				}
+			}, 5000);
+		});
+	</script>
+{% endif %}
+
+{% if is_admin and hide_ext_dialog == false %}
+	<div class="modal fade" id="modalExtApps" tabindex="-1" aria-labelledby="modalExtAppsLabel" data-backdrop="static" data-keyboard="false">
+		<div class="modal-dialog modal-md modal-dialog-scrollable">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title" id="modalExtAppsLabel">Support Checker</h5>
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+						<span>&times;</span>
+					</button>
+				</div>
+				<div class="modal-body">
+					<div class="alert alert-warning rounded-0">You have to enable the php functions and install the following php extensions and applications for the GDPlayer tool to work perfectly.</div>
+					<table class="table table-hover" style="width:100%" aria-label="PHP Functions, Extensions, Applications">
+						<tbody>
+							<tr>
+								<th scope="col" colspan="2" class="text-center bg-primary text-white">PHP Extensions</th>
+							</tr>
+							<tr>
+								<th scope="col">ionCube Loader</th>
+								<td>
+									<span id="php_ioncube">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col" colspan="2" class="text-center bg-custom text-white">PHP Functions</th>
+							</tr>
+							<tr>
+								<th scope="col">exec</th>
+								<td>
+									<span id="php_exec">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">shell_exec</th>
+								<td>
+									<span id="php_shell_exec">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">popen</th>
+								<td>
+									<span id="php_popen">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">pclose</th>
+								<td>
+									<span id="php_pclose">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">proc_open</th>
+								<td>
+									<span id="php_proc_open">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">proc_get_status</th>
+								<td>
+									<span id="php_proc_get_status">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">proc_close</th>
+								<td>
+									<span id="php_proc_close">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">putenv</th>
+								<td>
+									<span id="php_putenv">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col">symlink</th>
+								<td>
+									<span id="php_symlink">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+							<tr>
+								<th scope="col" colspan="2" class="text-center bg-danger text-white">Applications</th>
+							</tr>
+							<tr>
+								<th scope="col">Google Chrome / Chromium<br><a href="https://linuxize.com/tags/chrome/" target="_blank" rel="noopener">Install Now</a>
+								</th>
+								<td>
+									<span id="php_chrome">
+										<em class="fas fa-times-circle text-danger"></em>
+										Disabled</span>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+					<div class="custom-control custom-checkbox mt-3">
+						<input type="checkbox" class="custom-control-input" id="hideForever">
+						<label class="custom-control-label" for="hideForever">Don't show this dialog box for a month</label>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-success" onclick="dashboard.supportChecker()">Re-check</button>
+					<button type="button" class="btn btn-danger" data-dismiss="modal">Close</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{% endif %}
+
+{# Plugin Widget Slot: page bottom #}
+{{ render_slot('backend.dashboard.bottom') }}
+
+{% include templates.backend_footer %}

@@ -1,0 +1,415 @@
+<div class="row">
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">Media Settings</h6>
+			<div class="card-body">
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="player">Video Player</label>
+						<select name="player" id="player" class="form-control">
+							{% for key, val in player_list %}
+								<option value="{{ key }}" {{ key == player ? 'selected' : '' }}>{{ val }}</option>
+							{% endfor %}
+						</select>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="player_skin">Video Player Skin</label>
+						<select name="player_skin" id="player_skin" class="form-control">
+							<option value="">Default</option>
+							{% for key, val in skin_list %}
+								<option value="{{ key }}" {{ key == current_skin ? 'selected' : '' }}>{{ val }}</option>
+							{% endfor %}
+						</select>
+						<script>
+							$("#player_skin").change(function () {
+								if ($(this).val() === "dropload") {
+									$("#player_color").val("#3DB6D4");
+									$("#player_color2").val("#00D0A2");
+								} else if ($(this).val() === "netflix") {
+									$("#player_color, #player_color2").val("#e50914");
+								} else if ($(this).val() === "hotstar") {
+									$("#player_color").val("#095ae5");
+									$("#player_color2").val("#062794");
+								} else if ($(this).val() === "iqiyi") {
+									$("#player_color").val("#00c234");
+									$("#player_color2").val("#23d41e");
+								} else if ($(this).val() === "lulustream") {
+									$("#player_color").val("#4a62e1");
+									$("#player_color2").val("#51e0c0");
+								}
+							});
+						</script>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="player_color">Video Player Color 1</label>
+						<input type="color" name="player_color" id="player_color" class="form-control" placeholder="Video Player Color" value="{{ player_color ? '#' ~ player_color : '#673ab7' }}">
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="player_color2">Video Player Color 2</label>
+						<input type="color" name="player_color2" id="player_color2" class="form-control" placeholder="Video Player Color 2" value="{{ player_color2 ? '#' ~ player_color2 : '#673ab7' }}">
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="stretching">Video Position</label>
+						<select name="stretching" id="stretching" class="form-control">
+							<option value="uniform">Uniform</option>
+							<option value="exactfit" {{ stretching == 'exactfit' ? 'selected' : '' }}>Exact Fit</option>
+							<option value="fill" {{ stretching == 'fill' ? 'selected' : '' }}>Fill</option>
+							<option value="none" {{ stretching == 'none' ? 'selected' : '' }}>None</option>
+						</select>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="preload">Video Preload</label>
+						<select name="preload" id="preload" class="form-control">
+							<option value="auto">Auto</option>
+							<option value="metadata" {{ preload == 'metadata' ? 'selected' : '' }}>Metadata</option>
+							<option value="none" {{ preload == 'none' ? 'selected' : '' }}>None</option>
+						</select>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="default_resolution">Default Video Resolution</label>
+						<select id="default_resolution" name="default_resolution" class="form-control">
+							{% for val in resolutions %}
+								{% set px = val == 'Default' or val == 'Original' or val == 'Auto' ? '' : 'p+' %}
+								<option value="{{ val }}" {{ val == default_resolution ? 'selected' : '' }}>{{ val }}{{ px }}</option>
+							{% endfor %}
+						</select>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="default_audio">Default Audio Language</label>
+						<select id="default_audio" name="default_audio" class="form-control select2">
+							{% for val in subtitles %}
+								<option value="{{ val }}" {{ val == default_audio ? 'selected' : (val == 'en' ? 'selected' : '') }}>{{ val }}</option>
+							{% endfor %}
+						</select>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="autoplay" value="false">
+							<input type="checkbox" class="custom-control-input" id="autoplay" name="autoplay" value="true" {{ autoplay ? 'checked' : '' }}>
+							<label class="custom-control-label" for="autoplay">Autoplay</label>
+						</div>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="mute" value="false">
+							<input type="checkbox" class="custom-control-input" id="mute" name="mute" value="true" {{ mute ? 'checked' : '' }}>
+							<label class="custom-control-label" for="mute">Mute</label>
+						</div>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="repeat" value="false">
+							<input type="checkbox" class="custom-control-input" id="repeat" name="repeat" value="true" {{ repeat ? 'checked' : '' }}>
+							<label class="custom-control-label" for="repeat">Repeat</label>
+						</div>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="display_title" value="false">
+							<input type="checkbox" class="custom-control-input" id="display_title" name="display_title" value="true" {{ display_title ? 'checked' : '' }}>
+							<label class="custom-control-label" for="display_title">Show Title</label>
+						</div>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="playback_rate" value="false">
+							<input type="checkbox" class="custom-control-input" id="playback_rate" name="playback_rate" value="true" {{ playback_rate ? 'checked' : '' }}>
+							<label class="custom-control-label" for="playback_rate">Show Playback Rate</label>
+						</div>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="enable_share_button" value="false">
+							<input type="checkbox" class="custom-control-input" id="enable_share_button" name="enable_share_button" value="true" {{ enable_share_button ? 'checked' : '' }}>
+							<label class="custom-control-label" for="enable_share_button">Show Share Button</label>
+						</div>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="enable_download_button" value="false">
+							<input type="checkbox" class="custom-control-input" id="enable_download_button" name="enable_download_button" value="true" {{ enable_download_button ? 'checked' : '' }}>
+							<label class="custom-control-label" for="enable_download_button">Show Download Button</label>
+						</div>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="disable_filmstrip" value="false">
+							<input type="checkbox" class="custom-control-input" id="disable_filmstrip" name="disable_filmstrip" value="true" {{ disable_filmstrip ? 'checked' : '' }}>
+							<label class="custom-control-label" for="disable_filmstrip">Disable Filmstrip</label>
+						</div>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<div class="custom-control custom-checkbox">
+							<input type="hidden" name="fake_play_button" value="false">
+							<input type="checkbox" class="custom-control-input" id="fake_play_button" name="fake_play_button" value="true" {{ fake_play_button ? 'checked' : '' }}>
+							<label class="custom-control-label" for="fake_play_button">Show Fake Play Button</label>
+						</div>
+					</div>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="continue_watching" value="false">
+						<input type="checkbox" class="custom-control-input" id="continue_watching" name="continue_watching" value="true" {{ continue_watching ? 'checked' : '' }}>
+						<label class="custom-control-label" for="continue_watching">Enable Continue Watching Dialog</label>
+					</div>
+					<small class="form-text text-muted">If enabled, a dialog will prompt viewers to resume video playback from their last watched position.</small>
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="pause_on_left" value="false">
+						<input type="checkbox" class="custom-control-input" id="pause_on_left" name="pause_on_left" value="true" {{ pause_on_left ? 'checked' : '' }}>
+						<label class="custom-control-label" for="pause_on_left">Pause Video when Leaving Embed Page</label>
+					</div>
+					<small class="form-text text-muted">If enabled, the video will automatically pause whenever the viewer switches tabs or leaves the embed page.</small>
+				</div>
+				<div class="mb-3 mb-0">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="allow_public_qry" value="false">
+						<input type="checkbox" class="custom-control-input" id="allow_public_qry" name="allow_public_qry" value="true" {{ allow_public_qry ? 'checked' : '' }}>
+						<label class="custom-control-label" for="allow_public_qry">Allow Public to Insert Custom Queries on Embed Pages</label>
+					</div>
+					<small class="form-text text-muted">If enabled, query parameters like autoplay, mute, and repeat can be set in the embed URL by the public.<br><strong>Example:</strong><br>/embed/?slug<strong class="text-danger">&amp;autoplay=1&amp;mute=1&amp;repeat=1</strong><br>/embed/slug/<strong class="text-danger">?autoplay=1&amp;mute=1&amp;repeat=1</strong></small>
+				</div>
+			</div>
+		</div>
+		
+		<div class="card mb-3">
+			<h6 class="card-header">Subtitle Settings</h6>
+			<div class="card-body">
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="default_subtitle">Default Subtitle Language</label>
+						<select id="default_subtitle" name="default_subtitle" class="form-control select2">
+							{% for val in subtitles %}
+								<option value="{{ val }}" {{ val == default_subtitle ? 'selected' : (val == 'en' ? 'selected' : '') }}>{{ val }}</option>
+							{% endfor %}
+						</select>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="subtitle_color">Subtitle Font Color</label>
+						<input type="color" name="subtitle_color" id="subtitle_color" class="form-control" placeholder="Video Player Color" value="{{ subtitle_color ? '#' ~ subtitle_color : '#ffff00' }}">
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="font_family">Font Family</label>
+						<select id="font_family" name="font_family" class="form-control">
+							{% for dt in font_styles %}
+								<option value="{{ dt }}" {{ font_family == dt ? 'selected' : '' }}>{{ dt }}</option>
+							{% endfor %}
+						</select>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="edge_style">Edge Style</label>
+						<select id="edge_style" name="edge_style" class="form-control">
+							{% for k,v in edge_styles %}
+								<option value="{{ k }}" {{ edge_style == k ? 'selected' : '' }}>{{ v }}</option>
+							{% endfor %}
+						</select>
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="background_opacity">Background Opacity</label>
+						<div class="input-group">
+							<input type="number" id="background_opacity" name="background_opacity" value="{{ background_opacity is not empty ? background_opacity : '75' }}" class="form-control" placeholder="Background Opacity" min="0" max="100" aria-describedby="alb2">
+							<div class="input-group-append">
+								<span class="input-group-text" id="alb2">%</span>
+							</div>
+						</div>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="background_color">Background Color</label>
+						<input type="color" name="background_color" id="background_color" class="form-control" placeholder="Background Color" value="{{ background_color ? '#' ~ background_color : '#000000' }}">
+					</div>
+				</div>
+				<div class="row">
+					<div class="mb-3 col-12 col-md-6">
+						<label for="window_opacity">Window Opacity</label>
+						<div class="input-group">
+							<input type="number" id="window_opacity" name="window_opacity" value="{{ window_opacity is not empty ? window_opacity : '0' }}" class="form-control" placeholder="Window Opacity" min="0" max="100" aria-describedby="alb1">
+							<div class="input-group-append">
+								<span class="input-group-text" id="alb1">%</span>
+							</div>
+						</div>
+					</div>
+					<div class="mb-3 col-12 col-md-6">
+						<label for="window_color">Window Color</label>
+						<input type="color" name="window_color" id="window_color" class="form-control" placeholder="Window Color" value="{{ window_color ? '#' ~ window_color : '#000000' }}">
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Poster Settings</h6>
+			<div class="card-body">
+				<div class="mb-3 mb-0">
+					<label for="poster">Default Poster Image URL</label>
+					<input type="url" name="poster" id="poster" class="form-control" placeholder="Insert Poster image url (.jpg/.jpeg/.png/.webp)" value="{{ poster }}">
+					<div class="custom-control custom-checkbox mt-2">
+						<input type="hidden" name="force_default_poster" value="false">
+						<input type="checkbox" class="custom-control-input" id="force_default_poster" name="force_default_poster" value="true" {{ force_default_poster ? 'checked' : '' }}>
+						<label class="custom-control-label" for="force_default_poster">Force Default Poster Image</label>
+					</div>
+					<small class="form-text text-muted">If enabled, this default poster image will always be displayed, overriding the video's original poster.</small>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Logo Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<label for="logo_file">Image URL</label>
+					<input type="url" name="logo_file" id="logo_file" class="form-control" placeholder="Insert the watermark image link" value="{{ logo_file }}">
+				</div>
+				<div class="mb-3">
+					<label for="logo_open_link">Visited URL</label>
+					<input type="url" name="logo_open_link" id="logo_open_link" class="form-control" placeholder="Insert a link that will be visited each time the watermark image is clicked" value="{{ logo_open_link }}">
+				</div>
+				<div class="mb-3">
+					<label for="logo_position">Position</label>
+					<select name="logo_position" id="logo_position" class="form-control">
+						{% for k,v in logo_positions %}
+							<option value="{{ k }}" {{ logo_position == k ? 'selected' : '' }}>{{ v }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="mb-3">
+					<label for="logo_margin">Margin</label>
+					<input type="number" name="logo_margin" id="logo_margin" class="form-control" placeholder="Enter the distance between the logo and the edge of the screen (px)" value="{{ logo_margin }}">
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="logo_hide" value="false">
+						<input type="checkbox" class="custom-control-input" id="logo_hide" name="logo_hide" value="true" {{ logo_hide ? 'checked' : '' }}>
+						<label class="custom-control-label" for="logo_hide">Hide</label>
+					</div>
+					<small class="form-text text-muted">If enabled, the logo will fade in and out along with the player controls.</small>
+				</div>
+				<div class="mb-3">
+					<label for="small_logo_file">Small Logo URL</label>
+					<input type="url" name="small_logo_file" id="small_logo_file" class="form-control" placeholder="The small logo will be displayed on the video player control" value="{{ small_logo_file }}">
+				</div>
+				<div class="mb-3 mb-0">
+					<label for="small_logo_link">Small Logo Visited URL</label>
+					<input type="url" name="small_logo_link" id="small_logo_link" class="form-control" placeholder="Insert a link that will be visited each time the small logo is clicked" value="{{ small_logo_link }}">
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="col-12 col-md-6">
+		<div class="card mb-3">
+			<h6 class="card-header">P2P Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="p2p" value="false">
+						<input type="checkbox" class="custom-control-input" id="p2p" name="p2p" value="true" {{ p2p ? 'checked' : '' }}>
+						<label class="custom-control-label" for="p2p">Enable P2P</label>
+					</div>
+					<small class="form-text text-muted">If enabled, Peer-to-Peer (P2P) technology will be used to reduce server bandwidth usage when multiple users are watching the same video simultaneously.</small>
+				</div>
+				<div class="mb-3 mb-0">
+					<label for="torrent_tracker">Torrent Trackers</label>
+					<textarea name="torrent_tracker" id="torrent_tracker" cols="30" rows="5" class="form-control">{{ torrent_tracker ? torrent_tracker : torrent_default }}</textarea>
+				</div>
+			</div>
+		</div>
+
+		<div class="card mb-3">
+			<h6 class="card-header">Embed &amp; Download Settings</h6>
+			<div class="card-body">
+				<div class="mb-3">
+					<small class="form-text text-muted">Available placeholders: {title} = Video Title, {siteName} = Site Name</small>
+				</div>
+				<div class="mb-3">
+					<label for="text_title">Embed Page Title Text</label>
+					<input type="text" name="text_title" id="text_title" class="form-control" placeholder="Watch {title} - {siteName}" value="{{ text_title ? text_title : 'Watch {title} - {siteName}' }}">
+				</div>
+				<div class="mb-3">
+					<label for="loader">Loader Style</label>
+					<select name="loader" id="loader" class="form-control">
+						{% for k,v in loaderList %}
+							<option value="{{ k }}" {{ loader == k ? 'selected' : '' }}>{{ v }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				<div class="mb-3">
+					<label for="text_loading">Loading Text</label>
+					<input type="text" name="text_loading" id="text_loading" class="form-control" placeholder="Loading..." value="{{ text_loading ? text_loading : '' }}">
+				</div>
+				<div class="mb-3">
+					<label for="text_download">Download Button Text</label>
+					<input type="text" name="text_download" id="text_download" class="form-control" placeholder="Download {title}" value="{{ text_download ? text_download : 'Download {title}' }}">
+				</div>
+				<div class="mb-3">
+					<label for="text_resume">Resume Dialog Text</label>
+					<textarea name="text_resume" id="text_resume" class="form-control">{{ text_resume ? text_resume : 'Resume at hh:mm:ss' }}</textarea>
+				</div>
+				<div class="mb-3">
+					<label for="text_resume_yes">Resume Confirm Button Text</label>
+					<input type="text" name="text_resume_yes" id="text_resume_yes" class="form-control" placeholder="Yes" value="{{ text_resume_yes ? text_resume_yes : 'Yes' }}">
+				</div>
+				<div class="mb-3">
+					<label for="text_resume_no">Resume Cancel Button Text</label>
+					<input type="text" name="text_resume_no" id="text_resume_no" class="form-control" placeholder="No" value="{{ text_resume_no ? text_resume_no : 'No' }}">
+				</div>
+				<div class="mb-3">
+					<label for="text_rewind">JW Player Rewind Button Text</label>
+					<input type="text" name="text_rewind" id="text_rewind" class="form-control" placeholder="Rewind 10 Seconds" value="{{ text_rewind ? text_rewind : 'Rewind 10 Seconds' }}">
+				</div>
+				<div class="mb-3">
+					<label for="text_forward">JW Player Forward Button Text</label>
+					<input type="text" name="text_forward" id="text_forward" class="form-control" placeholder="Forward 10 Seconds" value="{{ text_forward ? text_forward : 'Forward 10 Seconds' }}">
+				</div>
+				<div class="mb-3">
+					<div class="custom-control custom-checkbox">
+						<input type="hidden" name="hide_hostname" value="false">
+						<input type="checkbox" class="custom-control-input" id="hide_hostname" name="hide_hostname" value="true" {{ hide_hostname ? 'checked' : '' }}>
+						<label class="custom-control-label" for="hide_hostname">Hide Original Hostname</label>
+					</div>
+					<small class="form-text text-muted">If enabled, the actual server hostnames will be hidden from the viewer and replaced with a <a href="{{ current_url()|replace({'player':'hosting'}) }}">custom name here</a>.</small>
+				</div>
+				<div class="mb-3">
+					<label for="slug_embed">Embed Page Slug</label>
+					<input type="text" name="slug_embed" id="slug_embed" class="form-control" placeholder="Insert embed page slug. Default: embed" value="{{ slug_embed ? slug_embed : 'embed' }}">
+					<small class="form-text text-muted">The URL path segment used for embed links. Default: embed (e.g., /embed/ or /e/).</small>
+				</div>
+				<div class="mb-3">
+					<label for="slug_download">Download Page Slug</label>
+					<input type="text" name="slug_download" id="slug_download" class="form-control" placeholder="Insert download page slug. Default: download" value="{{ slug_download ? slug_download : 'download' }}">
+					<small class="form-text text-muted">The URL path segment used for download links. Default: download (e.g., /download/ or /d/).</small>
+				</div>
+				<div class="mb-3">
+					<label for="slug_request">Request Page Slug</label>
+					<input type="text" name="slug_request" id="slug_request" class="form-control" placeholder="Insert request page slug. Default: embed2" value="{{ slug_request ? slug_request : 'embed2' }}">
+					<small class="form-text text-muted">The URL path segment used for request links. Default: embed2 (e.g., /embed2/ or /r/).</small>
+				</div>
+				<div class="mb-0">
+					<label for="iframe_code">Custom Embed Code</label>
+					<textarea name="iframe_code" id="iframe_code" rows="5" class="form-control">{{ iframe_code ? iframe_code : '<iframe title="{title}" src="{embed_url}" width="640" height="320" loading="lazy" allow="fullscreen; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; geolocation; web-share; screen-wake-lock; idle-detection"></iframe>' }}</textarea>
+					<small class="form-text text-muted">Available placeholders: {embed_url} = Embed URL, {title} = Video Title</small>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
