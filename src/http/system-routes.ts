@@ -16,6 +16,7 @@ import type { DriveBackgroundCoordinator } from '../drive/drive-background-worke
 import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../settings/general-runtime.js'
 import { disqusConfig, disqusCsp, renderDisqus, type DisqusConfig } from '../player/disqus.js'
 import type { ProxyMaintenanceResult } from '../background/proxy-maintenance-worker.js'
+import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 
 const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
@@ -51,7 +52,7 @@ export async function registerSystemRoutes(
   const security = new Security(config.secureSalt)
 
   app.addHook('onRequest', async (request, reply) => {
-    if ((request.method !== 'GET' && request.method !== 'HEAD') || request.url.split('?', 1)[0] !== '/') return
+    if ((request.method !== 'GET' && request.method !== 'HEAD') || !isLegacyIndexRequest(request.url)) return
     const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
     if (settings.anonymous_generator || await authenticatedRequest(request, options.isAuthenticated)) return
     applyPublicPageHeaders(reply, true)
@@ -60,7 +61,7 @@ export async function registerSystemRoutes(
 
   const landingHtml = options.landingHtml
   if (landingHtml !== undefined) {
-    app.get('/', async (_request, reply) => {
+    const landing = async (_request: FastifyRequest, reply: FastifyReply) => {
       const [settings, general] = await Promise.all([
         loadRuntimePublicSettings(options.loadPublicSettings),
         loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
@@ -73,10 +74,12 @@ export async function registerSystemRoutes(
         renderLandingDisqus(renderLandingContact(landingHtml, settings.contact_page_link), comments),
         recaptchaSiteKey
       )
-    })
+    }
+    app.get('/', landing)
+    registerLegacyFrontendAliases(app, ['index'], landing)
   }
 
-  app.get('/ping', async (_request, reply) => {
+  const ping = async (_request: FastifyRequest, reply: FastifyReply) => {
     reply.header('cache-control', 'no-cache')
     const background = options.background?.trigger()
     const jobs = background?.jobs
@@ -92,7 +95,8 @@ export async function registerSystemRoutes(
         background_started: background.started
       })
     }
-  })
+  }
+  registerLegacyFrontendAliases(app, ['ping'], ping)
 
   const cronProxy = async (request: FastifyRequest, reply: FastifyReply) => {
     applyPublicPageHeaders(reply, true)
@@ -121,10 +125,9 @@ export async function registerSystemRoutes(
       }
     }
   }
-  app.get('/cron-proxy', cronProxy)
-  app.get('/cron-proxy/', cronProxy)
+  registerLegacyFrontendAliases(app, ['cron-proxy'], cronProxy)
 
-  app.get('/health-check', async (_request, reply) => {
+  const healthCheck = async (_request: FastifyRequest, reply: FastifyReply) => {
     reply.header('cache-control', 'no-cache')
     return {
       connections: await activeConnections(app),
@@ -132,7 +135,8 @@ export async function registerSystemRoutes(
       mem_used_pct: memoryUsagePercent(),
       timestamp: Math.floor(Date.now() / 1_000)
     }
-  })
+  }
+  registerLegacyFrontendAliases(app, ['health-check'], healthCheck)
 
   const clearCache = async (request: FastifyRequest, reply: FastifyReply) => {
     applyPublicPageHeaders(reply, true)
@@ -145,8 +149,7 @@ export async function registerSystemRoutes(
       return 'fail'
     }
   }
-  app.get('/clear-cache', clearCache)
-  app.get('/clear-cache/', clearCache)
+  registerLegacyFrontendAliases(app, ['clear-cache'], clearCache)
 
   const sitemap = async (_request: unknown, reply: FastifyReply) => {
     const baseUrl = config.baseUrl.toString().replace(/\/$/, '')
@@ -156,39 +159,34 @@ export async function registerSystemRoutes(
     reply.type('application/xml; charset=UTF-8')
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`
   }
-  app.get('/sitemap', sitemap)
-  app.get('/sitemap.xml', sitemap)
+  registerLegacyFrontendAliases(app, ['sitemap'], sitemap)
 
   const pages = [
-    { paths: ['/changelog', '/changelog/'], render: renderChangelogPage },
-    { paths: ['/terms', '/terms/'], render: renderTermsPage },
-    { paths: ['/privacy', '/privacy/'], render: renderPrivacyPage },
-    { paths: ['/dmca', '/dmca/'], render: renderDmcaPage }
+    { alias: 'changelog', render: renderChangelogPage },
+    { alias: 'terms', render: renderTermsPage },
+    { alias: 'privacy', render: renderPrivacyPage },
+    { alias: 'dmca', render: renderDmcaPage }
   ] as const
 
   for (const page of pages) {
-    for (const path of page.paths) {
-      app.get(path, async (_request, reply) => {
-        const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
-        applyPublicPageHeaders(reply)
-        reply.header('cache-control', 'public, max-age=300').type('text/html; charset=utf-8')
-        return page.render(publicNavigation(settings.contact_page_link))
-      })
-    }
+    registerLegacyFrontendAliases(app, [page.alias], async (_request, reply) => {
+      const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+      applyPublicPageHeaders(reply)
+      reply.header('cache-control', 'public, max-age=300').type('text/html; charset=utf-8')
+      return page.render(publicNavigation(settings.contact_page_link))
+    })
   }
 
   for (const error of Object.values(publicErrors)) {
-    for (const path of [`/${error.status}`, `/${error.status}/`]) {
-      app.get(path, async (_request, reply) => {
-        const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
-        applyPublicPageHeaders(reply, true)
-        reply.code(error.status).type('text/html; charset=utf-8')
-        return renderPublicError(error, publicNavigation(settings.contact_page_link))
-      })
-    }
+    registerLegacyFrontendAliases(app, [String(error.status)], async (_request, reply) => {
+      const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+      applyPublicPageHeaders(reply, true)
+      reply.code(error.status).type('text/html; charset=utf-8')
+      return renderPublicError(error, publicNavigation(settings.contact_page_link))
+    })
   }
 
-  app.get('/redirect/*', async (request, reply) => {
+  registerLegacyFrontendAliases(app, ['redirect'], async (request, reply) => {
     const target = parseLegacyRedirect(request.url, security)
     if (target === null) {
       applyPublicPageHeaders(reply, true)
@@ -197,21 +195,13 @@ export async function registerSystemRoutes(
     }
     return reply.redirect(target.href)
   })
-
-  app.get('/embed.php', async (request, reply) => {
-    const query = legacyShimQuery(request.url)
-    return query === '' ? reply.code(200).send() : reply.redirect(`/e/?${query}`)
-  })
-
-  app.get('/embed2.php', async (request, reply) => {
-    const query = legacyShimQuery(request.url)
-    return query === '' ? reply.code(200).send() : reply.redirect(`/r/?${query}`)
-  })
 }
 
-function legacyShimQuery(requestUrl: string): string {
-  const index = requestUrl.indexOf('?')
-  return index < 0 ? '' : requestUrl.slice(index + 1)
+function isLegacyIndexRequest(requestUrl: string): boolean {
+  const path = requestUrl.split('?', 1)[0] ?? ''
+  if (path === '/') return true
+  const firstSegment = path.split('/')[1] ?? ''
+  return firstSegment.split('.', 1)[0] === 'index'
 }
 
 function publicNavigation(contactUrl: string): Readonly<{ contactUrl?: string }> {
@@ -362,7 +352,9 @@ function validRecaptchaSiteKey(value: string): string {
 }
 
 function parseLegacyRedirect(requestUrl: string, security: Security): URL | null {
-  const pathAndQuery = requestUrl.slice('/redirect/'.length)
+  const prefix = requestUrl.match(/^\/redirect(?:\.[^/?]*)?(?:\/|(?=\?|$))/u)?.[0]
+  if (prefix === undefined) return null
+  const pathAndQuery = requestUrl.slice(prefix.length)
   const queryIndex = pathAndQuery.indexOf('?')
   const rawPath = queryIndex < 0 ? pathAndQuery : pathAndQuery.slice(0, queryIndex)
   const rawQuery = queryIndex < 0 ? '' : pathAndQuery.slice(queryIndex)

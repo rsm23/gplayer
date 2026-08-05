@@ -184,6 +184,27 @@ async function buildStreamingApp(
 }
 
 describe('authenticated streaming routes', () => {
+  it('accepts dotted frontend aliases for manifest and binary transport paths', async () => {
+    app = await buildStreamingApp(true, undefined, {
+      loadAccessSettings: async () => ({ disableValidation: true, p2p: false, downloadPageEnabled: true })
+    })
+    const security = new Security(secureSalt)
+    const manifestPath = createStreamingProxyPath('hls', new URL('/master.m3u8', upstreamUrl), security)
+      .replace(/^\/hls\//, '/hls.php/')
+    const segmentPath = createStreamingProxyPath('stream-ts', new URL('/segment0.ts?sig=abc', upstreamUrl), security)
+      .replace(/^\/stream-ts\//, '/stream-ts.asset/')
+
+    const [manifest, segment] = await Promise.all([
+      app.inject({ method: 'GET', url: manifestPath }),
+      app.inject({ method: 'GET', url: segmentPath })
+    ])
+
+    expect(manifest.statusCode).toBe(200)
+    expect(manifest.body).toContain('#EXTM3U')
+    expect(segment.statusCode).toBe(200)
+    expect(segment.rawPayload.length).toBeGreaterThan(0)
+  })
+
   it('binds top-level manifests and MP4 streams to the requesting client while leaving encrypted child segments usable', async () => {
     const accessSettings = async () => ({ disableValidation: false, p2p: false, downloadPageEnabled: true })
     app = await buildStreamingApp(true, undefined, { loadAccessSettings: accessSettings })

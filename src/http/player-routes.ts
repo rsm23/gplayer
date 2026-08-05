@@ -13,6 +13,7 @@ import type { AdsSettings } from '../settings/settings-admin-service.js'
 import { renderAdFrameDocument, type AdFrameContent } from '../player/ad-frame.js'
 import { legacyAdBaitImage } from '../player/ad-bait-image.js'
 import { registerLegacyAjaxAliases } from './legacy-ajax-routes.js'
+import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 import { downloadPageLinkTargets, renderDownloadError, renderDownloadPage } from '../player/download-page.js'
 import { P2P_CORE_IMPORT_MAP_CSP_HASH, renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
 import { PlayerLinkGenerator } from '../player/link-generator.js'
@@ -409,8 +410,7 @@ export async function registerPlayerRoutes(
     })
   }
 
-  app.get('/sharer', showSharer)
-  app.get('/sharer/', showSharer)
+  registerLegacyFrontendAliases(app, ['sharer'], showSharer)
 
   const adBait = async (_request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     try {
@@ -431,9 +431,7 @@ export async function registerPlayerRoutes(
     }
   }
 
-  app.get('/ads', adBait)
-  app.get('/ads/', adBait)
-  app.get('/ads/advertisement.png', adBait)
+  registerLegacyFrontendAliases(app, ['ads'], adBait)
 
   app.get('/ads/frame/:slot', async (request, reply) => {
     const slot = adFrameSlotSchema.safeParse((request.params as { slot?: unknown }).slot)
@@ -480,9 +478,6 @@ export async function registerPlayerRoutes(
     const token = security.encryptURL(buildPlayerQuery(requestedMedia as PlayerMediaQuery))
     return reply.redirect(routePath(player.slug_embed, token))
   }
-
-  app.get(`/${config.slugs.request}`, redirectPlaintextRequest)
-  app.get(`/${config.slugs.request}/`, redirectPlaintextRequest)
 
   const showEmbed = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const [ads, player, publicSettings, general, misc, hosting, countryCode] = await Promise.all([
@@ -586,9 +581,6 @@ export async function registerPlayerRoutes(
       })
     })
   }
-
-  app.get(`/${config.slugs.embed}`, showEmbed)
-  app.get(`/${config.slugs.embed}/`, showEmbed)
 
   const showDownload = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const [ads, player, publicSettings, general, misc, hosting, countryCode] = await Promise.all([
@@ -694,15 +686,13 @@ export async function registerPlayerRoutes(
     })
   }
 
-  app.get(`/${config.slugs.download}`, showDownload)
-  app.get(`/${config.slugs.download}/`, showDownload)
-
   const dispatchConfiguredPlayerRoute = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const slug = String((request.params as { playerSlug?: unknown }).playerSlug ?? '').toLowerCase()
+    const slug = legacyFrontendSlug((request.params as { playerSlug?: unknown }).playerSlug)
     const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
-    if (slug === player.slug_embed.toLowerCase()) return await showEmbed(request, reply)
-    if (slug === player.slug_download.toLowerCase()) return await showDownload(request, reply)
-    if (slug === player.slug_request.toLowerCase()) return await redirectPlaintextRequest(request, reply)
+    const kind = playerRouteKind(slug, player)
+    if (kind === 'embed') return await showEmbed(request, reply)
+    if (kind === 'download') return await showDownload(request, reply)
+    if (kind === 'request') return await redirectPlaintextRequest(request, reply)
     return reply.callNotFound()
   }
 
@@ -711,22 +701,53 @@ export async function registerPlayerRoutes(
 
   const dispatchSavedPlayerRoute = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const parameters = request.params as { playerSlug?: unknown; savedSlug?: unknown }
-    const routeSlug = String(parameters.playerSlug ?? '').toLowerCase()
+    const routeSlug = legacyFrontendSlug(parameters.playerSlug)
     const savedSlug = String(parameters.savedSlug ?? '').trim()
-    if (savedSlug === '' || savedSlug.length > 150 || options.resolveSavedVideo === undefined) return reply.callNotFound()
     const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
-    const target = routeSlug === player.slug_embed.toLowerCase()
-      ? player.slug_embed
-      : routeSlug === player.slug_download.toLowerCase()
-        ? player.slug_download
-        : ''
-    if (target === '' || await options.resolveSavedVideo(savedSlug) === null) return reply.callNotFound()
+    const kind = playerRouteKind(routeSlug, player)
+    if (kind === 'request') return await redirectPlaintextRequest(request, reply)
+    if (kind === null) return reply.callNotFound()
+    if (hasPlayerMediaQuery(request.url, security, config.secureSalt)) {
+      return kind === 'embed' ? await showEmbed(request, reply) : await showDownload(request, reply)
+    }
+    if (savedSlug === '' || savedSlug.length > 150 || options.resolveSavedVideo === undefined) return reply.callNotFound()
+    const target = kind === 'embed' ? player.slug_embed : player.slug_download
+    if (await options.resolveSavedVideo(savedSlug) === null) return reply.callNotFound()
     const token = security.encryptURL(buildPlayerQuery({ source: 'db', id: savedSlug }))
     return reply.redirect(routePath(target, token), 302)
   }
 
   app.get('/:playerSlug/:savedSlug', dispatchSavedPlayerRoute)
   app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
+  app.get('/:playerSlug/:savedSlug/*', dispatchSavedPlayerRoute)
+}
+
+function legacyFrontendSlug(value: unknown): string {
+  return String(value ?? '').split('.', 1)[0]?.toLowerCase() ?? ''
+}
+
+function playerRouteKind(slug: string, player: PlayerSettings): 'embed' | 'download' | 'request' | null {
+  let result: 'embed' | 'download' | 'request' | null = slug === 'e' || slug === 'embed'
+    ? 'embed'
+    : slug === 'd' || slug === 'download'
+      ? 'download'
+      : slug === 'r' || slug === 'embed2'
+        ? 'request'
+        : null
+  if (slug === player.slug_embed.toLowerCase()) result = 'embed'
+  if (slug === player.slug_download.toLowerCase()) result = 'download'
+  if (slug === player.slug_request.toLowerCase()) result = 'request'
+  return result
+}
+
+function hasPlayerMediaQuery(requestUrl: string, security: Security, secureSalt: string): boolean {
+  const query = rawQueryFromUrl(requestUrl)
+  if (query === '') return false
+  return parsePlayerQuery(query, security, {
+    secureSalt,
+    allowPublicQuery: true,
+    allowPlaintextMedia: true
+  }).media !== null
 }
 
 function statCounterFailure(): Readonly<{ status: 'fail'; message: string; result: 0 }> {

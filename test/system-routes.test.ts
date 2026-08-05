@@ -99,8 +99,9 @@ describe('legacy-compatible system routes', () => {
       settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
     })
 
-    const [anonymousPage, anonymousGenerator] = await Promise.all([
+    const [anonymousPage, anonymousIndexAlias, anonymousGenerator] = await Promise.all([
       app.inject({ method: 'GET', url: '/?generator=1' }),
+      app.inject({ method: 'GET', url: '/index.php/ignored' }),
       app.inject({
         method: 'POST',
         url: '/ajax/public/',
@@ -111,6 +112,8 @@ describe('legacy-compatible system routes', () => {
     expect(anonymousPage.statusCode).toBe(403)
     expect(anonymousPage.headers['cache-control']).toBe('no-store')
     expect(anonymousPage.body).toContain('403 Forbidden')
+    expect(anonymousIndexAlias.statusCode).toBe(403)
+    expect(anonymousIndexAlias.body).toContain('403 Forbidden')
     expect(anonymousGenerator.json()).toEqual({ status: 'fail', message: 'Access denied', result: null })
 
     const authenticatedHeaders = {
@@ -354,23 +357,29 @@ describe('legacy-compatible system routes', () => {
     expect(response.body).toBe('fail')
   })
 
-  it.each([
-    ['/embed.php?id=abc', '/e/?id=abc'],
-    ['/embed2.php?id=abc', '/r/?id=abc'],
-    ['/embed.php?sub%5B%5D=https%3A%2F%2Fcdn.example%2Fa.vtt&lang%5B%5D=en', '/e/?sub%5B%5D=https%3A%2F%2Fcdn.example%2Fa.vtt&lang%5B%5D=en']
-  ])('preserves old PHP redirect compatibility for %s', async (url, location) => {
+  it('dispatches system views from the first path segment after stripping dot suffixes', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
-    const response = await app.inject({ method: 'GET', url })
-    expect(response.statusCode).toBe(302)
-    expect(response.headers.location).toBe(location)
-  })
+    const [index, health, sitemap, terms, serverError, cache] = await Promise.all([
+      app.inject({ method: 'GET', url: '/index.php/ignored/path' }),
+      app.inject({ method: 'GET', url: '/health-check.json/ignored/path' }),
+      app.inject({ method: 'GET', url: '/sitemap.xml/ignored/path' }),
+      app.inject({ method: 'GET', url: '/terms.php/ignored/path' }),
+      app.inject({ method: 'GET', url: '/500.php/ignored/path' }),
+      app.inject({ method: 'GET', url: '/clear-cache.php/ignored/path' })
+    ])
 
-  it.each(['/embed.php', '/embed.php?', '/embed2.php'])('retains the empty legacy shim response for %s without a query', async (url) => {
-    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
-    const response = await app.inject({ method: 'GET', url })
-    expect(response.statusCode).toBe(200)
-    expect(response.headers.location).toBeUndefined()
-    expect(response.body).toBe('')
+    expect(index.statusCode).toBe(200)
+    expect(index.body).toContain('id="player-form"')
+    expect(health.statusCode).toBe(200)
+    expect(health.json()).toEqual(expect.objectContaining({ connections: expect.any(Number), timestamp: expect.any(Number) }))
+    expect(sitemap.statusCode).toBe(200)
+    expect(sitemap.headers['content-type']).toContain('application/xml')
+    expect(terms.statusCode).toBe(200)
+    expect(terms.body).toContain('Terms and Conditions')
+    expect(serverError.statusCode).toBe(500)
+    expect(serverError.body).toContain('500 Internal Server Error')
+    expect(cache.statusCode).toBe(200)
+    expect(cache.body).toBe('fail')
   })
 
   it('returns the readable front-controller CORS and OPTIONS contract on every path', async () => {
@@ -475,12 +484,13 @@ describe('legacy-compatible system routes', () => {
     const security = new Security(secureSalt)
     const origin = security.encryptURL('https://cdn.example.test/root/')
 
-    const [twoToken, oneToken] = await Promise.all([
+    const [twoToken, oneToken, dotted] = await Promise.all([
       app.inject({ method: 'GET', url: `/redirect/direct/${origin}/video/file.mp4?download=1` }),
-      app.inject({ method: 'GET', url: `/redirect/${origin}/video/file.mp4?download=1` })
+      app.inject({ method: 'GET', url: `/redirect/${origin}/video/file.mp4?download=1` }),
+      app.inject({ method: 'GET', url: `/redirect.php/direct/${origin}/video/file.mp4?download=1` })
     ])
 
-    for (const response of [twoToken, oneToken]) {
+    for (const response of [twoToken, oneToken, dotted]) {
       expect(response.statusCode).toBe(302)
       expect(response.headers.location).toBe('https://cdn.example.test/root/video/file.mp4?download=1')
     }

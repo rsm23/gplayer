@@ -14,6 +14,7 @@ import { mediaCachePaths } from '../background/media-cache-path.js'
 import { parseByteRange } from '../background/media-download-worker.js'
 import type { GeoIpDetailsLookup } from '../security/geoip-details.js'
 import { isSmartTvUserAgent } from '../security/smart-tv.js'
+import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 
 const MAX_MANIFEST_BYTES = 5 * 1_024 * 1_024
 const MAX_STREAM_URL_LENGTH = 16_384
@@ -331,11 +332,11 @@ export async function registerStreamingRoutes(
     }
   }
 
-  app.get('/hls/*', manifestHandler('hls'))
-  app.get('/mpd/*', manifestHandler('mpd'))
-  app.get('/stream-ts/*', binaryHandler('stream-ts'))
-  app.get('/stream-seg/*', binaryHandler('stream-seg'))
-  app.get('/stream-vid/*', binaryHandler('stream-vid'))
+  registerLegacyFrontendAliases(app, ['hls'], manifestHandler('hls'))
+  registerLegacyFrontendAliases(app, ['mpd'], manifestHandler('mpd'))
+  registerLegacyFrontendAliases(app, ['stream-ts'], binaryHandler('stream-ts'))
+  registerLegacyFrontendAliases(app, ['stream-seg'], binaryHandler('stream-seg'))
+  registerLegacyFrontendAliases(app, ['stream-vid'], binaryHandler('stream-vid'))
 }
 
 type StreamingRecoveryReplacement = Readonly<{
@@ -573,8 +574,8 @@ async function streamAccessAllowed(
 
 function parseStreamingTarget(requestUrl: string, route: StreamingRoute, security: Security): ParsedStreamingTarget | null {
   const request = new URL(requestUrl, 'http://gplayer.invalid')
-  const prefix = `/${route}/`
-  if (!request.pathname.startsWith(prefix)) return null
+  const prefix = request.pathname.match(new RegExp(`^/${route}(?:\\.[^/]*)?/`, 'u'))?.[0]
+  if (prefix === undefined) return null
   const parts = request.pathname.slice(prefix.length).split('/')
   const identityToken = parts.shift() ?? ''
   const baseToken = restoreStreamingToken(parts.shift() ?? '')

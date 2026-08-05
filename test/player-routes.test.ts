@@ -1241,6 +1241,56 @@ describe('player HTTP routes', () => {
     expect(response.body).not.toContain('not-a-valid-token')
   })
 
+  it('serves built-in player view filenames and nested dot-suffix aliases directly', async () => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => ({ enable_gsharer: 'true' }), upsertMany: async () => {} })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+    const [embed, download, request, bait, sharer] = await Promise.all([
+      app.inject({ method: 'GET', url: `/embed.php/ignored/path?${token}` }),
+      app.inject({ method: 'GET', url: `/download.custom/ignored/path?${token}` }),
+      app.inject({ method: 'GET', url: '/embed2.php/ignored/path?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4' }),
+      app.inject({ method: 'GET', url: '/ads.php/ignored/path' }),
+      app.inject({ method: 'GET', url: '/sharer.php/ignored/path' })
+    ])
+
+    expect(embed.statusCode).toBe(200)
+    expect(embed.body).toContain('<video id="media-player"')
+    expect(download.statusCode).toBe(200)
+    expect(download.body).toContain('<h1 id="download-title">movie.mp4</h1>')
+    expect(request.statusCode).toBe(302)
+    expect(request.headers.location).toMatch(/^\/e\/\?[A-Za-z0-9,_-]+$/)
+    expect(bait.statusCode).toBe(200)
+    expect(bait.headers['content-type']).toBe('image/png')
+    expect(sharer.statusCode).toBe(200)
+    expect(sharer.body).toContain('id="frmBypassLimit"')
+  })
+
+  it('applies configured player slugs after the built-in map in legacy overwrite order', async () => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({
+        getAll: async () => ({ slug_embed: 'watch', slug_download: 'e', slug_request: 'd' }),
+        upsertMany: async () => {}
+      })
+    })
+    const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4&poster=')
+    const [configuredEmbed, overwrittenEmbed, overwrittenDownload, retainedRequest] = await Promise.all([
+      app.inject({ method: 'GET', url: `/watch.php?${token}` }),
+      app.inject({ method: 'GET', url: `/e/?${token}` }),
+      app.inject({ method: 'GET', url: '/d/?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4' }),
+      app.inject({ method: 'GET', url: '/r/?host=direct&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4' })
+    ])
+
+    expect(configuredEmbed.statusCode).toBe(200)
+    expect(configuredEmbed.body).toContain('<video id="media-player"')
+    expect(overwrittenEmbed.statusCode).toBe(200)
+    expect(overwrittenEmbed.body).toContain('<h1 id="download-title">movie.mp4</h1>')
+    expect(overwrittenDownload.statusCode).toBe(302)
+    expect(overwrittenDownload.headers.location).toMatch(/^\/watch\/\?[A-Za-z0-9,_-]+$/)
+    expect(retainedRequest.statusCode).toBe(302)
+    expect(retainedRequest.headers.location).toMatch(/^\/watch\/\?[A-Za-z0-9,_-]+$/)
+  })
+
   it('renders direct media and subtitle downloads from an authenticated link', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const token = new Security(secureSalt).encryptURL('host=direct&id=https%3A%2F%2Fcdn.example%2Fmedia%2Fmovie.mp4&sub[]=https%3A%2F%2Fcdn.example%2Fcaptions%2Fen.vtt&lang[]=English')

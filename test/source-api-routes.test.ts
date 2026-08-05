@@ -60,6 +60,26 @@ describe('legacy player source API routes', () => {
     expect(resolve).not.toHaveBeenCalled()
   })
 
+  it('dispatches API filename aliases and nested suffixes through the original controllers', async () => {
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/master.m3u8' })
+    const configuration = await app.inject({
+      method: 'GET',
+      url: `/api-config.php/${request.queryToken}?p=${request.passwordToken}`
+    })
+    const source = await app.inject({
+      method: 'POST',
+      url: `/api.php/ignored/path?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+
+    expect(configuration.statusCode).toBe(200)
+    expect(decryptJson(configuration.body, request.password)).toMatchObject({ message: '', hosts: ['direct'] })
+    expect(source.statusCode).toBe(200)
+    expect(decryptJson(source.body, request.password)).toMatchObject({ status: 'ok', message: 'Success' })
+    expect(resolve).toHaveBeenCalledOnce()
+  })
+
   it('routes config and proxied media through the eligible least-connections delivery server', async () => {
     await app.close()
     const selectDeliveryBaseUrl = vi.fn(async () => new URL('https://edge.example/media/'))

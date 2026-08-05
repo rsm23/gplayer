@@ -18,6 +18,7 @@ import {
 import { Security } from '../security/security.js'
 import type { CountryCodeLookup } from '../security/geoip-country.js'
 import { legacyVastConfiguration, loadRuntimeAdsSettings, type AdsSettingsLoader } from '../settings/ads-runtime.js'
+import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 import { accessPolicyFromMisc, accessPolicyRejects, filterSourcesByResolution, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
@@ -169,11 +170,8 @@ export async function registerSourceApiRoutes(
       .send(security.encryptResponse(JSON.stringify(filtered), envelope.password))
   }
 
-  app.get('/api-config', apiConfig)
-  app.get('/api-config/', apiConfig)
-  app.get('/api-config/*', apiConfig)
-  app.route({ method: ['GET', 'POST'], url: '/api', handler: api })
-  app.route({ method: ['GET', 'POST'], url: '/api/', handler: api })
+  registerLegacyFrontendAliases(app, ['api-config'], apiConfig)
+  registerLegacyFrontendAliases(app, ['api'], api, { methods: ['GET', 'POST'] })
 }
 
 async function filterResponse(filter: SourceApiRouteOptions['filterResponse'], response: unknown, query: Readonly<Record<string, unknown>>): Promise<unknown> {
@@ -290,8 +288,8 @@ function passwordFromRequest(request: FastifyRequest, security: Security): strin
 
 function configTokenFromUrl(requestUrl: string): string {
   const parsed = new URL(requestUrl, 'http://gplayer.invalid')
-  const prefix = '/api-config/'
-  if (!parsed.pathname.startsWith(prefix)) return ''
+  const prefix = parsed.pathname.match(/^\/api-config(?:\.[^/]*)?(?:\/|$)/u)?.[0]
+  if (prefix === undefined) return ''
   try {
     return decodeURIComponent(parsed.pathname.slice(prefix.length)).replace(/^\/+|\/+$/g, '')
   } catch {

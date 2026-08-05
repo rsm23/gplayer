@@ -125,6 +125,23 @@ describe('poster, subtitle, and filmstrip routes', () => {
     expect(response.rawPayload).toEqual(posterBytes)
   })
 
+  it('accepts frontend filename aliases before authenticated media paths', async () => {
+    app = await buildMediaApp(true)
+    const security = new Security(secureSalt)
+    const posterToken = security.encryptURL(new URL('/poster.png', upstreamUrl).toString())
+    const subtitleToken = security.encryptURL(new URL('/caption.srt', upstreamUrl).toString())
+    const [poster, subtitle] = await Promise.all([
+      app.inject({ method: 'GET', url: `/poster.php/${posterToken}.png` }),
+      app.inject({ method: 'GET', url: `/subtitle.custom/${subtitleToken}.vtt` })
+    ])
+
+    expect(poster.statusCode).toBe(200)
+    expect(poster.rawPayload).toEqual(posterBytes)
+    expect(subtitle.statusCode).toBe(200)
+    expect(subtitle.body).toContain('WEBVTT')
+    expect(subtitle.body).toContain('Hello world')
+  })
+
   it('redirects configured-host posters without proxying the application back into itself', async () => {
     app = await buildMediaApp(false)
     const target = new URL('/uploads/images/local.jpg', mediaConfig.baseUrl)

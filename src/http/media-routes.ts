@@ -5,6 +5,7 @@ import type { AppConfig } from '../config.js'
 import { Security } from '../security/security.js'
 import { RemoteStream, type RemoteStreamResponse } from '../stream/remote-stream.js'
 import type { ProviderStreamContextRegistry } from '../stream/provider-stream-context.js'
+import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 import { PublicMediaCache, type PublicMediaCacheKind } from '../stream/public-media-cache.js'
 import { convertSubtitleToWebVtt } from '../subtitles/subtitle-converter.js'
 
@@ -205,12 +206,9 @@ export async function registerMediaRoutes(
     }
   }
 
-  app.get('/poster', poster)
-  app.get('/poster/*', poster)
-  app.get('/subtitle', subtitle)
-  app.get('/subtitle/*', subtitle)
-  app.get('/filmstrip', filmstrip)
-  app.get('/filmstrip/*', filmstrip)
+  registerLegacyFrontendAliases(app, ['poster'], poster)
+  registerLegacyFrontendAliases(app, ['subtitle'], subtitle)
+  registerLegacyFrontendAliases(app, ['filmstrip'], filmstrip)
 }
 
 function mediaTarget(requestUrl: string, route: 'filmstrip' | 'poster' | 'subtitle', security: Security): URL | null {
@@ -219,8 +217,8 @@ function mediaTarget(requestUrl: string, route: 'filmstrip' | 'poster' | 'subtit
   let value = queryUrl
 
   if (value.length === 0) {
-    const routePrefix = `/${route}/`
-    if (!parsed.pathname.startsWith(routePrefix)) return null
+    const routePrefix = parsed.pathname.match(new RegExp(`^/${route}(?:\\.[^/]*)?/`, 'u'))?.[0]
+    if (routePrefix === undefined) return null
     let pathToken: string
     try {
       pathToken = decodeURIComponent(parsed.pathname.slice(routePrefix.length))
