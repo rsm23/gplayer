@@ -44,12 +44,20 @@ export class RemoteProviderHttpClient implements ProviderHttpClient {
     return await this.request('POST', request)
   }
 
-  private async request(method: 'GET' | 'HEAD' | 'POST', request: ProviderHttpPostRequest): Promise<ProviderHttpResponse> {
+  public async put(request: ProviderHttpPostRequest): Promise<ProviderHttpResponse> {
+    return await this.request('PUT', request)
+  }
+
+  public async delete(request: ProviderHttpRequest): Promise<ProviderHttpResponse> {
+    return await this.request('DELETE', request)
+  }
+
+  private async request(method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE', request: ProviderHttpPostRequest): Promise<ProviderHttpResponse> {
     const response = await this.remoteStream.open({
       url: request.url,
       method,
       ...(request.headers === undefined ? {} : { headers: request.headers }),
-      ...(method === 'POST' && request.body !== undefined ? { body: request.body } : {}),
+      ...(method !== 'GET' && method !== 'HEAD' && request.body !== undefined ? { body: request.body } : {}),
       ...(request.preserveRedirectCookies === undefined ? {} : { preserveRedirectCookies: request.preserveRedirectCookies }),
       ...(request.signal === undefined ? {} : { signal: request.signal }),
       allowPrivateNetworks: this.allowPrivateNetworks,

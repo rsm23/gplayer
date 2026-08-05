@@ -9,6 +9,8 @@ import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSett
 import type { VastAsset } from '../settings/vast-assets-service.js'
 import type { SubtitleAdminRecord } from '../subtitles/subtitle-admin-service.js'
 import type { StoredVideoDetail, VideoAdminRecord } from '../videos/video-admin-service.js'
+import type { DriveAccountAdminRecord } from '../drive/drive-account-admin-service.js'
+import type { DriveBackupRecord, DriveFileAdminRecord, DriveQueueRecord, DriveSharedDrive } from '../drive/drive-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -399,6 +401,159 @@ export function renderAdminUserForm(input: Readonly<{
     </form>
   </section>
 </main>`)
+}
+
+export function renderAdminDriveAccounts(input: Readonly<{
+  adminBase: string
+  accounts: readonly DriveAccountAdminRecord[]
+  recordsTotal: number
+  search: string
+  mutationCsrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.accounts.map((account) => `<tr>
+    <td><strong>${escapeHtml(account.email)}</strong></td>
+    <td><form action="${escapeHtml(input.adminBase)}/gdrive/flag/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(account.id)}"><input type="hidden" name="column" value="bypass"><input type="hidden" name="status" value="${account.bypass === 1 ? '0' : '1'}"><button class="user-state user-state-${account.bypass}" type="submit" aria-label="${account.bypass === 1 ? 'Disable' : 'Enable'} bypass for ${escapeHtml(account.email)}">${account.bypass === 1 ? 'Enabled' : 'Disabled'}</button></form></td>
+    <td><form action="${escapeHtml(input.adminBase)}/gdrive/flag/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(account.id)}"><input type="hidden" name="column" value="status"><input type="hidden" name="status" value="${account.status === 1 ? '0' : '1'}"><button class="user-state user-state-${account.status}" type="submit" aria-label="${account.status === 1 ? 'Disable' : 'Enable'} ${escapeHtml(account.email)}">${account.status === 1 ? 'Active' : 'Inactive'}</button></form></td>
+    <td>${renderTimestamp(account.created, 'Not recorded')}</td>
+    <td>${renderTimestamp(account.updated, 'Not updated')}</td>
+    <td><div class="user-actions"><a href="${escapeHtml(input.adminBase)}/gdrive/edit/?id=${escapeHtml(account.id)}">Edit</a><form action="${escapeHtml(input.adminBase)}/gdrive/delete/" method="post"><input type="hidden" name="id" value="${escapeHtml(account.id)}"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><button class="session-revoke" type="submit" aria-label="Delete ${escapeHtml(account.email)}">Delete</button></form></div></td>
+  </tr>`).join('')
+
+  return adminDocument('Google Drive Accounts', `${adminHeader(input.adminBase, 'drive')}
+<main class="admin-dashboard admin-users-page admin-drive-page">
+  <p class="eyebrow"><span></span>Google Drive</p>
+  <div class="admin-dashboard-heading"><div><h1>Drive accounts.</h1><p>Add and maintain OAuth-backed Drive accounts without exposing stored credentials.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
+  ${renderMessage(input.message)}
+  ${driveSubnav(input.adminBase, 'accounts')}
+  <section class="user-toolbar" aria-label="Drive account controls">
+    <a class="hero-link-primary" href="${escapeHtml(input.adminBase)}/gdrive/new/">Add account <span aria-hidden="true">+</span></a>
+    <form action="${escapeHtml(input.adminBase)}/gdrive/" method="get" role="search"><label class="sr-only" for="drive-account-search">Search Drive accounts</label><input id="drive-account-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search email"><button type="submit">Search</button></form>
+  </section>
+  <section class="session-table-shell user-table-shell" aria-labelledby="drive-accounts-table-title">
+    <div class="session-table-heading"><div><p class="panel-kicker">OAuth accounts</p><h2 id="drive-accounts-table-title">Configured accounts</h2></div><a href="${escapeHtml(input.adminBase)}/gdrive/">Reload</a></div>
+    <div class="session-table-scroll"><table class="session-table user-table drive-account-table"><thead><tr><th>Email</th><th>Bypass</th><th>Status</th><th>Created</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="6">No Google Drive accounts found.</td></tr>'}</tbody></table></div>
+    ${input.recordsTotal > input.accounts.length ? `<p class="session-table-note">Showing ${input.accounts.length} of ${input.recordsTotal} records. The legacy DataTables endpoint provides complete pagination.</p>` : ''}
+  </section>
+</main>`)
+}
+
+export function renderAdminDriveAccountForm(input: Readonly<{
+  adminBase: string
+  csrfToken: string
+  account?: DriveAccountAdminRecord
+  values?: Readonly<Record<string, string>>
+  message?: AdminMessage
+}>): string {
+  const edit = input.account !== undefined
+  const values = input.values ?? {}
+  const email = escapeHtml(values.email ?? input.account?.email ?? '')
+  const bypass = Number(values.bypass ?? input.account?.bypass ?? 0) === 1
+  const status = Number(values.status ?? input.account?.status ?? 0) === 1
+  const action = edit ? `${input.adminBase}/gdrive/edit/` : `${input.adminBase}/gdrive/new/`
+  const credential = (name: string, label: string, maximum: number, configured: boolean): string => `<div class="field"><div class="settings-secret-heading"><label for="${name}">${escapeHtml(label)}</label>${edit ? `<span class="settings-secret-status${configured ? ' is-configured' : ''}">${configured ? 'Stored' : 'Not configured'}</span>` : ''}</div><input id="${name}" name="${name}" type="password" maxlength="${maximum}" autocomplete="new-password" ${edit ? '' : 'required'}><p class="field-hint">${edit ? 'Leave blank to keep the stored value.' : 'Stored server-side and never returned to this page.'}</p></div>`
+
+  return adminDocument(edit ? 'Edit Google Drive Account' : 'New Google Drive Account', `${adminHeader(input.adminBase, 'drive')}
+<main class="admin-dashboard admin-user-form-page admin-drive-page">
+  <p class="eyebrow"><span></span>${edit ? 'Drive account update' : 'Drive account creation'}</p>
+  <div class="admin-dashboard-heading"><div><h1>${edit ? 'Edit Drive account.' : 'New Drive account.'}</h1><p>${edit ? 'Update account state or replace individual credentials. Existing secrets remain write-only.' : 'Connect a Google Drive OAuth account using the legacy-compatible schema.'}</p></div><a class="admin-back-link" href="${escapeHtml(input.adminBase)}/gdrive/">Back to accounts</a></div>
+  <section class="admin-user-form-shell">
+    ${renderMessage(input.message)}
+    <form class="admin-user-form" action="${escapeHtml(action)}" method="post">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">${edit ? `<input type="hidden" name="id" value="${escapeHtml(input.account?.id ?? '')}">` : ''}
+      <div class="admin-user-form-grid">
+        <div class="field admin-user-form-wide"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="100" value="${email}" autocomplete="email" required></div>
+        ${credential('api_key', 'API Key', 50, input.account?.apiKeyConfigured ?? false)}
+        ${credential('client_id', 'Client ID', 100, input.account?.clientIdConfigured ?? false)}
+        ${credential('client_secret', 'Client Secret', 50, input.account?.clientSecretConfigured ?? false)}
+        ${credential('refresh_token', 'Refresh Token', 150, input.account?.refreshTokenConfigured ?? false)}
+        <label class="settings-toggle"><span><strong>Bypass limit account</strong><small>Allow this account to create public bypass mirrors.</small></span><span class="settings-switch"><input type="hidden" name="bypass" value="0"><input id="bypass" name="bypass" type="checkbox" value="1"${bypass ? ' checked' : ''}><i aria-hidden="true"></i></span></label>
+        <label class="settings-toggle"><span><strong>Account status</strong><small>Make this account available to Drive operations.</small></span><span class="settings-switch"><input type="hidden" name="status" value="0"><input id="status" name="status" type="checkbox" value="1"${status ? ' checked' : ''}><i aria-hidden="true"></i></span></label>
+      </div>
+      <button class="generate-button" type="submit"><span>${edit ? 'Update account' : 'Save account'}</span><span aria-hidden="true">↗</span></button>
+    </form>
+  </section>
+</main>`)
+}
+
+export function renderAdminDriveFiles(input: Readonly<{
+  adminBase: string
+  accounts: readonly string[]
+  sharedDrives: readonly DriveSharedDrive[]
+  files: readonly DriveFileAdminRecord[]
+  email: string
+  folderId: string
+  search: string
+  privateOnly: boolean
+  folderOnly: boolean
+  nextPageToken: string
+  duplicatePageToken: string
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const options = input.accounts.map((email) => `<option value="${escapeHtml(email)}"${email === input.email ? ' selected' : ''}>${escapeHtml(email)}</option>`).join('')
+  const queryFields = `<input type="hidden" name="email" value="${escapeHtml(input.email)}"><input type="hidden" name="folder_id" value="${escapeHtml(input.folderId)}">`
+  const browseHref = (folderId: string, token = ''): string => {
+    const query = new URLSearchParams({ email: input.email, folder_id: folderId })
+    if (token !== '') query.set('token', token)
+    if (input.search !== '') query.set('q', input.search)
+    if (input.privateOnly) query.set('private', '1')
+    if (input.folderOnly) query.set('onlyFolder', '1')
+    return `${escapeHtml(input.adminBase)}/gdrive/files/?${escapeHtml(query.toString())}`
+  }
+  const rows = input.files.map((file) => {
+    const isFolder = file.mimeType === 'application/vnd.google-apps.folder'
+    const title = isFolder ? `<a class="drive-folder-link" href="${browseHref(file.id)}">${escapeHtml(file.title)}</a>` : `<strong>${escapeHtml(file.title)}</strong>`
+    const contextFields = `<input type="hidden" name="email" value="${escapeHtml(input.email)}"><input type="hidden" name="folder_id" value="${escapeHtml(input.folderId)}"><input type="hidden" name="id" value="${escapeHtml(file.id)}">`
+    return `<tr>
+    <td>${title}<span class="user-email-mobile">${escapeHtml(file.mimeType)}</span></td>
+    <td>${escapeHtml(file.description || '—')}</td>
+    <td><span class="user-state user-state-${file.shared ? '1' : '0'}">${file.shared ? 'Public' : 'Private'}</span></td>
+    <td>${renderTimestamp(file.modifiedTimestamp, 'Not recorded')}</td>
+    <td><div class="user-actions drive-file-actions"><a href="${escapeHtml(file.actions.view || file.actions.preview || file.actions.embed_url)}" target="_blank" rel="noopener noreferrer">View</a><details class="drive-rename"><summary>Rename</summary><form action="${escapeHtml(input.adminBase)}/gdrive/files/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="renameFileFolder">${contextFields}<label class="sr-only" for="drive-rename-${escapeHtml(file.id)}">New name for ${escapeHtml(file.title)}</label><input id="drive-rename-${escapeHtml(file.id)}" name="name" value="${escapeHtml(file.title)}" maxlength="255" required><button type="submit">Save</button></form></details><form action="${escapeHtml(input.adminBase)}/gdrive/files/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="updateStatus">${contextFields}<input type="hidden" name="public" value="${file.shared ? '0' : '1'}"><button type="submit">Make ${file.shared ? 'private' : 'public'}</button></form>${isFolder ? '' : `<form action="${escapeHtml(input.adminBase)}/gdrive/files/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="gdriveImport">${contextFields}<button type="submit">Import</button></form>`}<form action="${escapeHtml(input.adminBase)}/gdrive/files/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="delete">${contextFields}<button class="session-revoke" type="submit">Delete</button></form></div></td>
+  </tr>`
+  }).join('')
+  const sharedDrives = input.email === '' || input.sharedDrives.length === 0 ? '' : `<nav class="drive-shared-nav" aria-label="Shared drives"><span>Shared drives</span>${input.sharedDrives.map((drive) => `<a href="${browseHref(drive.id)}">${escapeHtml(drive.name)}</a>`).join('')}</nav>`
+  const controls = input.email === '' ? '' : `<section class="drive-file-tools" aria-label="Drive file tools"><form action="${escapeHtml(input.adminBase)}/gdrive/files/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="createNewFolder"><input type="hidden" name="email" value="${escapeHtml(input.email)}"><input type="hidden" name="folder_id" value="${escapeHtml(input.folderId)}"><input type="hidden" name="parent_id" value="${escapeHtml(input.folderId)}"><div class="field"><label for="drive-folder-name">New folder</label><input id="drive-folder-name" name="name" type="text" maxlength="255" placeholder="Folder name" required></div><button type="submit">Create folder</button></form><form action="${escapeHtml(input.adminBase)}/gdrive/files/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="removeDuplicateFiles"><input type="hidden" name="email" value="${escapeHtml(input.email)}"><input type="hidden" name="folder_id" value="${escapeHtml(input.folderId)}"><input type="hidden" name="nextPageToken" value="${escapeHtml(input.duplicatePageToken)}"><button type="submit">${input.duplicatePageToken === '' ? 'Remove duplicate files' : 'Continue duplicate cleanup'}</button></form></section>`
+
+  return adminDocument('Google Drive Files', `${adminHeader(input.adminBase, 'drive')}
+<main class="admin-dashboard admin-users-page admin-drive-page">
+  <p class="eyebrow"><span></span>Google Drive</p>
+  <div class="admin-dashboard-heading"><div><h1>Drive files.</h1><p>Browse supported media and folders, manage sharing, and import stable saved-video records.</p></div>${input.email === '' ? '' : `<span class="admin-role">${input.files.length} loaded</span>`}</div>
+  ${renderMessage(input.message)}
+  ${driveSubnav(input.adminBase, 'files')}
+  <section class="user-toolbar drive-file-toolbar" aria-label="Drive file filters">
+    <form action="${escapeHtml(input.adminBase)}/gdrive/files/" method="get"><label class="sr-only" for="drive-email">Drive account</label><select id="drive-email" name="email"><option value="">Select account</option>${options}</select><input name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search title"><button type="submit">Browse</button></form>
+    ${input.email === '' ? '' : `<form class="drive-filter-form" action="${escapeHtml(input.adminBase)}/gdrive/files/" method="get">${queryFields}<label><input name="private" type="checkbox" value="1"${input.privateOnly ? ' checked' : ''}> Private only</label><label><input name="onlyFolder" type="checkbox" value="1"${input.folderOnly ? ' checked' : ''}> Folders only</label><button type="submit">Apply</button></form>`}
+  </section>
+  ${sharedDrives}
+  ${controls}
+  <section class="session-table-shell user-table-shell" aria-labelledby="drive-files-table-title"><div class="session-table-heading"><div><p class="panel-kicker">Remote library</p><h2 id="drive-files-table-title">Files and folders</h2></div><div class="drive-browse-actions">${input.folderId === 'root' ? '' : `<a href="${browseHref('root')}">Root</a>`}<a href="${browseHref(input.folderId)}">Reload</a></div></div><div class="session-table-scroll"><table class="session-table user-table drive-files-table"><thead><tr><th>Title</th><th>Description</th><th>Shared</th><th>Modified</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || `<tr><td class="session-empty" colspan="5">${input.email === '' ? 'Select an active Drive account.' : 'No supported files found.'}</td></tr>`}</tbody></table></div>${input.nextPageToken === '' ? '' : `<div class="session-table-note drive-next-page"><span>More remote results are available.</span><a href="${browseHref(input.folderId, input.nextPageToken)}">Next page</a></div>`}</section>
+</main>`)
+}
+
+export function renderAdminDriveBackups(input: Readonly<{
+  adminBase: string
+  backups: readonly DriveBackupRecord[]
+  recordsTotal: number
+  search: string
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.backups.map((backup) => `<tr><td><code>${escapeHtml(backup.gdrive_id)}</code></td><td><code>${escapeHtml(backup.mirror_id)}</code></td><td>${escapeHtml(backup.mirror_email)}</td><td>${renderTimestamp(backup.created, 'Not recorded')}</td><td><form action="${escapeHtml(input.adminBase)}/gdrive/backup-files/delete/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(backup.id)}"><button class="session-revoke" type="submit">Delete</button></form></td></tr>`).join('')
+  return adminDocument('Google Drive Backup Files', `${adminHeader(input.adminBase, 'drive')}<main class="admin-dashboard admin-users-page admin-drive-page"><p class="eyebrow"><span></span>Google Drive</p><div class="admin-dashboard-heading"><div><h1>Backup files.</h1><p>Review and remove persisted Drive mirror records and their remote copies.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>${renderMessage(input.message)}${driveSubnav(input.adminBase, 'backups')}<section class="user-toolbar"><form action="${escapeHtml(input.adminBase)}/gdrive/backup-files/" method="get" role="search"><label class="sr-only" for="backup-search">Search backups</label><input id="backup-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search source, mirror, or owner"><button type="submit">Search</button></form></section><section class="session-table-shell user-table-shell" aria-labelledby="backups-title"><div class="session-table-heading"><div><p class="panel-kicker">Mirrors</p><h2 id="backups-title">Backup files</h2></div><a href="${escapeHtml(input.adminBase)}/gdrive/backup-files/">Reload</a></div><div class="session-table-scroll"><table class="session-table user-table drive-backup-table"><thead><tr><th>File ID</th><th>Backup File ID</th><th>Owner</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="5">No backup files found.</td></tr>'}</tbody></table></div></section></main>`)
+}
+
+export function renderAdminDriveQueue(input: Readonly<{
+  adminBase: string
+  queue: readonly DriveQueueRecord[]
+  recordsTotal: number
+  search: string
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.queue.map((item) => `<tr><td><code>${escapeHtml(item.gdrive_id)}</code></td><td><div class="user-actions"><form action="${escapeHtml(input.adminBase)}/gdrive/backup-queue/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="copy"><input type="hidden" name="id" value="${escapeHtml(item.gdrive_id)}"><button type="submit">Copy now</button></form><form action="${escapeHtml(input.adminBase)}/gdrive/backup-queue/action/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="${escapeHtml(item.id)}"><button class="session-revoke" type="submit">Delete</button></form></div></td></tr>`).join('')
+  return adminDocument('Google Drive Backup Queue', `${adminHeader(input.adminBase, 'drive')}<main class="admin-dashboard admin-users-page admin-drive-page"><p class="eyebrow"><span></span>Google Drive</p><div class="admin-dashboard-heading"><div><h1>Backup queue.</h1><p>Inspect queued source IDs, copy them immediately, or remove stale work.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>${renderMessage(input.message)}${driveSubnav(input.adminBase, 'queue')}<section class="user-toolbar"><form action="${escapeHtml(input.adminBase)}/gdrive/backup-queue/" method="get" role="search"><label class="sr-only" for="queue-search">Search queue</label><input id="queue-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search file ID"><button type="submit">Search</button></form></section><section class="session-table-shell user-table-shell" aria-labelledby="queue-title"><div class="session-table-heading"><div><p class="panel-kicker">Pending copies</p><h2 id="queue-title">Backup queue</h2></div><a href="${escapeHtml(input.adminBase)}/gdrive/backup-queue/">Reload</a></div><div class="session-table-scroll"><table class="session-table user-table drive-queue-table"><thead><tr><th>File ID</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="2">No queued files found.</td></tr>'}</tbody></table></div></section></main>`)
 }
 
 export function renderAdminGeneralSettings(input: Readonly<{
@@ -1091,13 +1246,13 @@ function renderTimestamp(value: number, fallback: string): string {
   return `<time datetime="${iso}">${iso.slice(0, 16).replace('T', ' ')} UTC</time>`
 }
 
-function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles', isAdmin = true): string {
+function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles' | 'drive', isAdmin = true): string {
   return `<header class="admin-bar">
   <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
     <span>G<span>PLAYER</span><small>NODE</small></span>
   </a>
-  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
+  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'drive' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/">Drive</a><a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
   <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
 </header>`
 }
@@ -1128,6 +1283,10 @@ function settingsColorInput(name: string, label: string, value: string): string 
 
 function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'hosting' | 'misc' | 'ads' | 'reset'): string {
   return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'hosting' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/hosting/">Hosting</a><a${current === 'misc' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/misc/">Misc</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a><a${current === 'reset' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/reset/">Reset</a></nav>`
+}
+
+function driveSubnav(adminBase: string, current: 'accounts' | 'files' | 'backups' | 'queue'): string {
+  return `<nav class="settings-subnav drive-subnav" aria-label="Google Drive administration"><a${current === 'accounts' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/">Accounts</a><a${current === 'files' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/files/">Files</a><a${current === 'backups' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/backup-files/">Backup files</a><a${current === 'queue' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/gdrive/backup-queue/">Queue</a></nav>`
 }
 
 function playerSettingLabel(value: string): string {

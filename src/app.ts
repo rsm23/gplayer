@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './http/admin-routes.js'
 import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
 import { registerSubtitleAdminRoutes } from './http/subtitle-admin-routes.js'
 import { registerVideoAdminRoutes } from './http/video-admin-routes.js'
+import { registerDriveAdminRoutes } from './http/drive-admin-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
@@ -39,6 +40,9 @@ import { VideoCheckerService } from './videos/video-checker-service.js'
 import { VideoBulkService } from './videos/video-bulk-service.js'
 import { VideoTransferService } from './videos/video-transfer-service.js'
 import { DriveSharerService, RecaptchaVerifier } from './drive/drive-sharer-service.js'
+import type { DriveAccountAdminService } from './drive/drive-account-admin-service.js'
+import { DriveAdminService, DriveApiClient } from './drive/drive-admin-service.js'
+import { Security } from './security/security.js'
 import { RemoteProviderHttpClient } from './hosting/provider-http.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -59,6 +63,8 @@ export type AppDependencies = Readonly<{
   countryCodeLookup?: CountryCodeLookup
   shortlinks?: ShortlinkTransformer
   driveSharer?: Pick<DriveSharerService, 'bypass'>
+  driveAccounts?: DriveAccountAdminService
+  driveAdmin?: DriveAdminService
   recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
   clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
@@ -164,6 +170,26 @@ export async function buildApp(
     authService,
     subtitlesRuntime
   )
+  const driveHttp = new RemoteProviderHttpClient()
+  const driveAdminRuntime = dependencies.driveAdmin ?? new DriveAdminService(
+    authRuntime.driveAdminStore,
+    new DriveApiClient(authRuntime.driveAdminStore, driveHttp),
+    new Security(config.secureSalt),
+    videosRuntime,
+    {
+      baseUrl: config.baseUrl,
+      embedSlug: config.slugs.embed,
+      downloadSlug: config.slugs.download,
+      requestSlug: config.slugs.request
+    }
+  )
+  await registerDriveAdminRoutes(
+    app,
+    config,
+    authService,
+    dependencies.driveAccounts ?? authRuntime.driveAccounts,
+    driveAdminRuntime
+  )
   await registerVideoAdminRoutes(
     app,
     config,
@@ -177,7 +203,6 @@ export async function buildApp(
     loadImportFileSize
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
-  const driveHttp = new RemoteProviderHttpClient()
   const driveSharer = dependencies.driveSharer ?? new DriveSharerService(authRuntime.driveStore, driveHttp)
   const recaptchaVerifier = dependencies.recaptchaVerifier ?? new RecaptchaVerifier(driveHttp)
   await registerPlayerRoutes(app, config, {

@@ -15,6 +15,10 @@ import { MySqlVideoAdminStore } from '../videos/mysql-video-admin-store.js'
 import type { VideoAdminStore } from '../videos/video-admin-service.js'
 import { MySqlDriveStore } from '../drive/mysql-drive-store.js'
 import type { DriveStore } from '../drive/drive-sharer-service.js'
+import { DriveAccountAdminService, type DriveAccountAdminStore } from '../drive/drive-account-admin-service.js'
+import { MySqlDriveAccountAdminStore } from '../drive/mysql-drive-account-admin-store.js'
+import { MySqlDriveAdminStore } from '../drive/mysql-drive-admin-store.js'
+import type { DriveAdminStore } from '../drive/drive-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -24,6 +28,8 @@ export type AuthRuntime = Readonly<{
   subtitleStore: SubtitleAdminStore
   videoStore: VideoAdminStore
   driveStore: DriveStore
+  driveAccounts: DriveAccountAdminService
+  driveAdminStore: DriveAdminStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -35,6 +41,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let subtitleStore: MySqlSubtitleAdminStore | undefined
   let videoStore: MySqlVideoAdminStore | undefined
   let driveStore: MySqlDriveStore | undefined
+  let driveAccountStore: MySqlDriveAccountAdminStore | undefined
+  let driveAdminStore: MySqlDriveAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -67,6 +75,14 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentDriveStore = (): MySqlDriveStore => {
     driveStore ??= new MySqlDriveStore(currentDatabase())
     return driveStore
+  }
+  const currentDriveAccountStore = (): MySqlDriveAccountAdminStore => {
+    driveAccountStore ??= new MySqlDriveAccountAdminStore(currentDatabase())
+    return driveAccountStore
+  }
+  const currentDriveAdminStore = (): MySqlDriveAdminStore => {
+    driveAdminStore ??= new MySqlDriveAdminStore(currentDatabase())
+    return driveAdminStore
   }
 
   const lazyStore: AuthStore = {
@@ -126,6 +142,29 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     listMirrors: async (fileId, limit) => await currentDriveStore().listMirrors(fileId, limit),
     saveMirror: async (sourceId, mirrorId, email, created) => await currentDriveStore().saveMirror(sourceId, mirrorId, email, created)
   }
+  const lazyDriveAccountStore: DriveAccountAdminStore = {
+    listAccounts: async (query) => await currentDriveAccountStore().listAccounts(query),
+    getAccount: async (id) => await currentDriveAccountStore().getAccount(id),
+    emailExists: async (email, excludeId) => await currentDriveAccountStore().emailExists(email, excludeId),
+    createAccount: async (account) => await currentDriveAccountStore().createAccount(account),
+    updateAccount: async (id, account) => await currentDriveAccountStore().updateAccount(id, account),
+    deleteAccount: async (id) => await currentDriveAccountStore().deleteAccount(id),
+    updateFlag: async (id, column, value, updated) => await currentDriveAccountStore().updateFlag(id, column, value, updated)
+  }
+  const lazyDriveAdminStore: DriveAdminStore = {
+    listActiveAccounts: async (bypassOnly) => await currentDriveAdminStore().listActiveAccounts(bypassOnly),
+    listMirrors: async (fileId, limit) => await currentDriveAdminStore().listMirrors(fileId, limit),
+    saveMirror: async (sourceId, mirrorId, email, created) => await currentDriveAdminStore().saveMirror(sourceId, mirrorId, email, created),
+    deleteMirrorsForFile: async (fileId) => await currentDriveAdminStore().deleteMirrorsForFile(fileId),
+    deleteMirrorRecord: async (id) => await currentDriveAdminStore().deleteMirrorRecord(id),
+    listBackups: async (query) => await currentDriveAdminStore().listBackups(query),
+    getBackup: async (id) => await currentDriveAdminStore().getBackup(id),
+    deleteBackupsByMirrorId: async (mirrorId) => await currentDriveAdminStore().deleteBackupsByMirrorId(mirrorId),
+    listQueue: async (query) => await currentDriveAdminStore().listQueue(query),
+    deleteQueue: async (id) => await currentDriveAdminStore().deleteQueue(id),
+    duplicateExists: async (fingerprint) => await currentDriveAdminStore().duplicateExists(fingerprint),
+    saveFingerprint: async (fingerprint) => await currentDriveAdminStore().saveFingerprint(fingerprint)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -138,6 +177,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     settings: new SettingsAdminService(lazySettingsStore),
     subtitleStore: lazySubtitleStore,
     videoStore: lazyVideoStore,
-    driveStore: lazyDriveStore
+    driveStore: lazyDriveStore,
+    driveAccounts: new DriveAccountAdminService(lazyDriveAccountStore),
+    driveAdminStore: lazyDriveAdminStore
   })
 }

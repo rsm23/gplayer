@@ -48,7 +48,7 @@ const responseHeaderAllowlist = new Set([
 
 export type RemoteStreamRequest = Readonly<{
   url: string | URL
-  method?: 'GET' | 'HEAD' | 'POST'
+  method?: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE'
   headers?: RequestInit['headers']
   body?: string | Uint8Array
   signal?: AbortSignal
@@ -130,7 +130,7 @@ function filteredResponseHeaders(input: Headers, extraNames: readonly string[] =
   return headers
 }
 
-function redirectMethod(status: number, method: 'GET' | 'HEAD' | 'POST'): 'GET' | 'HEAD' | 'POST' {
+function redirectMethod(status: number, method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE'): 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' {
   if (method === 'HEAD') return 'HEAD'
   return status === 303 || method === 'POST' && (status === 301 || status === 302) ? 'GET' : method
 }
@@ -155,13 +155,16 @@ export class RemoteStream {
         if (redirectCookies.size > 0) headers.set('cookie', [...redirectCookies.values()].join('; '))
         else headers.delete('cookie')
       }
+      if (method !== 'GET' && method !== 'HEAD' && body !== undefined) {
+        headers.set('content-length', String(typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength))
+      }
       const response = this.fetchImplementation === undefined
         ? await openPinnedConnection(target, method, headers, resolved, body, request.signal)
         : await this.fetchImplementation(target, {
             method,
             headers,
             redirect: 'manual',
-            ...(method === 'POST' && body !== undefined ? { body } : {}),
+            ...(method !== 'GET' && method !== 'HEAD' && body !== undefined ? { body } : {}),
             ...(request.signal ? { signal: request.signal } : {})
           })
 
@@ -189,6 +192,7 @@ export class RemoteStream {
       const redirectedTarget = new URL(location ?? '', target)
       if (redirectedTarget.origin !== target.origin) {
         if (method === 'POST') throw new Error('Cross-origin POST redirects are not allowed')
+        if (method === 'PUT' || method === 'DELETE') throw new Error('Cross-origin mutation redirects are not allowed')
         for (const name of ['authorization', 'cookie', 'x-website-token']) baseHeaders.delete(name)
         redirectCookies.clear()
       }
@@ -240,7 +244,7 @@ function addSetCookie(target: Map<string, string>, value: string): void {
 
 async function openPinnedConnection(
   target: URL,
-  method: 'GET' | 'HEAD' | 'POST',
+  method: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE',
   headers: Headers,
   resolved: ResolvedTarget,
   body?: string | Uint8Array,
@@ -281,7 +285,7 @@ async function openPinnedConnection(
         body: method === 'HEAD' ? null : Readable.toWeb(response) as ReadableStream<Uint8Array>
       })
     })
-    upstream.end(method === 'POST' ? body : undefined)
+    upstream.end(method !== 'GET' && method !== 'HEAD' ? body : undefined)
   })
 }
 

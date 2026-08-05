@@ -743,6 +743,16 @@
   text-transform: uppercase;
 }
 
+button.user-state {
+  background: transparent;
+  cursor: pointer;
+}
+
+button.user-state:hover,
+button.user-state:focus-visible {
+  background: color-mix(in srgb, currentColor, transparent 91%);
+}
+
 .user-state-1 {
   border-color: color-mix(in srgb, var(--success), transparent 50%);
   color: var(--success);
@@ -751,6 +761,232 @@
 .user-state-2 {
   border-color: color-mix(in srgb, var(--brand), transparent 45%);
   color: var(--brand-soft);
+}
+
+.drive-account-table {
+  min-width: 940px;
+}
+
+.drive-account-table td > form {
+  margin: 0;
+}
+
+.drive-subnav {
+  margin-top: 36px;
+}
+
+.drive-file-toolbar {
+  align-items: stretch;
+}
+
+.drive-file-toolbar form:first-child {
+  width: min(100%, 720px);
+}
+
+.drive-file-toolbar select {
+  min-width: 220px;
+  padding: 0 38px 0 13px;
+  border: 1px solid var(--line-strong);
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+
+.drive-file-toolbar select + input {
+  border-radius: 0;
+}
+
+.drive-filter-form {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.drive-filter-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.drive-filter-form input[type='checkbox'] {
+  width: auto;
+  height: auto;
+  padding: 0;
+  accent-color: var(--brand);
+}
+
+.drive-filter-form button {
+  height: 48px;
+  border-left: 1px solid var(--line-strong);
+  border-radius: 10px;
+}
+
+.drive-file-tools {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.drive-shared-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.drive-shared-nav span {
+  margin-right: 4px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.drive-shared-nav a,
+.drive-browse-actions a,
+.drive-next-page a {
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--brand-soft);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.drive-file-tools form:first-child {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  width: min(100%, 560px);
+}
+
+.drive-file-tools .field {
+  flex: 1;
+}
+
+.drive-file-tools input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+
+.drive-file-tools button,
+.drive-file-actions button {
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--brand-soft);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.drive-files-table {
+  min-width: 1100px;
+}
+
+.drive-backup-table {
+  min-width: 980px;
+}
+
+.drive-queue-table {
+  min-width: 680px;
+}
+
+.drive-file-actions {
+  flex-wrap: wrap;
+}
+
+.drive-folder-link {
+  color: var(--brand-soft);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.drive-folder-link:hover,
+.drive-folder-link:focus-visible,
+.drive-shared-nav a:hover,
+.drive-shared-nav a:focus-visible,
+.drive-browse-actions a:hover,
+.drive-browse-actions a:focus-visible,
+.drive-next-page a:hover,
+.drive-next-page a:focus-visible {
+  color: var(--ink);
+}
+
+.drive-rename {
+  position: relative;
+}
+
+.drive-rename summary {
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--brand-soft);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.drive-rename summary::-webkit-details-marker {
+  display: none;
+}
+
+.drive-rename form {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 7px);
+  right: 0;
+  display: flex;
+  gap: 7px;
+  width: 300px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.35);
+}
+
+.drive-rename input {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.drive-browse-actions,
+.drive-next-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drive-next-page {
+  justify-content: flex-end;
+  padding: 14px 20px 16px;
 }
 
 .user-video-count {
@@ -2384,6 +2620,36 @@
   .user-toolbar .hero-link-primary,
   .user-toolbar form {
     width: 100%;
+  }
+
+  .drive-file-toolbar form:first-child {
+    width: 100%;
+  }
+
+  .drive-file-toolbar select {
+    min-width: 0;
+    width: 42%;
+  }
+
+  .drive-filter-form {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .drive-file-tools,
+  .drive-file-tools form:first-child {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .drive-rename form {
+    position: fixed;
+    top: auto;
+    right: 15px;
+    bottom: 20px;
+    left: 15px;
+    width: auto;
   }
 
   .subtitle-upload-shell {

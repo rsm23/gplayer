@@ -160,6 +160,30 @@ describe('RemoteStream', () => {
     })
   })
 
+  it.each(['PUT', 'DELETE'] as const)('supports internal %s mutations with request bodies', async (method) => {
+    const response = await new RemoteStream().open({
+      url: new URL('/post', upstreamUrl),
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: '{"title":"fixture"}',
+      allowPrivateNetworks: true
+    })
+
+    expect(JSON.parse((await body(response)).toString())).toEqual({
+      method,
+      body: '{"title":"fixture"}'
+    })
+  })
+
+  it.each(['PUT', 'DELETE'] as const)('blocks cross-origin %s redirects', async (method) => {
+    await expect(new RemoteStream().open({
+      url: new URL('/redirect-cross-origin', upstreamUrl),
+      method,
+      body: '{}',
+      allowPrivateNetworks: true
+    })).rejects.toThrow(/Cross-origin mutation/)
+  })
+
   it('keeps provider cookies private unless an internal caller requests them', async () => {
     const ordinary = await new RemoteStream().open({
       url: new URL('/media', upstreamUrl),
