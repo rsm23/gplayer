@@ -82,6 +82,8 @@ export type UserRecordPage = Readonly<{
   recordsFiltered: number
 }>
 
+export type UserOption = Readonly<{ id: string; name: string; username: string }>
+
 export type UserMutationResult =
   | Readonly<{ status: 'ok'; id: string; message: string }>
   | Readonly<{ status: 'invalid'; message: string }>
@@ -127,6 +129,26 @@ export class UserAdminService {
   public async get(id: unknown): Promise<AdminUserRecord | null> {
     const normalized = userId(id)
     return normalized === null ? null : await this.store.getUser(normalized)
+  }
+
+  public async options(maximum = 10_000): Promise<readonly UserOption[]> {
+    const boundedMaximum = Number.isFinite(maximum) ? Math.min(10_000, Math.max(1, Math.trunc(maximum))) : 10_000
+    const options: UserOption[] = []
+    let start = 0
+    while (options.length < boundedMaximum) {
+      const page = await this.store.listUsers({
+        draw: 0,
+        start,
+        length: Math.min(100, boundedMaximum - options.length),
+        search: '',
+        orderBy: 'name',
+        orderDir: 'asc'
+      })
+      for (const user of page.data) options.push(Object.freeze({ id: user.id, name: user.name, username: user.username }))
+      start += page.data.length
+      if (page.data.length === 0 || start >= page.recordsFiltered) break
+    }
+    return Object.freeze(options)
   }
 
   public async create(input: Record<string, unknown>): Promise<UserMutationResult> {

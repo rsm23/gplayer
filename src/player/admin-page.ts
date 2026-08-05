@@ -1,7 +1,7 @@
 import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
-import { userRoleLabel, type AdminUserRecord } from '../auth/user-admin-service.js'
-import { timezoneList, type GeneralSettingKey, type GeneralSettings } from '../settings/settings-admin-service.js'
+import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
+import { timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -184,6 +184,7 @@ export function renderAdminGeneralSettings(input: Readonly<{
   <p class="eyebrow"><span></span>Runtime configuration</p>
   <div class="admin-dashboard-heading"><div><h1>General settings.</h1><p>Manage the legacy-compatible configuration keys that control the Node.js runtime and connected services.</p></div><span class="admin-role">Core</span></div>
   ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'general')}
   <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/settings/general/" method="post">
     <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
     <section class="settings-section" aria-labelledby="settings-runtime-title">
@@ -233,6 +234,56 @@ export function renderAdminGeneralSettings(input: Readonly<{
       </div>
     </section>
     <div class="settings-actions"><button class="generate-button" type="submit"><span>Update general settings</span><span aria-hidden="true">↗</span></button><p>Only the allowlisted General Settings keys above are written.</p></div>
+  </form>
+</main>`)
+}
+
+export function renderAdminPublicSettings(input: Readonly<{
+  adminBase: string
+  values: PublicSettings
+  users: readonly UserOption[]
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const checked = (key: keyof PublicSettings): string => input.values[key] === true ? ' checked' : ''
+  const userOptions = input.users.map((user) => `<option value="${escapeHtml(user.id)}"${input.values.public_video_user === user.id ? ' selected' : ''}>${escapeHtml(user.name)} (${escapeHtml(user.username)})</option>`).join('')
+
+  return adminDocument('Public settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Public surface</p>
+  <div class="admin-dashboard-heading"><div><h1>Public settings.</h1><p>Control anonymous pages, downloads, registration, and public video ownership with the legacy key contract.</p></div><span class="admin-role">12 keys</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'public')}
+  <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/settings/public/" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="public-access-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Access</p><h2 id="public-access-title">Embeds and public pages</h2><p>Define which unauthenticated generator and request surfaces are available.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('anonymous_generator', 'Enable public pages', 'Allow anonymous visitors to use the public generator and related pages.', checked('anonymous_generator'))}
+        ${settingsToggle('embed_only', 'Embed-only playback', 'Restrict the player URL to iframe embedding contexts.', checked('embed_only'))}
+        ${settingsToggle('enable_request_url', 'Enable request URL', 'Allow public access to legacy embed2 and request-style URLs.', checked('enable_request_url'))}
+        ${settingsToggle('enable_json_subtitles', 'Allow subtitle URLs', 'Permit public embed queries to supply JSON, VTT, or SRT subtitle URLs.', checked('enable_json_subtitles'))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="public-download-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / Delivery</p><h2 id="public-download-title">Downloads and sharing</h2><p>Configure the public download experience and optional Drive sharing surface.</p></div>
+      <div class="settings-grid settings-toggle-grid">
+        ${settingsToggle('enable_download_page', 'Enable download page', 'Allow eligible source files to be delivered through the public download page.', checked('enable_download_page'))}
+        ${settingsToggle('show_sub_download', 'Show subtitle downloads', 'List available subtitle files alongside video downloads.', checked('show_sub_download'))}
+        ${settingsToggle('show_watch_button', 'Show watch button', 'Provide a return-to-player action from the download page.', checked('show_watch_button'))}
+        ${settingsToggle('enable_gsharer', 'Enable Drive sharer', 'Expose the configured Google Drive limit-bypass page.', checked('enable_gsharer'))}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="public-account-title">
+      <div class="settings-section-heading"><p class="panel-kicker">03 / Accounts</p><h2 id="public-account-title">Registration and ownership</h2><p>Control public account creation and attribute anonymously generated videos to an existing user.</p></div>
+      <div class="settings-grid">
+        ${settingsToggle('enable_registration', 'Enable registration', 'Allow visitors to create accounts through the public registration page.', checked('enable_registration'))}
+        ${settingsToggle('save_public_video', 'Save public videos', 'Persist videos generated or played by anonymous visitors.', checked('save_public_video'))}
+        ${settingsInput('contact_page_link', 'Contact page URL', escapeHtml(String(input.values.contact_page_link)), 'url', 'https://example.com/contact')}
+        <div class="field"><label for="public_video_user">Save public videos as</label><select id="public_video_user" name="public_video_user" required>${userOptions || '<option value="">No users available</option>'}</select><p class="field-hint">The selected account must exist when this form is submitted.</p></div>
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update public settings</span><span aria-hidden="true">↗</span></button><p>Public feature flags remain dormant until their corresponding Node routes and workers consume them.</p></div>
   </form>
 </main>`)
 }
@@ -288,7 +339,7 @@ function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessio
 }
 
 function settingsInput(
-  name: GeneralSettingKey,
+  name: string,
   label: string,
   value: string,
   type: 'text' | 'url' | 'number' | 'password',
@@ -302,8 +353,12 @@ function settingsInput(
   return `<div class="field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="${type}" value="${value}" placeholder="${escapeHtml(placeholder)}"${maxlength}${required ? ' required' : ''}${minimum === undefined ? '' : ` min="${escapeHtml(minimum)}"`}${maximum === undefined ? '' : ` max="${escapeHtml(maximum)}"`}>${hint === '' ? '' : `<p class="field-hint">${escapeHtml(hint)}</p>`}</div>`
 }
 
-function settingsToggle(name: GeneralSettingKey, label: string, description: string, checked: string): string {
+function settingsToggle(name: string, label: string, description: string, checked: string): string {
   return `<label class="settings-toggle" for="${name}"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span><span class="settings-switch"><input type="hidden" name="${name}" value="false"><input id="${name}" name="${name}" type="checkbox" value="true"${checked}><i aria-hidden="true"></i></span></label>`
+}
+
+function settingsSubnav(adminBase: string, current: 'general' | 'public'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a></nav>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {

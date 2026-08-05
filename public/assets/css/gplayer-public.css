@@ -718,6 +718,30 @@
   margin-top: 38px;
 }
 
+.settings-subnav {
+  display: flex;
+  width: fit-content;
+  gap: 7px;
+  margin-top: 38px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+}
+
+.settings-subnav a {
+  padding: 9px 13px;
+  border-radius: 8px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-subnav a[aria-current="page"] {
+  background: var(--panel-strong);
+  color: var(--brand-soft);
+}
+
 .admin-settings-form {
   display: grid;
   gap: 24px;
@@ -1015,6 +1039,15 @@
 
   .admin-settings-form {
     margin-top: 38px;
+  }
+
+  .settings-subnav {
+    width: 100%;
+  }
+
+  .settings-subnav a {
+    flex: 1;
+    text-align: center;
   }
 
   .settings-section {

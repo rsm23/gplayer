@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type SessionWrite, type StoredAuthUser } from '../src/auth/auth-service.js'
+import { UserAdminService, type AdminUserRecord, type UserAdminStore } from '../src/auth/user-admin-service.js'
 import { loadConfig } from '../src/config.js'
 import { MySqlSettingsAdminStore } from '../src/settings/mysql-settings-admin-store.js'
 import { SettingsAdminService, type SettingEntry, type SettingsAdminStore } from '../src/settings/settings-admin-service.js'
@@ -46,6 +47,29 @@ class RouteAuthStore implements AuthStore {
     return requestedToken === token && requestedUserAgent === userAgent ? this.user : null
   }
   public async revokeSession(): Promise<boolean> { return true }
+}
+
+const adminRecord: AdminUserRecord = Object.freeze({
+  id: '1',
+  username: 'admin',
+  email: admin.email,
+  name: admin.name,
+  role: admin.role,
+  status: admin.status,
+  created: admin.created,
+  updated: admin.updated,
+  videos: 0
+})
+
+const routeUserStore: UserAdminStore = {
+  listUsers: async () => ({ data: [adminRecord], recordsTotal: 1, recordsFiltered: 1 }),
+  getUser: async (id) => id === adminRecord.id ? adminRecord : null,
+  findConflict: async () => ({ username: false, email: false }),
+  createUser: async () => '2',
+  updateUser: async () => true,
+  updateEmail: async () => true,
+  updateUsername: async () => true,
+  deleteUser: async () => true
 }
 
 describe('settings administration service', () => {
@@ -101,6 +125,29 @@ describe('settings administration service', () => {
     await expect(settings.saveGeneral({ visit_counter: '0' })).resolves.toEqual({ status: 'invalid', message: 'The visit counter value is invalid' })
     expect(store.writes).toEqual([])
   })
+
+  it('preserves the twelve-key public settings contract and validates ownership inputs', async () => {
+    const store = new MemorySettingsStore({ anonymous_generator: 'true', public_video_user: '1', contact_page_link: 'https://example.test/contact' })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.publicSettings()).resolves.toEqual(expect.objectContaining({
+      anonymous_generator: true,
+      embed_only: false,
+      public_video_user: '1',
+      contact_page_link: 'https://example.test/contact'
+    }))
+
+    await expect(settings.savePublic({
+      anonymous_generator: ['false', 'true'],
+      enable_download_page: 'false',
+      contact_page_link: '',
+      public_video_user: '1',
+      ignored_public_key: 'blocked'
+    })).resolves.toEqual({ status: 'ok', message: 'The Public Settings have been successfully updated' })
+    expect(store.values).toEqual(expect.objectContaining({ anonymous_generator: 'true', enable_download_page: 'false', contact_page_link: '', public_video_user: '1' }))
+    expect(store.values).not.toHaveProperty('ignored_public_key')
+    await expect(settings.savePublic({ public_video_user: '4294967296' })).resolves.toEqual({ status: 'invalid', message: 'The public video user is invalid' })
+    await expect(settings.savePublic({ contact_page_link: 'javascript:alert(1)' })).resolves.toEqual({ status: 'invalid', message: 'The contact page URL is invalid' })
+  })
 })
 
 describe('MySqlSettingsAdminStore', () => {
@@ -131,7 +178,8 @@ describe('general settings administration routes', () => {
   async function createApp(settingsStore: MemorySettingsStore, routeAuth = new RouteAuthStore()): Promise<FastifyInstance> {
     return await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }), {
       auth: new AuthService(routeAuth),
-      settings: new SettingsAdminService(settingsStore)
+      settings: new SettingsAdminService(settingsStore),
+      users: new UserAdminService(routeUserStore, { hashPassword: async () => 'hash' })
     })
   }
 
@@ -167,6 +215,43 @@ describe('general settings administration routes', () => {
     expect(response.headers.location).toBe('/administrator/settings/general/?updated=1')
     expect(store.values).toEqual(expect.objectContaining({ main_site: 'https://app.example/base/', timezone: 'UTC', cache_mode: 'php', production_mode: 'true' }))
     expect(store.values).not.toHaveProperty('unknown')
+  })
+
+  it('renders and updates public feature settings with a validated user owner', async () => {
+    const store = new MemorySettingsStore({ public_video_user: '1', anonymous_generator: 'true' })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/public/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1]
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Public settings.')
+    expect(page.body).toContain('name="enable_registration"')
+    expect(page.body).toContain('<option value="1" selected>Admin (admin)</option>')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/public/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `csrf=${csrf}&anonymous_generator=true&embed_only=false&enable_registration=true&contact_page_link=https%3A%2F%2Fexample.test%2Fcontact&public_video_user=1`
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/public/?updated=1')
+    expect(store.values).toEqual(expect.objectContaining({ anonymous_generator: 'true', embed_only: 'false', enable_registration: 'true', public_video_user: '1' }))
+  })
+
+  it('rejects a missing public-video owner without persisting the category', async () => {
+    const store = new MemorySettingsStore()
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/public/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1]
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/public/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `csrf=${csrf}&anonymous_generator=true&public_video_user=99`
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.body).toContain('The public video user is invalid')
+    expect(store.writes).toEqual([])
   })
 
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {

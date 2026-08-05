@@ -31,6 +31,18 @@ const TEXT_FIELDS = Object.freeze({
 })
 
 const CACHE_MODES = Object.freeze(['php', 'apache', 'litespeed', 'nginx'] as const)
+const PUBLIC_BOOLEAN_KEYS = [
+  'anonymous_generator',
+  'embed_only',
+  'enable_request_url',
+  'enable_json_subtitles',
+  'enable_download_page',
+  'show_sub_download',
+  'show_watch_button',
+  'enable_gsharer',
+  'enable_registration',
+  'save_public_video'
+] as const
 const BOOLEAN_KEY_SET = new Set<string>(BOOLEAN_KEYS)
 const TIMEZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])
 
@@ -43,6 +55,13 @@ export type GeneralSettingKey =
   | keyof typeof TEXT_FIELDS
 
 export type GeneralSettings = Readonly<Record<GeneralSettingKey, string | boolean>>
+
+export type PublicSettingKey =
+  | typeof PUBLIC_BOOLEAN_KEYS[number]
+  | 'contact_page_link'
+  | 'public_video_user'
+
+export type PublicSettings = Readonly<Record<PublicSettingKey, string | boolean>>
 
 export type SettingEntry = Readonly<{ key: string; value: string }>
 
@@ -105,6 +124,38 @@ export class SettingsAdminService {
     await this.store.upsertMany(entries)
     return Object.freeze({ status: 'ok', message: 'The General Settings have been successfully updated' })
   }
+
+  public async publicSettings(): Promise<PublicSettings> {
+    const raw = await this.store.getAll()
+    const result = {} as Record<PublicSettingKey, string | boolean>
+    for (const key of PUBLIC_BOOLEAN_KEYS) result[key] = raw[key] === 'true'
+    result.contact_page_link = normalizedOptionalHttpUrl(raw.contact_page_link) ?? ''
+    result.public_video_user = positiveId(raw.public_video_user) ?? ''
+    return Object.freeze(result)
+  }
+
+  public async savePublic(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const entries: SettingEntry[] = []
+    for (const key of PUBLIC_BOOLEAN_KEYS) {
+      if (key in input) entries.push({ key, value: booleanValue(input[key]) ? 'true' : 'false' })
+    }
+
+    if ('contact_page_link' in input) {
+      const contactUrl = normalizedOptionalHttpUrl(input.contact_page_link)
+      if (contactUrl === null) return invalid('The contact page URL is invalid')
+      entries.push({ key: 'contact_page_link', value: contactUrl })
+    }
+
+    if ('public_video_user' in input) {
+      const userId = positiveId(input.public_video_user)
+      if (userId === null) return invalid('The public video user is invalid')
+      entries.push({ key: 'public_video_user', value: userId })
+    }
+
+    if (entries.length === 0) return invalid('No supported settings were submitted')
+    await this.store.upsertMany(entries)
+    return Object.freeze({ status: 'ok', message: 'The Public Settings have been successfully updated' })
+  }
 }
 
 export function generalSettings(raw: Readonly<Record<string, string>>, defaultBaseUrl: URL): GeneralSettings {
@@ -137,6 +188,27 @@ function normalizedHttpUrl(value: unknown): string | null {
     if (!['http:', 'https:'].includes(url.protocol) || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') return null
     url.pathname = `${url.pathname.replace(/\/+$/, '')}/`
     return url.toString()
+  } catch {
+    return null
+  }
+}
+
+function normalizedOptionalHttpUrl(value: unknown): string | null {
+  const candidate = scalarValue(value)
+  if (candidate === '') return ''
+  try {
+    const url = new URL(candidate)
+    return ['http:', 'https:'].includes(url.protocol) && url.username === '' && url.password === '' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+function positiveId(value: unknown): string | null {
+  const candidate = scalarValue(value)
+  if (!/^[1-9]\d{0,9}$/.test(candidate)) return null
+  try {
+    return BigInt(candidate) <= 4_294_967_295n ? candidate : null
   } catch {
     return null
   }

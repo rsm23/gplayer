@@ -60,7 +60,13 @@ export async function buildApp(
     dependencies.sessions ?? authRuntime.sessions,
     dependencies.users ?? authRuntime.users
   )
-  await registerAdminSettingsRoutes(app, config, dependencies.auth ?? authRuntime.auth, dependencies.settings ?? authRuntime.settings)
+  await registerAdminSettingsRoutes(
+    app,
+    config,
+    dependencies.auth ?? authRuntime.auth,
+    dependencies.settings ?? authRuntime.settings,
+    dependencies.users ?? authRuntime.users
+  )
   await registerPlayerRoutes(app, config)
   await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
   await registerMediaRoutes(app, config)

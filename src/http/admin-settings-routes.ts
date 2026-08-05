@@ -1,8 +1,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
+import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminError, renderAdminGeneralSettings, type AdminMessage } from '../player/admin-page.js'
+import { renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
@@ -11,13 +12,16 @@ export async function registerAdminSettingsRoutes(
   app: FastifyInstance,
   config: AppConfig,
   auth: AuthService,
-  settings: SettingsAdminService
+  settings: SettingsAdminService,
+  users: UserAdminService
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
   const loginUrl = `${adminBase}/login/`
   const generalUrl = `${adminBase}/settings/general/`
+  const publicUrl = `${adminBase}/settings/public/`
 
   app.get(`${adminBase}/settings/general`, async (_request, reply) => await reply.redirect(generalUrl, 308))
+  app.get(`${adminBase}/settings/public`, async (_request, reply) => await reply.redirect(publicUrl, 308))
 
   app.get(generalUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -31,7 +35,7 @@ export async function registerAdminSettingsRoutes(
       return reply.type('text/html; charset=utf-8').send(renderAdminGeneralSettings({
         adminBase,
         values,
-        csrfToken: csrfToken(config, tokenFor(request)),
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-general'),
         ...(message === undefined ? {} : { message })
       }))
     } catch {
@@ -47,7 +51,7 @@ export async function registerAdminSettingsRoutes(
     const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
     if (user === null || reply.sent) return
     const body = objectValue(request.body)
-    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf))) {
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-general')) {
       return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
     }
 
@@ -58,7 +62,67 @@ export async function registerAdminSettingsRoutes(
       return reply.code(400).type('text/html; charset=utf-8').send(renderAdminGeneralSettings({
         adminBase,
         values,
-        csrfToken: csrfToken(config, tokenFor(request)),
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-general'),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings database is temporarily unavailable.'))
+    }
+  })
+
+  app.get(publicUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    try {
+      const [values, userOptions] = await Promise.all([settings.publicSettings(), users.options()])
+      const message: AdminMessage | undefined = stringValue(objectValue(request.query).updated) === '1'
+        ? { kind: 'success', text: 'The Public Settings have been successfully updated' }
+        : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminPublicSettings({
+        adminBase,
+        values,
+        users: userOptions,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-public'),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The settings database is temporarily unavailable.'))
+    }
+  })
+
+  app.post(publicUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-public')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const requestedUser = stringValue(body.public_video_user)
+      if (requestedUser !== '' && await users.get(requestedUser) === null) {
+        const [values, userOptions] = await Promise.all([settings.publicSettings(), users.options()])
+        return reply.code(400).type('text/html; charset=utf-8').send(renderAdminPublicSettings({
+          adminBase,
+          values,
+          users: userOptions,
+          csrfToken: csrfToken(config, tokenFor(request), 'settings-public'),
+          message: { kind: 'error', text: 'The public video user is invalid' }
+        }))
+      }
+      const result = await settings.savePublic(body)
+      if (result.status === 'ok') return await reply.redirect(`${publicUrl}?updated=1`, 303)
+      const [values, userOptions] = await Promise.all([settings.publicSettings(), users.options()])
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminPublicSettings({
+        adminBase,
+        values,
+        users: userOptions,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-public'),
         message: { kind: 'error', text: result.message }
       }))
     } catch {
@@ -107,13 +171,13 @@ async function authenticatedAdministrator(
   return user
 }
 
-function csrfToken(config: AppConfig, token: string): string {
+function csrfToken(config: AppConfig, token: string, scope: string): string {
   if (token === '') return ''
-  return createHmac('sha256', config.secureSalt).update(`settings-general\0${token}`).digest('base64url')
+  return createHmac('sha256', config.secureSalt).update(`${scope}\0${token}`).digest('base64url')
 }
 
-function validCsrfToken(config: AppConfig, token: string, candidate: string): boolean {
-  const expected = csrfToken(config, token)
+function validCsrfToken(config: AppConfig, token: string, candidate: string, scope: string): boolean {
+  const expected = csrfToken(config, token, scope)
   return expected !== '' && candidate.length === expected.length && timingSafeEqual(Buffer.from(candidate), Buffer.from(expected))
 }
 
