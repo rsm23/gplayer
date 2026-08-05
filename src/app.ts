@@ -83,6 +83,7 @@ import { FileSystemSettingsMaintenanceFiles } from './settings/settings-maintena
 import { SettingsMaintenanceService } from './settings/settings-maintenance-service.js'
 import { registerBootstrapCompatibility, sendLegacyHeadFallback } from './http/bootstrap-compatibility.js'
 import { ViewCounterService } from './stats/view-counter-service.js'
+import { redactSensitiveRequestUrl } from './http/request-log.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -113,6 +114,7 @@ export type AppDependencies = Readonly<{
   statsWorker?: StatsWorker
   viewCounter?: Pick<ViewCounterService, 'capture'>
   generalWorker?: GeneralWorker
+  proxyMaintenance?: Pick<ProxyMaintenanceWorker, 'runOnce'>
   sourceRefreshWorker?: SourceRefreshWorker
   mediaDownloadWorker?: MediaDownloadWorker
   recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
@@ -131,7 +133,19 @@ export async function buildApp(
   dependencies: AppDependencies = {}
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: config.nodeEnv !== 'test',
+    logger: config.nodeEnv === 'test' ? false : {
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: redactSensitiveRequestUrl(request.url),
+            hostname: request.hostname,
+            remoteAddress: request.ip,
+            remotePort: request.raw.socket.remotePort ?? 0
+          }
+        }
+      }
+    },
     trustProxy: typeof config.trustProxy === 'boolean' ? config.trustProxy : [...config.trustProxy],
     requestIdHeader: 'x-request-id'
   })
@@ -203,17 +217,18 @@ export async function buildApp(
       return Object.freeze({ loadBalancer: mainSite.toString() !== config.baseUrl.toString(), mainSite })
     }
   )
+  const proxyMaintenanceRuntime = dependencies.proxyMaintenance ?? new ProxyMaintenanceWorker(
+    authRuntime.proxyMaintenanceStore,
+    new FixedFreeProxySource(),
+    new NodeProxyProbe()
+  )
   const generalWorkerRuntime = dependencies.generalWorker ?? new GeneralWorker(authRuntime.generalWorkerStore, {
     baseUrl: config.baseUrl,
     cacheRoot: path.resolve(currentDirectory, '../cache'),
     temporaryRoot: path.resolve(currentDirectory, '../tmp'),
     uploadsRoot: path.join(publicRoot, 'uploads'),
     healthProbe: new RemoteLoadBalancerHealthProbe(),
-    proxyMaintenance: new ProxyMaintenanceWorker(
-      authRuntime.proxyMaintenanceStore,
-      new FixedFreeProxySource(),
-      new NodeProxyProbe()
-    ),
+    proxyMaintenance: proxyMaintenanceRuntime,
     pluginMaintenance,
     activeConnectionCounter: new SystemActiveConnectionCounter(),
     loadCacheMaxAge: async () => {
@@ -333,6 +348,7 @@ export async function buildApp(
     loadGeneralSettings,
     isAuthenticated,
     background: driveBackgroundRuntime,
+    proxyMaintenance: proxyMaintenanceRuntime,
     landingHtml
   })
   await registerPrivateAdminRoutes(app, config, authService, privateAdminRuntime)

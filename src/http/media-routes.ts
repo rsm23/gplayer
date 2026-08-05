@@ -63,6 +63,9 @@ export async function registerMediaRoutes(
   const publicMediaCache = options.publicRoot === undefined
     ? undefined
     : new PublicMediaCache(options.publicRoot, config.baseUrl)
+  if (publicMediaCache !== undefined) {
+    app.addHook('onClose', async () => await publicMediaCache.settle())
+  }
 
   const poster = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const target = mediaTarget(request.url, 'poster', security)

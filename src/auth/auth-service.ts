@@ -109,6 +109,14 @@ export class AuthService {
     return await this.store.findActiveSession(normalizedToken, normalizedUserAgent, this.now())
   }
 
+  public async verifyCredentials(identifier: string, password: string): Promise<AuthUser | null> {
+    const normalizedIdentifier = normalizeIdentifier(identifier)
+    const user = normalizedIdentifier === '' ? null : await this.store.findUserByIdentifier(normalizedIdentifier)
+    const validPassword = await this.verifyPassword(password, user?.passwordHash ?? LEGACY_BCRYPT_DUMMY)
+    if (user === null || password === '' || !validPassword || user.status !== 1) return null
+    return publicUser(user)
+  }
+
   public async logout(token: string): Promise<boolean> {
     const normalized = normalizeToken(token)
     return normalized !== '' && await this.store.revokeSession(normalized)

@@ -63,6 +63,10 @@ export class PublicMediaCache {
     this.track(paths.file, operation)
   }
 
+  public async settle(): Promise<void> {
+    await Promise.allSettled([...this.#inflight.values()])
+  }
+
   private paths(kind: PublicMediaCacheKind, target: URL): CachePath {
     const cacheTarget = new URL(target)
     if (kind === 'filmstrip-image') cacheTarget.hash = ''

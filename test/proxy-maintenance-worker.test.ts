@@ -19,7 +19,7 @@ describe('proxy maintenance worker', () => {
     }
     const worker = new ProxyMaintenanceWorker(store, source, probe as never, { timeout: 2_000, concurrency: 2 })
 
-    await expect(worker.runOnce()).resolves.toEqual({ disabled: false, discovered: 1, checked: 2, valid: 1 })
+    await expect(worker.runOnce()).resolves.toEqual({ disabled: false, discovered: 1, checked: 2, valid: 1, proxies: ['198.51.100.1:8080'] })
     expect(source.list).toHaveBeenCalledWith(2_000)
     expect(probe.fetchText).toHaveBeenCalledTimes(2)
     expect(store.saved).toEqual([
@@ -34,7 +34,7 @@ describe('proxy maintenance worker', () => {
     const probe = { fetchText: vi.fn(async () => 'ok') }
 
     await expect(new ProxyMaintenanceWorker(store, source, probe as never).runOnce()).resolves.toEqual({
-      disabled: true, discovered: 0, checked: 0, valid: 0
+      disabled: true, discovered: 0, checked: 0, valid: 0, proxies: []
     })
     expect(source.list).not.toHaveBeenCalled()
     expect(probe.fetchText).not.toHaveBeenCalled()
@@ -47,10 +47,29 @@ describe('proxy maintenance worker', () => {
     const probe = { fetchText: vi.fn(async () => '') }
 
     await expect(new ProxyMaintenanceWorker(store, source, probe as never).runOnce()).resolves.toEqual({
-      disabled: false, discovered: 0, checked: 1, valid: 0
+      disabled: false, discovered: 0, checked: 1, valid: 0, proxies: []
     })
     expect(source.list).not.toHaveBeenCalled()
     expect(store.saved).toEqual([[]])
+  })
+
+  it('coalesces simultaneous manual and scheduled validation runs', async () => {
+    const store = new MemoryProxyStore({ disabled: false, useConfiguredOnly: true, proxies: ['198.51.100.3:8080'] })
+    let release: (() => void) | undefined
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    const probe = { fetchText: vi.fn(async () => { await waiting; return 'status=ok' }) }
+    const worker = new ProxyMaintenanceWorker(store, { list: vi.fn(async () => []) }, probe as never)
+
+    const first = worker.runOnce()
+    const second = worker.runOnce()
+    expect(second).toBe(first)
+    release?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { disabled: false, discovered: 0, checked: 1, valid: 1, proxies: ['198.51.100.3:8080'] },
+      { disabled: false, discovered: 0, checked: 1, valid: 1, proxies: ['198.51.100.3:8080'] }
+    ])
+    expect(probe.fetchText).toHaveBeenCalledOnce()
+    expect(store.saved).toEqual([['198.51.100.3:8080']])
   })
 })
 

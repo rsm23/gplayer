@@ -28,11 +28,13 @@ export type ProxyMaintenanceResult = Readonly<{
   discovered: number
   checked: number
   valid: number
+  proxies: readonly string[]
 }>
 
 export class ProxyMaintenanceWorker {
   private readonly timeout: number
   private readonly concurrency: number
+  private activeRun: Promise<ProxyMaintenanceResult> | null = null
 
   public constructor(
     private readonly store: ProxyMaintenanceStore,
@@ -44,9 +46,17 @@ export class ProxyMaintenanceWorker {
     this.concurrency = Math.max(1, Math.min(50, Math.trunc(options.concurrency ?? 25)))
   }
 
-  public async runOnce(): Promise<ProxyMaintenanceResult> {
+  public runOnce(): Promise<ProxyMaintenanceResult> {
+    if (this.activeRun !== null) return this.activeRun
+    this.activeRun = this.execute().finally(() => {
+      this.activeRun = null
+    })
+    return this.activeRun
+  }
+
+  private async execute(): Promise<ProxyMaintenanceResult> {
     const configuration = await this.store.loadProxyConfiguration()
-    if (configuration.disabled) return Object.freeze({ disabled: true, discovered: 0, checked: 0, valid: 0 })
+    if (configuration.disabled) return Object.freeze({ disabled: true, discovered: 0, checked: 0, valid: 0, proxies: Object.freeze([]) })
 
     let candidates = normalizedProxies(configuration.proxies)
     let discovered = 0
@@ -57,7 +67,7 @@ export class ProxyMaintenanceWorker {
       discovered = candidates.filter((proxy) => !before.has(proxy.format)).length
       if (candidates.length > 1) await this.store.saveProxyList(candidates.map((proxy) => proxy.format))
     }
-    if (candidates.length === 0) return Object.freeze({ disabled: false, discovered, checked: 0, valid: 0 })
+    if (candidates.length === 0) return Object.freeze({ disabled: false, discovered, checked: 0, valid: 0, proxies: Object.freeze([]) })
 
     const valid: ProxyDefinition[] = []
     let cursor = 0
@@ -72,8 +82,9 @@ export class ProxyMaintenanceWorker {
     }
     await Promise.all(Array.from({ length: Math.min(candidates.length, this.concurrency) }, consume))
     const ordered = candidates.filter((candidate) => valid.some((proxy) => proxy.format === candidate.format))
-    await this.store.saveProxyList(ordered.map((proxy) => proxy.format))
-    return Object.freeze({ disabled: false, discovered, checked: candidates.length, valid: ordered.length })
+    const proxies = Object.freeze(ordered.map((proxy) => proxy.format))
+    await this.store.saveProxyList(proxies)
+    return Object.freeze({ disabled: false, discovered, checked: candidates.length, valid: proxies.length, proxies })
   }
 }
 

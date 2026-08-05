@@ -109,6 +109,17 @@ describe('AuthService', () => {
     await expect(service.authenticate(fixedToken, userAgent)).resolves.toBeNull()
   })
 
+  it('verifies active credentials without creating a session or recording a login failure', async () => {
+    const store = new MemoryAuthStore()
+    const service = auth(store)
+
+    await expect(service.verifyCredentials('admin', 'admin')).resolves.toEqual(expect.objectContaining({ username: 'admin', role: 0 }))
+    await expect(service.verifyCredentials('admin', 'bad')).resolves.toBeNull()
+    await expect(service.verifyCredentials('missing', 'bad')).resolves.toBeNull()
+    expect(store.sessions).toEqual([])
+    expect(store.failures).toEqual([])
+  })
+
   it('accepts strict bearer or cookie tokens and rejects ambiguous authorization values', () => {
     expect(authTokenFromRequest({ authorization: `Bearer ${fixedToken}`, cookie: 'cookie-token' })).toBe(fixedToken)
     expect(authTokenFromRequest({ cookie: 'cookie-token' })).toBe('cookie-token')

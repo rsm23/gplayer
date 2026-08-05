@@ -15,6 +15,7 @@ import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../setting
 import type { DriveBackgroundCoordinator } from '../drive/drive-background-worker.js'
 import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../settings/general-runtime.js'
 import { disqusConfig, disqusCsp, renderDisqus, type DisqusConfig } from '../player/disqus.js'
+import type { ProxyMaintenanceResult } from '../background/proxy-maintenance-worker.js'
 
 const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
@@ -43,6 +44,7 @@ export async function registerSystemRoutes(
     loadGeneralSettings?: GeneralSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
     background?: Pick<DriveBackgroundCoordinator, 'trigger'>
+    proxyMaintenance?: Readonly<{ runOnce(): Promise<ProxyMaintenanceResult> }>
     landingHtml?: string
   }> = {}
 ): Promise<void> {
@@ -87,6 +89,36 @@ export async function registerSystemRoutes(
       })
     }
   })
+
+  const cronProxy = async (request: FastifyRequest, reply: FastifyReply) => {
+    applyPublicPageHeaders(reply, true)
+    reply.type('application/json; charset=utf-8')
+    if (!await cronProxyAuthorized(request, auth)) {
+      return { status: 'fail', message: 'You are not authorized to access this page!' }
+    }
+    try {
+      const result = await options.proxyMaintenance?.runOnce()
+      if (result === undefined || result.valid === 0) {
+        if (result?.disabled === true) return { status: 'fail', message: 'The proxy is disabled.' }
+        return {
+          status: 'fail',
+          message: 'Failed to retrieve validated proxy status. If there is a proxy in the proxy list column, the proxy is validated and can be used.'
+        }
+      }
+      return {
+        status: 'ok',
+        message: 'The proxies has been successfully validated and can be used.',
+        result: result.proxies.join('\n')
+      }
+    } catch {
+      return {
+        status: 'fail',
+        message: 'Failed to retrieve validated proxy status. If there is a proxy in the proxy list column, the proxy is validated and can be used.'
+      }
+    }
+  }
+  app.get('/cron-proxy', cronProxy)
+  app.get('/cron-proxy/', cronProxy)
 
   app.get('/health-check', async (_request, reply) => {
     reply.header('cache-control', 'no-cache')
@@ -215,6 +247,60 @@ async function authenticatedRequest(
   } catch {
     return false
   }
+}
+
+async function cronProxyAuthorized(request: FastifyRequest, auth: AuthService): Promise<boolean> {
+  const token = authTokenFromRequest({
+    authorization: request.headers.authorization,
+    cookie: request.cookies[AUTH_COOKIE_NAME]
+  })
+  if (token !== '') {
+    try {
+      const user = await auth.authenticate(token, request.headers['user-agent'] ?? '')
+      if (user !== null && user.status === 1 && user.role === 0) return true
+    } catch {
+      // Basic/query compatibility can still authenticate when session storage is unavailable.
+    }
+  }
+  const credentials = cronProxyCredentials(request)
+  if (credentials === null) return false
+  try {
+    const user = await auth.verifyCredentials(credentials.username, credentials.password)
+    return user !== null && user.status === 1 && user.role === 0
+  } catch {
+    return false
+  }
+}
+
+function cronProxyCredentials(request: FastifyRequest): Readonly<{ username: string; password: string }> | null {
+  const authorization = request.headers.authorization
+  const header = Array.isArray(authorization) ? authorization[0] ?? '' : authorization ?? ''
+  const basic = header.match(/^Basic ([A-Za-z0-9+/]+={0,2})$/i)?.[1]
+  if (basic !== undefined && basic.length <= 8_192) {
+    try {
+      const bytes = Buffer.from(basic, 'base64')
+      if (bytes.toString('base64').replace(/=+$/, '') !== basic.replace(/=+$/, '')) return null
+      const decoded = bytes.toString('utf8')
+      if (!Buffer.from(decoded, 'utf8').equals(bytes)) return null
+      const separator = decoded.indexOf(':')
+      if (separator > 0) return boundedCronCredentials(decoded.slice(0, separator), decoded.slice(separator + 1))
+    } catch {
+      return null
+    }
+  }
+  const query = typeof request.query === 'object' && request.query !== null && !Array.isArray(request.query)
+    ? request.query as Record<string, unknown>
+    : {}
+  return boundedCronCredentials(
+    typeof query.username === 'string' ? query.username : '',
+    typeof query.password === 'string' ? query.password : ''
+  )
+}
+
+function boundedCronCredentials(username: string, password: string): Readonly<{ username: string; password: string }> | null {
+  const identifier = username.trim()
+  if (identifier === '' || identifier.length > 254 || password === '' || password.length > 4_096) return null
+  return Object.freeze({ username: identifier, password })
 }
 
 function cacheToken(request: FastifyRequest): string {

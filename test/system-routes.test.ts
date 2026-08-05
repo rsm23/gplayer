@@ -6,6 +6,7 @@ import { loadConfig } from '../src/config.js'
 import { Security } from '../src/security/security.js'
 import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
 import { renderLandingContact } from '../src/http/system-routes.js'
+import { redactSensitiveRequestUrl } from '../src/http/request-log.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -14,9 +15,14 @@ const adminToken = 'system-admin-token-1234567890'
 const memberToken = 'system-member-token-1234567890'
 const systemAdmin: AuthUser = Object.freeze({ id: 1, username: 'admin', email: 'admin@gplayer.local', name: 'Admin', role: 0, status: 1, created: 1, updated: 1 })
 const systemMember: AuthUser = Object.freeze({ ...systemAdmin, id: 2, username: 'member', email: 'member@gplayer.local', name: 'Member', role: 2 })
+const storedSystemAdmin: StoredAuthUser = Object.freeze({ ...systemAdmin, passwordHash: 'admin-password' })
+const storedSystemMember: StoredAuthUser = Object.freeze({ ...systemMember, passwordHash: 'member-password' })
 
 class SystemRouteAuthStore implements AuthStore {
-  public async findUserByIdentifier(): Promise<StoredAuthUser | null> { return null }
+  public constructor(private readonly users: readonly StoredAuthUser[] = []) {}
+  public async findUserByIdentifier(identifier: string): Promise<StoredAuthUser | null> {
+    return this.users.find((user) => user.username === identifier || user.email === identifier) ?? null
+  }
   public async createSession(_session: SessionWrite): Promise<void> {}
   public async recordFailedLogin(_session: Omit<SessionWrite, 'expires' | 'state'>): Promise<void> {}
   public async revokeSession(): Promise<boolean> { return true }
@@ -28,12 +34,24 @@ class SystemRouteAuthStore implements AuthStore {
   }
 }
 
+function systemRouteAuth(users: readonly StoredAuthUser[] = []): AuthService {
+  return new AuthService(new SystemRouteAuthStore(users), {
+    verifyPassword: async (password, hash) => password === hash
+  })
+}
+
 afterEach(async () => {
   await app?.close()
   app = undefined
 })
 
 describe('legacy-compatible system routes', () => {
+  it('redacts compatibility credentials and tokens from production request-log URLs', () => {
+    expect(redactSensitiveRequestUrl('/cron-proxy?username=admin&password=admin-password')).toBe('/cron-proxy?username=admin&password=%5Bredacted%5D')
+    expect(redactSensitiveRequestUrl('/clear-cache?token=secret-token&keep=1')).toBe('/clear-cache?token=%5Bredacted%5D&keep=1')
+    expect(redactSensitiveRequestUrl('/health-check?sample=1')).toBe('/health-check?sample=1')
+  })
+
   it('serves the Node landing page and its generator assets', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
 
@@ -195,6 +213,87 @@ describe('legacy-compatible system routes', () => {
     expect(first.json()).toMatchObject({ running: true, pid: process.pid, bg_gdrive: process.pid, bg_stats: process.pid, bg_general: process.pid, bg_get: process.pid, bg_download: process.pid, background_started: true })
     expect(second.json()).toMatchObject({ running: true, pid: process.pid, bg_gdrive: process.pid, bg_stats: process.pid, bg_general: process.pid, bg_get: process.pid, bg_download: process.pid, background_started: false })
     expect(trigger).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects anonymous and non-administrator cron proxy validation requests without running the worker', async () => {
+    const runOnce = vi.fn()
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: systemRouteAuth([storedSystemAdmin, storedSystemMember]),
+      proxyMaintenance: { runOnce }
+    })
+
+    const [anonymous, memberSession, memberBasic, malformedBasic] = await Promise.all([
+      app.inject({ method: 'GET', url: '/cron-proxy' }),
+      app.inject({ method: 'GET', url: '/cron-proxy', headers: { 'user-agent': systemUserAgent, cookie: `${AUTH_COOKIE_NAME}=${memberToken}` } }),
+      app.inject({ method: 'GET', url: '/cron-proxy', headers: { authorization: `Basic ${Buffer.from('member:member-password').toString('base64')}` } }),
+      app.inject({ method: 'GET', url: '/cron-proxy', headers: { authorization: 'Basic not_base64!' } })
+    ])
+
+    for (const response of [anonymous, memberSession, memberBasic, malformedBasic]) {
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['content-type']).toContain('application/json')
+      expect(response.headers['cache-control']).toBe('no-store')
+      expect(response.headers['x-robots-tag']).toBe('noindex, nofollow')
+      expect(response.json()).toEqual({ status: 'fail', message: 'You are not authorized to access this page!' })
+    }
+    expect(runOnce).not.toHaveBeenCalled()
+  })
+
+  it('runs cron proxy validation for administrator sessions, Basic auth, and query compatibility aliases', async () => {
+    const result = Object.freeze({
+      disabled: false,
+      discovered: 1,
+      checked: 2,
+      valid: 2,
+      proxies: Object.freeze(['198.51.100.7:8080', '198.51.100.8:443,https'])
+    })
+    const runOnce = vi.fn(async () => result)
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: systemRouteAuth([storedSystemAdmin]),
+      proxyMaintenance: { runOnce }
+    })
+
+    const expected = {
+      status: 'ok',
+      message: 'The proxies has been successfully validated and can be used.',
+      result: '198.51.100.7:8080\n198.51.100.8:443,https'
+    }
+    const session = await app.inject({
+      method: 'GET',
+      url: '/cron-proxy',
+      headers: { 'user-agent': systemUserAgent, authorization: `Bearer ${adminToken}` }
+    })
+    const basic = await app.inject({
+      method: 'GET',
+      url: '/cron-proxy/',
+      headers: { authorization: `Basic ${Buffer.from('admin:admin-password').toString('base64')}` }
+    })
+    const query = await app.inject({
+      method: 'GET',
+      url: '/cron-proxy?username=admin&password=admin-password'
+    })
+
+    expect(session.json()).toEqual(expected)
+    expect(basic.json()).toEqual(expected)
+    expect(query.json()).toEqual(expected)
+    expect(query.body).not.toContain('admin-password')
+    expect(runOnce).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([
+    [Object.freeze({ disabled: true, discovered: 0, checked: 0, valid: 0, proxies: Object.freeze([]) }), 'The proxy is disabled.'],
+    [Object.freeze({ disabled: false, discovered: 0, checked: 1, valid: 0, proxies: Object.freeze([]) }), 'Failed to retrieve validated proxy status. If there is a proxy in the proxy list column, the proxy is validated and can be used.']
+  ])('preserves the cron proxy failure contract', async (result, message) => {
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: systemRouteAuth([storedSystemAdmin]),
+      proxyMaintenance: { runOnce: async () => result }
+    })
+    const response = await app.inject({
+      method: 'GET',
+      url: '/cron-proxy',
+      headers: { authorization: `Basic ${Buffer.from('admin:admin-password').toString('base64')}` }
+    })
+    expect(response.json()).toEqual({ status: 'fail', message })
   })
 
   it('clears registered Node runtime caches through the administrator-only legacy controller', async () => {
