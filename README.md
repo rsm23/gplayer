@@ -35,6 +35,14 @@ The version-84 compatibility fixture can be exercised against a disposable local
 GPLAYER_TEST_MYSQL_SOCKET=/tmp/mysql.sock pnpm vitest run test/schema-migrator-mysql.test.ts
 ```
 
+Migrate legacy subtitle and uploaded-image files into the Node public roots with:
+
+```bash
+pnpm assets:migrate -- /absolute/path/to/legacy-install
+```
+
+This command recovers files from `subtitles`, `uploads/subtitles`, and `uploads/images`, flattens their nested layouts exactly as the legacy migration did, and publishes them under `public/uploads/subtitles` and `public/uploads/images`. Unlike the legacy copier, it never overwrites a different destination: byte-identical files are deduplicated, conflicts and unsafe executable/server-control files are reported, and a source file is removed only after the destination has passed a SHA-256 integrity check. Use `--copy-only` to retain every source file, or `--public-root=/absolute/path/to/public` to target a deployed public directory. Back up the legacy installation first.
+
 Refresh the supplied-source inventory and non-PHP assets:
 
 ```bash
