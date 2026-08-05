@@ -30,17 +30,39 @@ function driveId(input: string): string {
 }
 
 function firstMatchingHost(domain: string, data: HostingData): string {
-  const normalizedDomain = domain.toLowerCase().replace(/^www\./, '')
-  const compactDomain = normalizedDomain.replaceAll('.', '')
-
+  const replacementMap = new Map<string, string>()
   for (const [host, aliases] of Object.entries(data.hostnames)) {
-    const candidates = [host, ...aliases].map((value) => value.toLowerCase())
-    if (candidates.includes(normalizedDomain) || candidates.includes(compactDomain)) return host
-    if (candidates.some((candidate) => normalizedDomain.includes(candidate))) return host
+    for (const alias of aliases) {
+      const normalized = alias.trim().toLowerCase()
+      if (normalized !== '') replacementMap.set(normalized, `${host.toLowerCase()}.`)
+    }
   }
+  const replacements = [...replacementMap.entries()]
+  const normalizedDomain = replaceHostnameAliases(domain.toLowerCase(), replacements).replace(/^www\./, '')
+  const compactDomain = normalizedDomain.replaceAll('.', '')
+  const hosts = Object.keys(data.hostnames).map((host) => host.toLowerCase())
+
+  if (hosts.includes(normalizedDomain)) return normalizedDomain
+  if (hosts.includes(compactDomain)) return compactDomain
 
   const domainParts = normalizedDomain.split('.')
-  return Object.keys(data.hostnames).find((host) => domainParts.includes(host)) ?? 'direct'
+  return hosts.find((host) => domainParts.includes(host)) ?? 'direct'
+}
+
+function replaceHostnameAliases(domain: string, replacements: readonly (readonly [string, string])[]): string {
+  const candidates = [...replacements].sort(([left], [right]) => right.length - left.length)
+  let result = ''
+  for (let index = 0; index < domain.length;) {
+    const match = candidates.find(([alias]) => domain.startsWith(alias, index))
+    if (match === undefined) {
+      result += domain[index]
+      index += 1
+    } else {
+      result += match[1]
+      index += match[0].length
+    }
+  }
+  return result
 }
 
 function specialHost(url: string, detectedHost: string): string {
@@ -116,10 +138,6 @@ export class Hosting {
 
     if (this.#host === 'gdrive') return driveId(this.#url)
     if (this.#host === 'dzen' && this.#url.includes('.dzen.ru')) return this.#url
-    if (fullPathHosts.has(this.#host)) return path
-    if (fullPathQueryHosts.has(this.#host) || (this.#url.includes('reviews/') && this.#url.includes('item='))) return `${path}${query ? `?${query}` : ''}`
-    if (zeroPathHosts.has(this.#host)) return pathParts[0] ?? ''
-    if (onePathHosts.has(this.#host)) return pathParts[1] ?? ''
 
     if (query) {
       if (queryIdHosts.has(this.#host)) return parsed.searchParams.get('id') ?? parsed.searchParams.get('v') ?? ''
@@ -131,11 +149,14 @@ export class Hosting {
     }
     if (this.#host === 'yadisk' && this.#url.includes('d/')) return path
     if (this.#host === 'mymailru' && this.#url.includes('/mail/')) return path
+    if (fullPathHosts.has(this.#host)) return path
+    if (fullPathQueryHosts.has(this.#host) || (this.#url.includes('reviews/') && this.#url.includes('item='))) return `${path}${query ? `?${query}` : ''}`
+    if (zeroPathHosts.has(this.#host)) return pathParts[0] ?? ''
+    if (onePathHosts.has(this.#host)) return pathParts[1] ?? ''
     if (lastPathHosts.has(this.#host) || this.#url.includes('youtu.be')) return pathParts.at(-1) ?? ''
-    if (this.#host === 'peertube') return path
     // The legacy method leaves the ID initialized to the original URL when no
     // provider-specific path/query rule matches (for example Dropbox, pCloud,
-    // Files.fm, MStream, and SoundCloud).
+    // Files.fm, MStream, SoundCloud, and dynamically detected PeerTube URLs).
     return this.#url
   }
 
