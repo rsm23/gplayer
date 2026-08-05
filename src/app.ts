@@ -7,7 +7,7 @@ import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import { createAuthRuntime } from './auth/auth-runtime.js'
-import { AUTH_COOKIE_NAME, authTokenFromRequest, type AuthService } from './auth/auth-service.js'
+import { AUTH_COOKIE_NAME, authTokenFromRequest, type AuthService, type AuthUser } from './auth/auth-service.js'
 import type { SessionAdminService } from './auth/session-admin-service.js'
 import type { UserAdminService } from './auth/user-admin-service.js'
 import { loadConfig, type AppConfig } from './config.js'
@@ -38,6 +38,8 @@ import { FileSystemVideoPosterAssetManager } from './videos/video-assets-service
 import { VideoCheckerService } from './videos/video-checker-service.js'
 import { VideoBulkService } from './videos/video-bulk-service.js'
 import { VideoTransferService } from './videos/video-transfer-service.js'
+import { DriveSharerService, RecaptchaVerifier } from './drive/drive-sharer-service.js'
+import { RemoteProviderHttpClient } from './hosting/provider-http.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -56,6 +58,8 @@ export type AppDependencies = Readonly<{
   videoTransfer?: VideoTransferService
   countryCodeLookup?: CountryCodeLookup
   shortlinks?: ShortlinkTransformer
+  driveSharer?: Pick<DriveSharerService, 'bypass'>
+  recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
   clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
 
@@ -123,13 +127,17 @@ export async function buildApp(
     settingsRuntime.clearRuntimeCaches()
     return true
   })
-  const isAuthenticated = async (request: FastifyRequest): Promise<boolean> => {
+  const authenticateRequest = async (request: FastifyRequest): Promise<AuthUser | null> => {
     const token = authTokenFromRequest({
       authorization: request.headers.authorization,
       cookie: request.cookies[AUTH_COOKIE_NAME]
     })
-    const user = await authService.authenticate(token, request.headers['user-agent'] ?? '')
-    return user !== null && user.status === 1
+    return await authService.authenticate(token, request.headers['user-agent'] ?? '')
+  }
+  const isAuthenticated = async (request: FastifyRequest): Promise<boolean> => (await authenticateRequest(request))?.status === 1
+  const isAdmin = async (request: FastifyRequest): Promise<boolean> => {
+    const user = await authenticateRequest(request)
+    return user !== null && user.status === 1 && user.role === 0
   }
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, { loadPublicSettings, isAuthenticated })
   await registerAdminRoutes(
@@ -169,6 +177,9 @@ export async function buildApp(
     loadImportFileSize
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
+  const driveHttp = new RemoteProviderHttpClient()
+  const driveSharer = dependencies.driveSharer ?? new DriveSharerService(authRuntime.driveStore, driveHttp)
+  const recaptchaVerifier = dependencies.recaptchaVerifier ?? new RecaptchaVerifier(driveHttp)
   await registerPlayerRoutes(app, config, {
     loadAdsSettings,
     loadPlayerSettings,
@@ -179,7 +190,17 @@ export async function buildApp(
     supportedHosts,
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
     shortenUrl: async (target) => await shortlinkRuntime.shorten(target),
-    isAuthenticated
+    isAuthenticated,
+    isAdmin,
+    bypassDrive: async (input) => await driveSharer.bypass(input),
+    verifyRecaptcha: async (responseToken, remoteIp) => {
+      const general = await settingsRuntime.general(config.baseUrl)
+      return await recaptchaVerifier.verify(String(general.recaptcha_secret_key), responseToken, remoteIp)
+    },
+    loadRecaptchaSiteKey: async () => {
+      const general = await settingsRuntime.general(config.baseUrl)
+      return String(general.recaptcha_site_key)
+    }
   })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,

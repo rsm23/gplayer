@@ -5,6 +5,7 @@ import { loadConfig } from '../src/config.js'
 import { parsePlayerQuery } from '../src/core/player-query.js'
 import { Security } from '../src/security/security.js'
 import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
+import { AuthService, type AuthStore, type AuthUser } from '../src/auth/auth-service.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -148,6 +149,110 @@ describe('player HTTP routes', () => {
     expect(ambiguousChromium.statusCode).toBe(200)
     expect(legacyClient.statusCode).toBe(200)
     expect(legacyClient.body).toContain('<video id="media-player"')
+  })
+
+  it('renders and submits the credentialed Drive sharer with legacy response fields', async () => {
+    const values = {
+      enable_gsharer: 'true',
+      recaptcha_site_key: 'site-key-123',
+      recaptcha_secret_key: 'secret-key-123'
+    }
+    const captchaCalls: Array<readonly [string, string]> = []
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      driveSharer: {
+        bypass: async (input) => input.includes('sourceFileABC')
+          ? { id: 'copiedFileXYZ', link: 'https://drive.google.com/file/d/copiedFileXYZ/view' }
+          : null
+      },
+      recaptchaVerifier: {
+        verify: async (_secret, responseToken, remoteIp) => {
+          captchaCalls.push([responseToken, remoteIp])
+          return responseToken === 'captcha-ok'
+        }
+      }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/sharer/' })
+    expect(page.statusCode).toBe(200)
+    expect(page.headers['cache-control']).toBe('no-store')
+    expect(page.headers['content-security-policy']).toContain('https://www.google.com')
+    expect(page.headers['content-security-policy']).toContain("connect-src 'self'")
+    expect(page.body).toContain('Google Drive Bypass Engine')
+    expect(page.body).toContain('id="frmBypassLimit"')
+    expect(page.body).toContain('name="gdrive_id"')
+    expect(page.body).toContain('data-sitekey="site-key-123"')
+    expect(page.body).toContain('/assets/js/gplayer-sharer.js')
+    const script = await app.inject({ method: 'GET', url: '/assets/js/gplayer-sharer.js' })
+    expect(script.statusCode).toBe(200)
+    expect(script.body).toContain("form.getAttribute('action')")
+
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=gdriveBypassLimit&gdrive_id=sourceFileABC&g-recaptcha-response=captcha-bad'
+    })
+    expect(rejected.json()).toEqual({
+      status: 'fail', message: 'The security code you entered is incorrect! Try again', result: null
+    })
+
+    const bypassed = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=gdriveBypassLimit&gdrive_id=https%3A%2F%2Fdrive.google.com%2Ffile%2Fd%2FsourceFileABC%2Fview&g-recaptcha-response=captcha-ok'
+    })
+    expect(bypassed.json()).toEqual({
+      status: 'ok',
+      message: 'The file has been successfully bypassed',
+      result: { id: 'copiedFileXYZ', link: 'https://drive.google.com/file/d/copiedFileXYZ/view' }
+    })
+    expect(captchaCalls).toHaveLength(2)
+  })
+
+  it('keeps the Drive sharer disabled by default while allowing an administrator to inspect its page', async () => {
+    const admin: AuthUser = Object.freeze({
+      id: 1,
+      username: 'admin',
+      email: 'admin@example.test',
+      name: 'Admin',
+      role: 0,
+      status: 1,
+      created: 1,
+      updated: 1
+    })
+    const authStore: AuthStore = {
+      findUserByIdentifier: async () => null,
+      findActiveSession: async () => admin,
+      createSession: async () => {},
+      recordFailedLogin: async () => {},
+      revokeSession: async () => true
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      auth: new AuthService(authStore),
+      settings: new SettingsAdminService({ getAll: async () => ({}), upsertMany: async () => {} })
+    })
+
+    const forbidden = await app.inject({ method: 'GET', url: '/sharer/' })
+    expect(forbidden.statusCode).toBe(403)
+    expect(forbidden.body).toContain('403 Forbidden')
+
+    const adminPage = await app.inject({
+      method: 'GET',
+      url: '/sharer/',
+      headers: { authorization: 'Bearer admin-token-123', 'user-agent': 'Drive admin test' }
+    })
+    expect(adminPage.statusCode).toBe(200)
+    expect(adminPage.body).toContain('Google Drive Bypass Engine')
+
+    const disabledAction = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=gdriveBypassLimit&gdrive_id=sourceFileABC'
+    })
+    expect(disabledAction.json()).toEqual({ status: 'fail', message: 'This feature is disabled', result: null })
   })
 
   it('strips subtitles from enabled plaintext request URLs when public insertion is disabled', async () => {

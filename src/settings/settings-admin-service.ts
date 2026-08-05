@@ -98,6 +98,7 @@ export type PublicSettings = Readonly<Record<PublicSettingKey, string | boolean>
 export type RuntimePublicSettings = Readonly<{
   anonymous_generator: boolean
   embed_only: boolean
+  enable_gsharer: boolean
   enable_request_url: boolean
   enable_json_subtitles: boolean
   enable_download_page: boolean
@@ -261,6 +262,7 @@ export class SettingsAdminService {
     return Object.freeze({
       anonymous_generator: enabled('anonymous_generator'),
       embed_only: raw.embed_only === 'true',
+      enable_gsharer: raw.enable_gsharer === 'true',
       enable_request_url: enabled('enable_request_url'),
       enable_json_subtitles: enabled('enable_json_subtitles'),
       enable_download_page: enabled('enable_download_page'),

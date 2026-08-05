@@ -224,6 +224,7 @@ describe('settings administration service', () => {
     await expect(settings.runtimePublicSettings()).resolves.toEqual({
       anonymous_generator: true,
       embed_only: false,
+      enable_gsharer: false,
       enable_request_url: true,
       enable_json_subtitles: true,
       enable_download_page: true,

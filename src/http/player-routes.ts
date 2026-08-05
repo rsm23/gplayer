@@ -18,6 +18,10 @@ import type { CountryCodeLookup } from '../security/geoip-country.js'
 import { accessPolicyFromMisc, accessPolicyRejects, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
 import { loadRuntimeHostingSettings, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
+import type { DriveBypassResult } from '../drive/drive-sharer-service.js'
+import { renderSharerPage } from '../player/sharer-page.js'
+import { applyPublicPageHeaders } from './system-routes.js'
+import { publicErrors, renderPublicError } from '../player/public-page.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -30,6 +34,12 @@ const inputSchema = z.object({
   'lang[]': z.union([z.string(), z.array(z.string())]).optional(),
   subs: z.string().optional(),
   uid: z.string().optional()
+}).passthrough()
+
+const driveBypassInputSchema = z.object({
+  action: z.literal('gdriveBypassLimit'),
+  gdrive_id: z.string().min(1).max(2_048),
+  'g-recaptcha-response': z.string().max(8_192).optional()
 }).passthrough()
 
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
@@ -47,6 +57,10 @@ export type PlayerRouteOptions = Readonly<{
   resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
   shortenUrl?: (target: string) => Promise<string>
   isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
+  isAdmin?: (request: FastifyRequest) => Promise<boolean>
+  bypassDrive?: (input: string) => Promise<DriveBypassResult | null>
+  verifyRecaptcha?: (responseToken: string, remoteIp: string) => Promise<boolean>
+  loadRecaptchaSiteKey?: () => Promise<string>
 }>
 
 export async function registerPlayerRoutes(
@@ -56,6 +70,33 @@ export async function registerPlayerRoutes(
 ): Promise<void> {
   const security = new Security(config.secureSalt)
   const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
+
+  const bypassDrive = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const parsed = driveBypassInputSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.code(200)
+      return { status: 'fail', message: 'Cannot bypass the file, try later', result: null }
+    }
+    const publicSettings = await loadRuntimePublicSettings(options.loadPublicSettings)
+    if (!publicSettings.enable_gsharer) {
+      reply.code(200)
+      return { status: 'fail', message: 'This feature is disabled', result: null }
+    }
+    try {
+      const captchaValid = options.verifyRecaptcha === undefined || await options.verifyRecaptcha(
+        parsed.data['g-recaptcha-response'] ?? '',
+        request.ip
+      )
+      if (!captchaValid) {
+        return { status: 'fail', message: 'The security code you entered is incorrect! Try again', result: null }
+      }
+      const result = await options.bypassDrive?.(parsed.data.gdrive_id) ?? null
+      if (result === null) return { status: 'fail', message: 'Cannot bypass the file, try later', result: null }
+      return { status: 'ok', message: 'The file has been successfully bypassed', result }
+    } catch {
+      return { status: 'fail', message: 'Cannot bypass the file, try later', result: null }
+    }
+  }
 
   const createPlayer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
     const parsed = inputSchema.safeParse(request.body)
@@ -118,8 +159,40 @@ export async function registerPlayerRoutes(
     }
   }
 
-  app.post('/ajax/public', createPlayer)
-  app.post('/ajax/public/', createPlayer)
+  const dispatchPublicAjax = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const action = typeof request.body === 'object' && request.body !== null && !Array.isArray(request.body)
+      ? (request.body as Record<string, unknown>).action
+      : undefined
+    return action === 'gdriveBypassLimit' ? await bypassDrive(request, reply) : await createPlayer(request, reply)
+  }
+
+  app.post('/ajax/public', dispatchPublicAjax)
+  app.post('/ajax/public/', dispatchPublicAjax)
+
+  const showSharer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const publicSettings = await loadRuntimePublicSettings(options.loadPublicSettings)
+    const admin = await authenticatedRequest(request, options.isAdmin)
+    applyPublicPageHeaders(reply, true)
+    if (!publicSettings.enable_gsharer && !admin) {
+      reply.code(403).type('text/html; charset=utf-8')
+      return renderPublicError(publicErrors[403])
+    }
+    const [ads, recaptchaSiteKey] = await Promise.all([
+      loadRuntimeAdsSettings(options.loadAdsSettings),
+      options.loadRecaptchaSiteKey?.().catch(() => '') ?? Promise.resolve('')
+    ])
+    reply.header('content-security-policy', recaptchaSiteKey === ''
+      ? "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
+      : "default-src 'none'; script-src 'self' https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com; img-src 'self' data: https://www.google.com https://www.gstatic.com; frame-src 'self' https://www.google.com; connect-src 'self' https://www.google.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'")
+    reply.type('text/html; charset=utf-8')
+    return renderSharerPage({
+      recaptchaSiteKey,
+      ...sharerAdFrames(ads)
+    })
+  }
+
+  app.get('/sharer', showSharer)
+  app.get('/sharer/', showSharer)
 
   app.get('/ads/advertisement.png', async (_request, reply) => reply
     .header('cache-control', 'private, no-store')
@@ -459,6 +532,16 @@ function downloadAdFrames(ads: AdsSettings): Readonly<{
   if (!ads.disable_banner_ads && ads.dl_banner_top.trim().length > 0) result.bannerTopFrameUrl = '/ads/frame/download-top'
   if (!ads.disable_banner_ads && ads.dl_banner_bottom.trim().length > 0) result.bannerBottomFrameUrl = '/ads/frame/download-bottom'
   if (!ads.disable_popup_ads && (ads.popup_ads_link.length > 0 || ads.popup_ads_code.trim().length > 0)) result.popupFrameUrl = '/ads/frame/popup'
+  return Object.freeze(result)
+}
+
+function sharerAdFrames(ads: AdsSettings): Readonly<{
+  bannerTopFrameUrl?: string
+  bannerBottomFrameUrl?: string
+}> {
+  const result: { bannerTopFrameUrl?: string; bannerBottomFrameUrl?: string } = {}
+  if (!ads.disable_banner_ads && ads.sh_banner_top.trim().length > 0) result.bannerTopFrameUrl = '/ads/frame/sharer-top'
+  if (!ads.disable_banner_ads && ads.sh_banner_bottom.trim().length > 0) result.bannerBottomFrameUrl = '/ads/frame/sharer-bottom'
   return Object.freeze(result)
 }
 
