@@ -42,6 +42,7 @@ import type { MediaResult } from '../core/source-resolver.js'
 import { analyticsConfig, analyticsCspSources, histatsOnly, type AnalyticsConfig } from '../player/analytics.js'
 import { SUBTITLE_MAX_BYTES } from '../subtitles/subtitle-assets-service.js'
 import { VIDEO_POSTER_MAX_BYTES } from '../videos/video-assets-service.js'
+import type { AccountSettingsLoader } from '../auth/account-lifecycle-service.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -107,6 +108,7 @@ export type PlayerRouteOptions = Readonly<{
   loadHostingSettings?: HostingSettingsLoader
   loadPublicSettings?: PublicSettingsLoader
   loadSiteSettings?: SiteSettingsLoader
+  loadAccountSettings?: AccountSettingsLoader
   loadGeneralSettings?: GeneralSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
@@ -391,12 +393,23 @@ export async function registerPlayerRoutes(
   app.get('/ajax/', statCounter)
 
   const showSharer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [publicSettings, site] = await Promise.all([
+    const [publicSettings, site, registrationEnabled, authenticated, admin] = await Promise.all([
       loadRuntimePublicSettings(options.loadPublicSettings),
-      loadRuntimeSiteSettings(options.loadSiteSettings)
+      loadRuntimeSiteSettings(options.loadSiteSettings),
+      loadRegistrationEnabled(options.loadAccountSettings),
+      authenticatedRequest(request, options.isAuthenticated),
+      authenticatedRequest(request, options.isAdmin)
     ])
-    const publicPage = { site, ...(publicSettings.contact_page_link === '' ? {} : { contactUrl: publicSettings.contact_page_link }) }
-    const admin = await authenticatedRequest(request, options.isAdmin)
+    const publicPage = {
+      site,
+      sharerEnabled: publicSettings.enable_gsharer,
+      account: {
+        adminBase: `/${config.adminDirectory}`,
+        authenticated,
+        registrationEnabled
+      },
+      ...(publicSettings.contact_page_link === '' ? {} : { contactUrl: publicSettings.contact_page_link })
+    }
     applyPublicPageHeaders(reply, true)
     if (!publicSettings.enable_gsharer && !admin) {
       reply.code(403).type('text/html; charset=utf-8')
@@ -727,6 +740,15 @@ export async function registerPlayerRoutes(
   app.get('/:playerSlug/:savedSlug', dispatchSavedPlayerRoute)
   app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
   app.get('/:playerSlug/:savedSlug/*', dispatchSavedPlayerRoute)
+}
+
+async function loadRegistrationEnabled(loader: AccountSettingsLoader | undefined): Promise<boolean> {
+  if (loader === undefined) return false
+  try {
+    return (await loader()).enableRegistration
+  } catch {
+    return false
+  }
 }
 
 function legacyFrontendSlug(value: unknown): string {

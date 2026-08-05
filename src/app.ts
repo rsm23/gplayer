@@ -369,22 +369,23 @@ export async function buildApp(
     const user = await authenticateRequest(request)
     return user !== null && user.status === 1 && user.role === 0
   }
+  const loadAccountSettings: AccountSettingsLoader = dependencies.accountSettings ?? (
+    config.nodeEnv === 'test'
+      ? async () => DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS
+      : async () => await settingsRuntime.accountLifecycleSettings()
+  )
   await registerPluginExtensionRoutes(app, config, authService, pluginExtensionRuntime, { loadPlayerSlugs: loadPlayerSettings })
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
     loadGeneralSettings,
     loadSiteSettings,
+    loadAccountSettings,
     isAuthenticated,
     background: driveBackgroundRuntime,
     proxyMaintenance: proxyMaintenanceRuntime,
     landingHtml
   })
   await registerPrivateAdminRoutes(app, config, authService, privateAdminRuntime)
-  const loadAccountSettings: AccountSettingsLoader = dependencies.accountSettings ?? (
-    config.nodeEnv === 'test'
-      ? async () => DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS
-      : async () => await settingsRuntime.accountLifecycleSettings()
-  )
   const accountRuntime = dependencies.accounts ?? new AccountLifecycleService(
     authRuntime.accountLifecycleStore,
     new Security(config.secureSalt),
@@ -505,6 +506,7 @@ export async function buildApp(
     loadPlayerSettings,
     loadPublicSettings,
     loadSiteSettings,
+    loadAccountSettings,
     loadGeneralSettings,
     loadMiscSettings,
     loadHostingSettings,
@@ -636,13 +638,25 @@ export async function buildApp(
 
   app.setNotFoundHandler(async (request, reply) => {
     if (request.method === 'HEAD') return sendLegacyHeadFallback(request, reply)
-    const [contactUrl, site] = await Promise.all([
-      loadPublicSettings().then((settings) => settings.contact_page_link).catch(() => ''),
-      loadRuntimeSiteSettings(loadSiteSettings)
+    const [publicSettings, site, accountSettings, authenticated] = await Promise.all([
+      loadPublicSettings().catch(() => null),
+      loadRuntimeSiteSettings(loadSiteSettings),
+      loadAccountSettings().catch(() => DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS),
+      isAuthenticated(request).catch(() => false)
     ])
+    const navigation = {
+      site,
+      ...(publicSettings?.contact_page_link ? { contactUrl: publicSettings.contact_page_link } : {}),
+      sharerEnabled: publicSettings?.enable_gsharer === true,
+      account: {
+        adminBase: `/${config.adminDirectory}`,
+        authenticated,
+        registrationEnabled: accountSettings.enableRegistration
+      }
+    }
     applyPublicPageHeaders(reply, true)
     reply.code(404).type('text/html; charset=utf-8')
-    return renderPublicError(publicErrors[404], contactUrl === '' ? { site } : { contactUrl, site })
+    return renderPublicError(publicErrors[404], navigation)
   })
 
   return app

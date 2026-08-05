@@ -7,7 +7,7 @@ import { loadConfig } from '../src/config.js'
 import { parsePlayerQuery } from '../src/core/player-query.js'
 import { P2P_CORE_IMPORT_MAP_CSP_HASH } from '../src/player/embed-page.js'
 import { Security } from '../src/security/security.js'
-import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
+import { DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, SettingsAdminService } from '../src/settings/settings-admin-service.js'
 import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser } from '../src/auth/auth-service.js'
 
 let app: FastifyInstance | undefined
@@ -547,6 +547,7 @@ describe('player HTTP routes', () => {
     const captchaCalls: Array<readonly [string, string]> = []
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
       settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      accountSettings: async () => Object.freeze({ ...DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, enableRegistration: true }),
       driveSharer: {
         bypass: async (input) => input.includes('sourceFileABC')
           ? { id: 'copiedFileXYZ', link: 'https://drive.google.com/file/d/copiedFileXYZ/view' }
@@ -569,6 +570,8 @@ describe('player HTTP routes', () => {
     expect(page.body).toContain('<title>Google Drive Bypass Engine | Drive Stream Lab</title>')
     expect(page.body).toContain('Quota-aware delivery')
     expect(page.body).toContain('/runtime-site.css')
+    expect(page.body).toContain('href="/administrator/login/">Sign in</a>')
+    expect(page.body).toContain('href="/administrator/register/">Register</a>')
     expect(page.body).toContain('id="frmBypassLimit"')
     expect(page.body).toContain('name="gdrive_id"')
     expect(page.body).toContain('data-sitekey="site-key-123"')

@@ -12,6 +12,12 @@ export type PublicPageOptions = Readonly<{
 export type PublicNavigationOptions = Readonly<{
   contactUrl?: string
   site?: SiteSettings
+  sharerEnabled?: boolean
+  account?: Readonly<{
+    adminBase: string
+    authenticated: boolean
+    registrationEnabled: boolean
+  }>
 }>
 
 export type PublicError = Readonly<{
@@ -55,7 +61,7 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
-  ${renderHeader(site)}
+  ${renderHeader(site, navigation)}
   <main id="main-content" class="public-main">
     <header class="public-hero">
       <p class="eyebrow"><span></span>${eyebrow}</p>
@@ -159,7 +165,25 @@ export function renderPublicThemeCss(input: SiteSettings = DEFAULT_SITE_SETTINGS
   return `:root {\n  --brand: #${primary};\n  --brand-soft: #${secondary};\n  --success: #${primary};\n  --focus: #${secondary};\n}\n`
 }
 
-function renderHeader(site: SiteSettings): string {
+export function renderPublicNavigationItems(navigation: PublicNavigationOptions): string {
+  const sharer = navigation.sharerEnabled === true ? '<a href="/sharer/">Drive sharer</a>' : ''
+  const account = navigation.account
+  if (account === undefined) return sharer
+  const adminBase = safeAdminBase(account.adminBase)
+  if (account.authenticated) {
+    return `${sharer}<details class="site-account-nav"><summary>User panel</summary><div class="site-account-menu">
+      <a href="${adminBase}/dashboard/">Dashboard</a>
+      <a href="${adminBase}/videos/list/">My videos</a>
+      <a href="${adminBase}/profile/">My account</a>
+      <a href="${adminBase}/login/?logout=true">Sign out</a>
+    </div></details>`
+  }
+  return account.registrationEnabled
+    ? `${sharer}<a href="${adminBase}/login/">Sign in</a><a href="${adminBase}/register/">Register</a>`
+    : sharer
+}
+
+function renderHeader(site: SiteSettings, navigation: PublicNavigationOptions): string {
   const siteName = escapeHtml(site.site_name)
   return `<header class="site-header">
   <a class="wordmark" href="/" aria-label="${siteName} home">
@@ -172,6 +196,7 @@ function renderHeader(site: SiteSettings): string {
     <a href="/changelog/">Changelog</a>
     <a href="/terms/">Terms</a>
     <a href="/privacy/">Privacy</a>
+    ${renderPublicNavigationItems(navigation)}
     <a class="nav-cta" href="/#generator">Build a player</a>
   </nav>
 </header>`
@@ -203,6 +228,10 @@ function publicSiteSettings(value: SiteSettings | undefined): SiteSettings {
 function safeHex(value: string, fallback: string): string {
   const normalized = value.trim().replace(/^#/u, '').toLowerCase()
   return /^[0-9a-f]{6}$/u.test(normalized) ? normalized : fallback
+}
+
+function safeAdminBase(value: string): string {
+  return /^\/[A-Za-z0-9_-]+$/u.test(value) ? value : '/administrator'
 }
 
 function safePublicContactUrl(value: string | undefined): string {

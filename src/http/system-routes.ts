@@ -7,9 +7,11 @@ import {
   renderChangelogPage,
   renderDmcaPage,
   renderPrivacyPage,
+  renderPublicNavigationItems,
   renderPublicError,
   renderPublicThemeCss,
-  renderTermsPage
+  renderTermsPage,
+  type PublicNavigationOptions
 } from '../player/public-page.js'
 import { Security } from '../security/security.js'
 import { loadRuntimePublicSettings, type PublicSettingsLoader } from '../settings/public-runtime.js'
@@ -20,6 +22,7 @@ import type { ProxyMaintenanceResult } from '../background/proxy-maintenance-wor
 import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
 import { loadRuntimeSiteSettings, type SiteSettingsLoader } from '../settings/site-runtime.js'
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../settings/settings-admin-service.js'
+import type { AccountSettingsLoader } from '../auth/account-lifecycle-service.js'
 
 const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
@@ -47,6 +50,7 @@ export async function registerSystemRoutes(
     loadPublicSettings?: PublicSettingsLoader
     loadGeneralSettings?: GeneralSettingsLoader
     loadSiteSettings?: SiteSettingsLoader
+    loadAccountSettings?: AccountSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
     background?: Pick<DriveBackgroundCoordinator, 'trigger'>
     proxyMaintenance?: Readonly<{ runOnce(): Promise<ProxyMaintenanceResult> }>
@@ -57,13 +61,18 @@ export async function registerSystemRoutes(
 
   app.addHook('onRequest', async (request, reply) => {
     if ((request.method !== 'GET' && request.method !== 'HEAD') || !isLegacyIndexRequest(request.url)) return
-    const [settings, site] = await Promise.all([
+    const [settings, site, registrationEnabled] = await Promise.all([
       loadRuntimePublicSettings(options.loadPublicSettings),
-      loadRuntimeSiteSettings(options.loadSiteSettings)
+      loadRuntimeSiteSettings(options.loadSiteSettings),
+      loadFrontendRegistration(options.loadAccountSettings)
     ])
-    if (settings.anonymous_generator || await authenticatedRequest(request, options.isAuthenticated)) return
+    const authenticated = await authenticatedRequest(request, options.isAuthenticated)
+    if (settings.anonymous_generator || authenticated) return
     applyPublicPageHeaders(reply, true)
-    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(publicErrors[403], publicNavigation(settings.contact_page_link, site)))
+    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(
+      publicErrors[403],
+      publicNavigation(settings.contact_page_link, site, frontendNavigation(config, settings.enable_gsharer, authenticated, registrationEnabled))
+    ))
   })
 
   app.get('/runtime-site.css', async (_request, reply) => {
@@ -78,17 +87,24 @@ export async function registerSystemRoutes(
   const landingHtml = options.landingHtml
   if (landingHtml !== undefined) {
     const landing = async (_request: FastifyRequest, reply: FastifyReply) => {
-      const [settings, general, site] = await Promise.all([
+      const [settings, general, site, registrationEnabled, authenticated] = await Promise.all([
         loadRuntimePublicSettings(options.loadPublicSettings),
         loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl),
-        loadRuntimeSiteSettings(options.loadSiteSettings)
+        loadRuntimeSiteSettings(options.loadSiteSettings),
+        loadFrontendRegistration(options.loadAccountSettings),
+        authenticatedRequest(_request, options.isAuthenticated)
       ])
+      const navigation = publicNavigation(
+        settings.contact_page_link,
+        site,
+        frontendNavigation(config, settings.enable_gsharer, authenticated, registrationEnabled)
+      )
       const comments = disqusConfig(general, config.baseUrl)
       const recaptchaSiteKey = validRecaptchaSiteKey(String(general.recaptcha_site_key))
       applyPublicPageHeaders(reply, false, comments, recaptchaSiteKey !== '')
-      reply.header('cache-control', settings.anonymous_generator ? 'public, max-age=60' : 'private, no-store').type('text/html; charset=utf-8')
+      reply.header('cache-control', authenticated || !settings.anonymous_generator ? 'private, no-store' : 'public, max-age=60').type('text/html; charset=utf-8')
       return renderLandingRecaptcha(
-        renderLandingDisqus(renderLandingContact(renderLandingSite(landingHtml, site), settings.contact_page_link), comments),
+        renderLandingDisqus(renderLandingContact(renderLandingNavigation(renderLandingSite(landingHtml, site), navigation), settings.contact_page_link), comments),
         recaptchaSiteKey
       )
     }
@@ -186,39 +202,57 @@ export async function registerSystemRoutes(
   ] as const
 
   for (const page of pages) {
-    registerLegacyFrontendAliases(app, [page.alias], async (_request, reply) => {
-      const [settings, site] = await Promise.all([
+    registerLegacyFrontendAliases(app, [page.alias], async (request, reply) => {
+      const [settings, site, registrationEnabled, authenticated] = await Promise.all([
         loadRuntimePublicSettings(options.loadPublicSettings),
-        loadRuntimeSiteSettings(options.loadSiteSettings)
+        loadRuntimeSiteSettings(options.loadSiteSettings),
+        loadFrontendRegistration(options.loadAccountSettings),
+        authenticatedRequest(request, options.isAuthenticated)
       ])
       applyPublicPageHeaders(reply)
-      reply.header('cache-control', 'public, max-age=300').type('text/html; charset=utf-8')
-      return page.render(publicNavigation(settings.contact_page_link, site))
+      reply.header('cache-control', authenticated ? 'private, no-store' : 'public, max-age=300').type('text/html; charset=utf-8')
+      return page.render(publicNavigation(
+        settings.contact_page_link,
+        site,
+        frontendNavigation(config, settings.enable_gsharer, authenticated, registrationEnabled)
+      ))
     })
   }
 
   for (const error of Object.values(publicErrors)) {
-    registerLegacyFrontendAliases(app, [String(error.status)], async (_request, reply) => {
-      const [settings, site] = await Promise.all([
+    registerLegacyFrontendAliases(app, [String(error.status)], async (request, reply) => {
+      const [settings, site, registrationEnabled, authenticated] = await Promise.all([
         loadRuntimePublicSettings(options.loadPublicSettings),
-        loadRuntimeSiteSettings(options.loadSiteSettings)
+        loadRuntimeSiteSettings(options.loadSiteSettings),
+        loadFrontendRegistration(options.loadAccountSettings),
+        authenticatedRequest(request, options.isAuthenticated)
       ])
       applyPublicPageHeaders(reply, true)
       reply.code(error.status).type('text/html; charset=utf-8')
-      return renderPublicError(error, publicNavigation(settings.contact_page_link, site))
+      return renderPublicError(error, publicNavigation(
+        settings.contact_page_link,
+        site,
+        frontendNavigation(config, settings.enable_gsharer, authenticated, registrationEnabled)
+      ))
     })
   }
 
   registerLegacyFrontendAliases(app, ['redirect'], async (request, reply) => {
     const target = parseLegacyRedirect(request.url, security)
     if (target === null) {
-      const [settings, site] = await Promise.all([
+      const [settings, site, registrationEnabled, authenticated] = await Promise.all([
         loadRuntimePublicSettings(options.loadPublicSettings),
-        loadRuntimeSiteSettings(options.loadSiteSettings)
+        loadRuntimeSiteSettings(options.loadSiteSettings),
+        loadFrontendRegistration(options.loadAccountSettings),
+        authenticatedRequest(request, options.isAuthenticated)
       ])
       applyPublicPageHeaders(reply, true)
       reply.code(400).type('text/html; charset=utf-8')
-      return renderPublicError(publicErrors[400], publicNavigation(settings.contact_page_link, site))
+      return renderPublicError(publicErrors[400], publicNavigation(
+        settings.contact_page_link,
+        site,
+        frontendNavigation(config, settings.enable_gsharer, authenticated, registrationEnabled)
+      ))
     }
     return reply.redirect(target.href)
   })
@@ -231,15 +265,45 @@ function isLegacyIndexRequest(requestUrl: string): boolean {
   return firstSegment.split('.', 1)[0] === 'index'
 }
 
-function publicNavigation(contactUrl: string, site: SiteSettings = DEFAULT_SITE_SETTINGS): Readonly<{ contactUrl?: string; site: SiteSettings }> {
-  if (contactUrl === '') return Object.freeze({ site })
+function publicNavigation(
+  contactUrl: string,
+  site: SiteSettings = DEFAULT_SITE_SETTINGS,
+  frontend: Pick<PublicNavigationOptions, 'sharerEnabled' | 'account'> = {}
+): PublicNavigationOptions {
+  const base = { site, ...frontend }
+  if (contactUrl === '') return Object.freeze(base)
   try {
     const url = new URL(contactUrl)
     return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === ''
-      ? Object.freeze({ contactUrl: url.href, site })
-      : Object.freeze({ site })
+      ? Object.freeze({ ...base, contactUrl: url.href })
+      : Object.freeze(base)
   } catch {
-    return Object.freeze({ site })
+    return Object.freeze(base)
+  }
+}
+
+function frontendNavigation(
+  config: AppConfig,
+  sharerEnabled: boolean,
+  authenticated: boolean,
+  registrationEnabled: boolean
+): Pick<PublicNavigationOptions, 'sharerEnabled' | 'account'> {
+  return Object.freeze({
+    sharerEnabled,
+    account: Object.freeze({
+      adminBase: `/${config.adminDirectory}`,
+      authenticated,
+      registrationEnabled
+    })
+  })
+}
+
+async function loadFrontendRegistration(loader: AccountSettingsLoader | undefined): Promise<boolean> {
+  if (loader === undefined) return false
+  try {
+    return (await loader()).enableRegistration
+  } catch {
+    return false
   }
 }
 
@@ -260,6 +324,10 @@ export function renderLandingSite(html: string, site: SiteSettings): string {
     /(<a\b[^>]*\bdata-runtime-site-home-label\b[^>]*\baria-label=")[^"]*(")/gu,
     (_match, prefix: string, suffix: string) => `${prefix}${escapeHtmlAttribute(`${site.site_name} home`)}${suffix}`
   )
+}
+
+export function renderLandingNavigation(html: string, navigation: PublicNavigationOptions): string {
+  return html.replace('<!-- runtime-public-navigation -->', renderPublicNavigationItems(navigation))
 }
 
 function replaceRuntimeMarker(html: string, marker: string, value: string): string {

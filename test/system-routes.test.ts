@@ -4,9 +4,10 @@ import { buildApp } from '../src/app.js'
 import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type SessionWrite, type StoredAuthUser } from '../src/auth/auth-service.js'
 import { loadConfig } from '../src/config.js'
 import { Security } from '../src/security/security.js'
-import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
+import { DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, SettingsAdminService } from '../src/settings/settings-admin-service.js'
 import { renderLandingContact } from '../src/http/system-routes.js'
 import { redactSensitiveRequestUrl } from '../src/http/request-log.js'
+import { renderPublicNavigationItems } from '../src/player/public-page.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -195,6 +196,58 @@ describe('legacy-compatible system routes', () => {
     expect(theme.body).toContain('--brand: #123abc;')
     expect(theme.body).toContain('--brand-soft: #fedcba;')
     expect(theme.body).not.toContain('<')
+  })
+
+  it('restores registration, sharer, and authenticated user-panel navigation without public caching', async () => {
+    const values = { enable_gsharer: 'true' }
+    app = await buildApp(loadConfig({
+      NODE_ENV: 'test',
+      ADMIN_DIR: 'control',
+      SECURE_SALT: secureSalt
+    }), {
+      auth: systemRouteAuth(),
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} }),
+      accountSettings: async () => Object.freeze({ ...DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, enableRegistration: true })
+    })
+
+    const [anonymousLanding, anonymousTerms] = await Promise.all([
+      app.inject({ method: 'GET', url: '/' }),
+      app.inject({ method: 'GET', url: '/terms/' })
+    ])
+    for (const response of [anonymousLanding, anonymousTerms]) {
+      expect(response.body).toContain('href="/sharer/">Drive sharer</a>')
+      expect(response.body).toContain('href="/control/login/">Sign in</a>')
+      expect(response.body).toContain('href="/control/register/">Register</a>')
+      expect(response.body).not.toContain('site-account-nav')
+    }
+    expect(anonymousLanding.body).not.toContain('runtime-public-navigation')
+    expect(anonymousLanding.headers['cache-control']).toBe('public, max-age=60')
+    expect(anonymousTerms.headers['cache-control']).toBe('public, max-age=300')
+    expect(renderPublicNavigationItems({
+      account: { adminBase: 'javascript:alert(1)', authenticated: false, registrationEnabled: true }
+    })).toContain('href="/administrator/login/"')
+
+    const authenticatedHeaders = {
+      'user-agent': systemUserAgent,
+      cookie: `${AUTH_COOKIE_NAME}=${memberToken}`
+    }
+    const [authenticatedLanding, authenticatedTerms, missing] = await Promise.all([
+      app.inject({ method: 'GET', url: '/', headers: authenticatedHeaders }),
+      app.inject({ method: 'GET', url: '/terms/', headers: authenticatedHeaders }),
+      app.inject({ method: 'GET', url: '/missing-user-panel', headers: authenticatedHeaders })
+    ])
+    for (const response of [authenticatedLanding, authenticatedTerms, missing]) {
+      expect(response.body).toContain('<summary>User panel</summary>')
+      expect(response.body).toContain('href="/control/dashboard/">Dashboard</a>')
+      expect(response.body).toContain('href="/control/videos/list/">My videos</a>')
+      expect(response.body).toContain('href="/control/profile/">My account</a>')
+      expect(response.body).toContain('href="/control/login/?logout=true">Sign out</a>')
+      expect(response.body).not.toContain('href="/control/register/">Register</a>')
+    }
+    expect(authenticatedLanding.headers['cache-control']).toBe('private, no-store')
+    expect(authenticatedTerms.headers['cache-control']).toBe('private, no-store')
+    expect(missing.headers['cache-control']).toBe('no-store')
+    expect(missing.statusCode).toBe(404)
   })
 
   it('mounts a configured Disqus thread through the bounded local bootstrap and scoped CSP', async () => {
