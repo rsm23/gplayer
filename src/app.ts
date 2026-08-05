@@ -18,6 +18,7 @@ import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
 import type { SettingsAdminService } from './settings/settings-admin-service.js'
 import { FileSystemSiteAssetManager, type SiteAssetManager } from './settings/site-assets-service.js'
+import { FileSystemVastAssetManager, type VastAssetManager } from './settings/vast-assets-service.js'
 import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/source-api-routes.js'
 import { registerStreamingRoutes } from './http/streaming-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
@@ -32,6 +33,7 @@ export type AppDependencies = Readonly<{
   users?: UserAdminService
   settings?: SettingsAdminService
   siteAssets?: SiteAssetManager
+  vastAssets?: VastAssetManager
 }>
 
 export async function buildApp(
@@ -58,6 +60,7 @@ export async function buildApp(
 
   const authRuntime = createAuthRuntime(app, config)
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
+  const publicRoot = path.resolve(currentDirectory, '../public')
 
   await registerSystemRoutes(app, config)
   await registerAdminRoutes(
@@ -73,7 +76,8 @@ export async function buildApp(
     dependencies.auth ?? authRuntime.auth,
     settingsRuntime,
     dependencies.users ?? authRuntime.users,
-    dependencies.siteAssets ?? new FileSystemSiteAssetManager(path.resolve(currentDirectory, '../public'), config.adminDirectory)
+    dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
+    dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl)
   )
   await registerPlayerRoutes(app, config)
   await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
@@ -83,7 +87,20 @@ export async function buildApp(
   })
 
   await app.register(fastifyStatic, {
-    root: path.resolve(currentDirectory, '../public'),
+    root: path.join(publicRoot, 'uploads'),
+    prefix: '/uploads/',
+    decorateReply: false,
+    wildcard: true,
+    dotfiles: 'deny',
+    setHeaders: (response) => {
+      response.header('cache-control', 'public, max-age=300')
+      response.header('content-security-policy', "default-src 'none'; sandbox")
+      response.header('x-content-type-options', 'nosniff')
+    }
+  })
+
+  await app.register(fastifyStatic, {
+    root: publicRoot,
     prefix: '/',
     decorateReply: false,
     wildcard: false

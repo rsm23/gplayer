@@ -6,6 +6,7 @@ import type { AppConfig } from '../config.js'
 import { renderAdminAdsSettings, renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
+import { InvalidVastAssetError, type VastAssetManager } from '../settings/vast-assets-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
@@ -15,7 +16,8 @@ export async function registerAdminSettingsRoutes(
   auth: AuthService,
   settings: SettingsAdminService,
   users: UserAdminService,
-  siteAssets: SiteAssetManager
+  siteAssets: SiteAssetManager,
+  vastAssets: VastAssetManager
 ): Promise<void> {
   const adminBase = `/${config.adminDirectory}`
   const loginUrl = `${adminBase}/login/`
@@ -26,6 +28,9 @@ export async function registerAdminSettingsRoutes(
   const shortlinkUrl = `${adminBase}/settings/shortlink/`
   const customHeadersUrl = `${adminBase}/settings/custom-headers/`
   const adsUrl = `${adminBase}/settings/ads/`
+  const vastCreateUrl = `${adsUrl}vast/create/`
+  const vastDeleteUrl = `${adsUrl}vast/delete/`
+  const settingsAjaxUrl = `${adminBase}/ajax/settings/`
 
   app.get(`${adminBase}/settings/general`, async (_request, reply) => await reply.redirect(generalUrl, 308))
   app.get(`${adminBase}/settings/public`, async (_request, reply) => await reply.redirect(publicUrl, 308))
@@ -344,14 +349,22 @@ export async function registerAdminSettingsRoutes(
     const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
     if (user === null || reply.sent) return
     try {
-      const values = await settings.adsSettings()
-      const message: AdminMessage | undefined = stringValue(objectValue(request.query).updated) === '1'
+      const [values, assets] = await Promise.all([settings.adsSettings(), vastAssets.list()])
+      const query = objectValue(request.query)
+      const message: AdminMessage | undefined = stringValue(query.updated) === '1'
         ? { kind: 'success', text: 'The Ads Settings have been successfully updated' }
-        : undefined
+        : stringValue(query.vast) === 'created'
+          ? { kind: 'success', text: 'VAST ad file has been generated successfully' }
+          : stringValue(query.vast) === 'deleted'
+            ? { kind: 'success', text: 'The VAST ad file has been successfully deleted' }
+            : undefined
       return reply.type('text/html; charset=utf-8').send(renderAdminAdsSettings({
         adminBase,
         values,
+        vastAssets: assets,
         csrfToken: csrfToken(config, tokenFor(request), 'settings-ads'),
+        vastCreateCsrfToken: csrfToken(config, tokenFor(request), 'settings-ads-vast-create'),
+        vastDeleteCsrfToken: csrfToken(config, tokenFor(request), 'settings-ads-vast-delete'),
         ...(message === undefined ? {} : { message })
       }))
     } catch {
@@ -374,16 +387,106 @@ export async function registerAdminSettingsRoutes(
     try {
       const result = await settings.saveAds(body)
       if (result.status === 'ok') return await reply.redirect(`${adsUrl}?updated=1`, 303)
-      const values = await settings.adsSettings()
+      const [values, assets] = await Promise.all([settings.adsSettings(), vastAssets.list()])
       return reply.code(400).type('text/html; charset=utf-8').send(renderAdminAdsSettings({
         adminBase,
         values,
+        vastAssets: assets,
         csrfToken: csrfToken(config, tokenFor(request), 'settings-ads'),
+        vastCreateCsrfToken: csrfToken(config, tokenFor(request), 'settings-ads-vast-create'),
+        vastDeleteCsrfToken: csrfToken(config, tokenFor(request), 'settings-ads-vast-delete'),
         message: { kind: 'error', text: result.message }
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The ads settings could not be saved.'))
     }
+  })
+
+  app.post(vastCreateUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-ads-vast-create')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const site = await settings.siteSettings()
+      const asset = await vastAssets.create(body, site.site_name)
+      await settings.addCustomVastName(asset.name)
+      return await reply.redirect(`${adsUrl}?vast=created#custom-vast`, 303)
+    } catch (error) {
+      if (error instanceof InvalidVastAssetError) {
+        return await renderAdsValidationError(reply, config, adminBase, request, settings, vastAssets, error.message)
+      }
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'VAST ad file failed to generate.'))
+    }
+  })
+
+  app.post(vastDeleteUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-ads-vast-delete')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const name = stringValue(body.file_name)
+      if (!await vastAssets.delete(name)) {
+        return await renderAdsValidationError(reply, config, adminBase, request, settings, vastAssets, 'The VAST ad file failed to delete')
+      }
+      await settings.removeCustomVastName(name)
+      return await reply.redirect(`${adsUrl}?vast=deleted#custom-vast`, 303)
+    } catch (error) {
+      if (error instanceof InvalidVastAssetError) {
+        return await renderAdsValidationError(reply, config, adminBase, request, settings, vastAssets, error.message)
+      }
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The VAST ad file failed to delete.'))
+    }
+  })
+
+  app.post(settingsAjaxUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).send({ status: 'fail', message: 'The settings request did not originate from this application.' })
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    const action = stringValue(body.action)
+
+    if (action === 'createCustomVast') {
+      try {
+        const site = await settings.siteSettings()
+        const asset = await vastAssets.create(body, site.site_name)
+        await settings.addCustomVastName(asset.name)
+        return reply.send({ status: 'ok', message: 'VAST ad file has been generated successfully', data: asset.url })
+      } catch {
+        return reply.send({ status: 'fail', message: 'VAST ad file failed to generate' })
+      }
+    }
+
+    if (action === 'deleteCustomVast') {
+      try {
+        const name = stringValue(body.file_name)
+        if (!await vastAssets.delete(name)) return reply.send({ status: 'fail', message: 'The VAST ad file failed to delete' })
+        await settings.removeCustomVastName(name)
+        return reply.send({ status: 'ok', message: 'The VAST ad file has been successfully deleted' })
+      } catch {
+        return reply.send({ status: 'fail', message: 'The VAST ad file failed to delete' })
+      }
+    }
+
+    return reply.code(400).send({ status: 'fail', message: 'The settings action is not supported' })
   })
 }
 
@@ -431,6 +534,27 @@ async function renderSiteValidationError(
     values,
     logoAvailable,
     csrfToken: csrfToken(config, tokenFor(request), 'settings-site'),
+    message: { kind: 'error', text: message }
+  }))
+}
+
+async function renderAdsValidationError(
+  reply: FastifyReply,
+  config: AppConfig,
+  adminBase: string,
+  request: FastifyRequest,
+  settings: SettingsAdminService,
+  vastAssets: VastAssetManager,
+  message: string
+): Promise<FastifyReply> {
+  const [values, assets] = await Promise.all([settings.adsSettings(), vastAssets.list()])
+  return reply.code(400).type('text/html; charset=utf-8').send(renderAdminAdsSettings({
+    adminBase,
+    values,
+    vastAssets: assets,
+    csrfToken: csrfToken(config, tokenFor(request), 'settings-ads'),
+    vastCreateCsrfToken: csrfToken(config, tokenFor(request), 'settings-ads-vast-create'),
+    vastDeleteCsrfToken: csrfToken(config, tokenFor(request), 'settings-ads-vast-delete'),
     message: { kind: 'error', text: message }
   }))
 }

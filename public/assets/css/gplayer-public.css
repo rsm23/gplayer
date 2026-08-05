@@ -970,6 +970,92 @@
   font-weight: 700;
 }
 
+.settings-vast-assets {
+  margin-top: 24px;
+  scroll-margin-top: 24px;
+}
+
+.settings-vast-assets-body,
+.settings-vast-assets-list {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-vast-asset {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised), transparent 24%);
+}
+
+.settings-vast-asset > div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.settings-vast-asset strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.settings-vast-asset a {
+  color: var(--brand-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.settings-vast-asset button {
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 45%);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-vast-empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.settings-vast-create {
+  margin-top: 10px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-vast-create-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-vast-create-action p {
+  max-width: 360px;
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: right;
+}
+
 .settings-logo-preview {
   display: block;
   width: 76px;
@@ -1277,6 +1363,20 @@
 
   .settings-vast-row > button {
     min-height: 42px;
+  }
+
+  .settings-vast-asset,
+  .settings-vast-create-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-vast-asset button {
+    width: 100%;
+  }
+
+  .settings-vast-create-action p {
+    text-align: left;
   }
 
   .settings-wide {

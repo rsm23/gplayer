@@ -1,4 +1,5 @@
 import { customHeadersForUrl, decodeCustomHeaderRules, defaultCustomHeaderRules, parseCustomHeaderSubmission, type CustomHeaderRule } from './custom-headers.js'
+import { isSafeVastAssetName } from './vast-assets-service.js'
 
 const BOOLEAN_KEYS = [
   'production_mode',
@@ -509,6 +510,25 @@ export class SettingsAdminService {
     await this.store.upsertMany(entries)
     return Object.freeze({ status: 'ok', message: 'The Ads Settings have been successfully updated' })
   }
+
+  public async customVastNames(): Promise<readonly string[]> {
+    const raw = await this.store.getAll()
+    return customVastNames(raw.custom_vast)
+  }
+
+  public async addCustomVastName(name: string): Promise<void> {
+    if (!isSafeVastAssetName(name)) throw new Error('Invalid VAST asset name')
+    const names = [...await this.customVastNames()]
+    const withoutExisting = names.filter((candidate) => candidate.toLowerCase() !== name.toLowerCase())
+    withoutExisting.push(name)
+    await this.store.upsertMany([{ key: 'custom_vast', value: JSON.stringify(withoutExisting.slice(-200)) }])
+  }
+
+  public async removeCustomVastName(name: string): Promise<void> {
+    if (!isSafeVastAssetName(name)) throw new Error('Invalid VAST asset name')
+    const names = (await this.customVastNames()).filter((candidate) => candidate.toLowerCase() !== name.toLowerCase())
+    await this.store.upsertMany([{ key: 'custom_vast', value: JSON.stringify(names) }])
+  }
 }
 
 export function generalSettings(raw: Readonly<Record<string, string>>, defaultBaseUrl: URL): GeneralSettings {
@@ -535,6 +555,19 @@ export function timezoneList(): readonly string[] {
 
 export function shortenerProviderList(): readonly ShortenerProvider[] {
   return SHORTENER_PROVIDERS
+}
+
+function customVastNames(value: string | undefined): readonly string[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const candidate of jsonStringArray(value).slice(0, 200)) {
+    if (!isSafeVastAssetName(candidate)) continue
+    const key = candidate.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    names.push(candidate)
+  }
+  return Object.freeze(names)
 }
 
 function normalizedHttpUrl(value: unknown): string | null {

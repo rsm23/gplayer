@@ -3,6 +3,7 @@ import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
 import type { CustomHeaderRule } from '../settings/custom-headers.js'
 import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
+import type { VastAsset } from '../settings/vast-assets-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -470,7 +471,10 @@ export function renderAdminCustomHeaderSettings(input: Readonly<{
 export function renderAdminAdsSettings(input: Readonly<{
   adminBase: string
   values: AdsSettings
+  vastAssets: readonly VastAsset[]
   csrfToken: string
+  vastCreateCsrfToken: string
+  vastDeleteCsrfToken: string
   message?: AdminMessage
 }>): string {
   const checked = (value: boolean): string => value ? ' checked' : ''
@@ -480,11 +484,21 @@ export function renderAdminAdsSettings(input: Readonly<{
     input.values.vast_xml[index] ?? '',
     index
   )).join('')
+  const assetRows = input.vastAssets.length === 0
+    ? '<p class="settings-vast-empty">No custom VAST XML files have been generated yet.</p>'
+    : input.vastAssets.map((asset) => `<article class="settings-vast-asset">
+      <div><strong>${escapeHtml(asset.name)}</strong><a href="${escapeHtml(asset.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(asset.url)}</a></div>
+      <form action="${escapeHtml(input.adminBase)}/settings/ads/vast/delete/" method="post">
+        <input type="hidden" name="csrf" value="${escapeHtml(input.vastDeleteCsrfToken)}">
+        <input type="hidden" name="file_name" value="${escapeHtml(asset.name)}">
+        <button type="submit">Delete</button>
+      </form>
+    </article>`).join('')
 
   return adminDocument('Ads settings', `${adminHeader(input.adminBase, 'settings')}
 <main class="admin-dashboard admin-settings-page">
   <p class="eyebrow"><span></span>Monetization controls</p>
-  <div class="admin-dashboard-heading"><div><h1>Ads settings.</h1><p>Configure VAST schedules, popup and direct behavior, and banner placements using the legacy key contract.</p></div><span class="admin-role">19 keys</span></div>
+  <div class="admin-dashboard-heading"><div><h1>Ads settings.</h1><p>Configure VAST schedules, popup and direct behavior, banner placements, and generated XML assets using the legacy contract.</p></div><span class="admin-role">19 keys + assets</span></div>
   ${renderMessage(input.message)}
   ${settingsSubnav(input.adminBase, 'ads')}
   <form class="admin-settings-form ads-settings-editor" action="${escapeHtml(input.adminBase)}/settings/ads/" method="post" data-max-vast="20">
@@ -529,6 +543,22 @@ export function renderAdminAdsSettings(input: Readonly<{
     <div class="settings-actions"><button class="generate-button" type="submit"><span>Update ads settings</span><span aria-hidden="true">↗</span></button><p>Settings are persisted now; rendering and execution in the player/download surfaces remain a separate runtime parity slice.</p></div>
   </form>
   <template data-vast-template>${vastScheduleRow('', '', '__INDEX__')}</template>
+  <section class="settings-section settings-vast-assets" id="custom-vast" aria-labelledby="custom-vast-title">
+    <div class="settings-section-heading"><p class="panel-kicker">05 / Custom XML</p><h2 id="custom-vast-title">VAST asset builder</h2><p>Generate the same VAST 3.0 inline XML files as the legacy modal, then use their public URLs in the schedule above.</p></div>
+    <div class="settings-vast-assets-body">
+      <div class="settings-vast-assets-list">${assetRows}</div>
+      <form class="settings-grid settings-vast-create" action="${escapeHtml(input.adminBase)}/settings/ads/vast/create/" method="post">
+        <input type="hidden" name="csrf" value="${escapeHtml(input.vastCreateCsrfToken)}">
+        <div class="field"><label for="vast-asset-title">Ad title</label><input id="vast-asset-title" name="adTitle" type="text" maxlength="500" placeholder="Pre-roll campaign"></div>
+        <div class="field"><label for="vast-asset-filename">XML filename</label><input id="vast-asset-filename" name="adFilename" type="text" maxlength="132" placeholder="campaign.xml" required><p class="field-hint">Letters, numbers, dots, dashes, and underscores. The final extension is normalized to .xml.</p></div>
+        <div class="field settings-wide"><label for="vast-asset-click">Click-through URL</label><input id="vast-asset-click" name="adClickThrough" type="url" maxlength="4096" placeholder="https://advertiser.example/campaign" required></div>
+        <div class="field settings-wide"><label for="vast-asset-media">MP4 media URL</label><input id="vast-asset-media" name="adMediaFile" type="url" maxlength="4096" placeholder="https://cdn.example/campaign.mp4" required></div>
+        <div class="field"><label for="vast-asset-duration">Duration</label><input id="vast-asset-duration" name="adDuration" type="number" min="0" max="359999" step="1" placeholder="30" required><p class="field-hint">Whole seconds.</p></div>
+        <div class="field"><label for="vast-asset-skip">Skip offset</label><input id="vast-asset-skip" name="adSkipOffset" type="number" min="0" max="359999" step="1" placeholder="5"><p class="field-hint">Optional whole seconds.</p></div>
+        <div class="settings-vast-create-action settings-wide"><button class="generate-button" type="submit"><span>Generate VAST XML</span><span aria-hidden="true">↗</span></button><p>Existing files with the same safe filename are replaced, matching the supplied application.</p></div>
+      </form>
+    </div>
+  </section>
 </main>`)
 }
 

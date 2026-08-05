@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -11,6 +11,7 @@ import { loadConfig } from '../src/config.js'
 import { MySqlSettingsAdminStore } from '../src/settings/mysql-settings-admin-store.js'
 import { SettingsAdminService, shortenerProviderList, type SettingEntry, type SettingsAdminStore } from '../src/settings/settings-admin-service.js'
 import { FileSystemSiteAssetManager, type SiteAssetManager } from '../src/settings/site-assets-service.js'
+import { FileSystemVastAssetManager, InvalidVastAssetError, type VastAsset, type VastAssetInput, type VastAssetManager } from '../src/settings/vast-assets-service.js'
 
 const token = 'settings-admin-token-1234567890'
 const userAgent = 'GPlayer settings test'
@@ -88,6 +89,30 @@ class MemorySiteAssets implements SiteAssetManager {
   public async update(settings: Awaited<ReturnType<SettingsAdminService['siteSettings']>>, logo?: Buffer): Promise<void> {
     if (logo !== undefined) this.logoAvailable = true
     this.updates.push(Object.freeze({ name: settings.site_name, ...(logo === undefined ? {} : { logo }) }))
+  }
+}
+
+class MemoryVastAssets implements VastAssetManager {
+  public readonly assets: VastAsset[] = []
+  public readonly creates: VastAssetInput[] = []
+  public readonly deletes: string[] = []
+
+  public async list(): Promise<readonly VastAsset[]> { return Object.freeze(this.assets.map((asset) => Object.freeze({ ...asset }))) }
+  public async create(input: VastAssetInput): Promise<VastAsset> {
+    this.creates.push({ ...input })
+    const name = String(input.adFilename ?? '')
+    const asset = Object.freeze({ name, url: `https://player.example/uploads/${encodeURIComponent(name)}` })
+    const existing = this.assets.findIndex((candidate) => candidate.name === name)
+    if (existing === -1) this.assets.push(asset)
+    else this.assets[existing] = asset
+    return asset
+  }
+  public async delete(name: string): Promise<boolean> {
+    this.deletes.push(name)
+    const index = this.assets.findIndex((asset) => asset.name === name)
+    if (index === -1) return false
+    this.assets.splice(index, 1)
+    return true
   }
 }
 
@@ -418,6 +443,84 @@ describe('settings administration service', () => {
     await expect(settings.saveAds({ direct_ads_link: 'file:///tmp/ad.html' })).resolves.toEqual({ status: 'invalid', message: 'The direct ads link URL is invalid' })
     expect(store.writes).toEqual([])
   })
+
+  it('maintains the legacy custom_vast JSON index with safe unique filenames', async () => {
+    const store = new MemorySettingsStore({ custom_vast: '["first.xml","../escape.xml","FIRST.xml","notes.txt"]' })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.customVastNames()).resolves.toEqual(['first.xml'])
+
+    await settings.addCustomVastName('second-ad.xml')
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual(['first.xml', 'second-ad.xml'])
+    await settings.addCustomVastName('FIRST.xml')
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual(['second-ad.xml', 'FIRST.xml'])
+    await settings.removeCustomVastName('first.xml')
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual(['second-ad.xml'])
+    await expect(settings.addCustomVastName('../outside.xml')).rejects.toThrow('Invalid VAST asset name')
+  })
+})
+
+describe('custom VAST asset generation', () => {
+  it('writes, lists, replaces, and deletes safe VAST 3.0 XML files', async () => {
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'gplayer-vast-assets-'))
+    try {
+      const assets = new FileSystemVastAssetManager(temporaryRoot, new URL('https://player.example/base/'))
+      const created = await assets.create({
+        adTitle: 'Launch & <pre-roll>',
+        adClickThrough: 'https://ads.example/click?x=1&y=2',
+        adMediaFile: 'https://cdn.example/launch.mp4?x=1&y=2',
+        adDuration: '30',
+        adSkipOffset: '5',
+        adFilename: 'launch-ad.xml'
+      }, 'GPlayer & Test')
+
+      expect(created).toEqual({ name: 'launch-ad.xml', url: 'https://player.example/base/uploads/launch-ad.xml' })
+      const xml = await readFile(path.join(temporaryRoot, 'launch-ad.xml'), 'utf8')
+      expect(xml).toContain('<VAST xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"')
+      expect(xml).toContain('<AdSystem>GPlayer &amp; Test</AdSystem>')
+      expect(xml).toContain('<AdTitle>Launch &amp; &lt;pre-roll&gt;</AdTitle>')
+      expect(xml).toContain('<Linear skipoffset="00:00:05">')
+      expect(xml).toContain('<Duration>00:00:30</Duration>')
+      expect(xml).toContain('<![CDATA[https://ads.example/click?x=1&y=2]]>')
+      expect(xml).toContain('<CustomClick>https://ads.example/click?x=1&amp;y=2</CustomClick>')
+
+      await writeFile(path.join(temporaryRoot, 'ignore.txt'), 'not an asset')
+      await expect(assets.list()).resolves.toEqual([created])
+      await assets.create({
+        adTitle: 'Replacement',
+        adClickThrough: 'https://ads.example/replacement',
+        adMediaFile: 'https://cdn.example/signed-media?id=replacement',
+        adDuration: '60',
+        adSkipOffset: '',
+        adFilename: 'launch-ad.php'
+      }, 'GPlayer')
+      const replacement = await readFile(path.join(temporaryRoot, 'launch-ad.xml'), 'utf8')
+      expect(replacement).toContain('<AdTitle>Replacement</AdTitle>')
+      expect(replacement).toContain('<Linear skipoffset="00:00:00">')
+      await expect(assets.delete('launch-ad.xml')).resolves.toBe(true)
+      await expect(assets.delete('launch-ad.xml')).resolves.toBe(false)
+      await expect(assets.list()).resolves.toEqual([])
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects traversal, missing or unsafe URLs, credentials, and invalid durations', async () => {
+    const assets = new FileSystemVastAssetManager(path.join(os.tmpdir(), 'unused-gplayer-vast-root'), new URL('https://player.example/'))
+    const base = {
+      adTitle: '',
+      adClickThrough: 'https://ads.example/click',
+      adMediaFile: 'https://cdn.example/ad.mp4',
+      adDuration: '30',
+      adSkipOffset: '',
+      adFilename: 'safe.xml'
+    }
+    await expect(assets.create({ ...base, adFilename: '../escape.xml' }, 'GPlayer')).rejects.toBeInstanceOf(InvalidVastAssetError)
+    await expect(assets.create({ ...base, adFilename: 'nested/ad.xml' }, 'GPlayer')).rejects.toThrow('must contain only')
+    await expect(assets.create({ ...base, adMediaFile: 'file:///tmp/ad.mp4' }, 'GPlayer')).rejects.toThrow('valid HTTP(S) URL')
+    await expect(assets.create({ ...base, adClickThrough: 'https://user:secret@ads.example/click' }, 'GPlayer')).rejects.toThrow('embedded credentials')
+    await expect(assets.create({ ...base, adDuration: '-1' }, 'GPlayer')).rejects.toThrow('whole number of seconds')
+    await expect(assets.delete('../../escape.xml')).rejects.toThrow('filename is invalid')
+  })
 })
 
 describe('site asset generation', () => {
@@ -477,12 +580,18 @@ describe('general settings administration routes', () => {
     app = undefined
   })
 
-  async function createApp(settingsStore: MemorySettingsStore, routeAuth = new RouteAuthStore(), siteAssets: SiteAssetManager = new MemorySiteAssets()): Promise<FastifyInstance> {
+  async function createApp(
+    settingsStore: MemorySettingsStore,
+    routeAuth = new RouteAuthStore(),
+    siteAssets: SiteAssetManager = new MemorySiteAssets(),
+    vastAssets: VastAssetManager = new MemoryVastAssets()
+  ): Promise<FastifyInstance> {
     return await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }), {
       auth: new AuthService(routeAuth),
       settings: new SettingsAdminService(settingsStore),
       users: new UserAdminService(routeUserStore, { hashPassword: async () => 'hash' }),
-      siteAssets
+      siteAssets,
+      vastAssets
     })
   }
 
@@ -744,6 +853,99 @@ describe('general settings administration routes', () => {
       popup_ads_code: '<aside>Route ad</aside>',
       show_iframeads: 'true'
     }))
+  })
+
+  it('creates and deletes custom VAST XML assets through separately signed forms', async () => {
+    const store = new MemorySettingsStore({ site_name: 'GPlayer Route Test' })
+    const assets = new MemoryVastAssets()
+    app = await createApp(store, new RouteAuthStore(), new MemorySiteAssets(), assets)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/ads/', headers })
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('VAST asset builder')
+    expect(page.body).toContain('No custom VAST XML files have been generated yet.')
+    const createForm = page.body.match(/action="\/administrator\/settings\/ads\/vast\/create\/" method="post">([\s\S]*?)<\/form>/)?.[1] ?? ''
+    const createCsrf = createForm.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/ads/vast/create/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({
+        csrf: createCsrf,
+        adTitle: 'Route pre-roll',
+        adClickThrough: 'https://ads.example/click',
+        adMediaFile: 'https://cdn.example/route.mp4',
+        adDuration: '30',
+        adSkipOffset: '5',
+        adFilename: 'route-ad.xml'
+      }).toString()
+    })
+    expect(createResponse.statusCode).toBe(303)
+    expect(createResponse.headers.location).toBe('/administrator/settings/ads/?vast=created#custom-vast')
+    expect(assets.creates).toHaveLength(1)
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual(['route-ad.xml'])
+
+    const createdPage = await app.inject({ method: 'GET', url: createResponse.headers.location ?? '', headers })
+    expect(createdPage.body).toContain('VAST ad file has been generated successfully')
+    expect(createdPage.body).toContain('route-ad.xml')
+    expect(createdPage.body).toContain('https://player.example/uploads/route-ad.xml')
+    const deleteForm = createdPage.body.match(/action="\/administrator\/settings\/ads\/vast\/delete\/" method="post">([\s\S]*?)<\/form>/)?.[1] ?? ''
+    const deleteCsrf = deleteForm.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    const deleteResponse = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/ads/vast/delete/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf: deleteCsrf, file_name: 'route-ad.xml' }).toString()
+    })
+    expect(deleteResponse.statusCode).toBe(303)
+    expect(deleteResponse.headers.location).toBe('/administrator/settings/ads/?vast=deleted#custom-vast')
+    expect(assets.deletes).toEqual(['route-ad.xml'])
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual([])
+  })
+
+  it('preserves the legacy action-based custom VAST AJAX contract', async () => {
+    const store = new MemorySettingsStore({ site_name: 'GPlayer AJAX Test' })
+    const assets = new MemoryVastAssets()
+    app = await createApp(store, new RouteAuthStore(), new MemorySiteAssets(), assets)
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/administrator/ajax/settings/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({
+        action: 'createCustomVast',
+        adTitle: 'AJAX pre-roll',
+        adClickThrough: 'https://ads.example/click',
+        adMediaFile: 'https://cdn.example/ajax.mp4',
+        adDuration: '20',
+        adSkipOffset: '4',
+        adFilename: 'ajax-ad.xml'
+      }).toString()
+    })
+    expect(createResponse.statusCode).toBe(200)
+    expect(createResponse.json()).toEqual({
+      status: 'ok',
+      message: 'VAST ad file has been generated successfully',
+      data: 'https://player.example/uploads/ajax-ad.xml'
+    })
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual(['ajax-ad.xml'])
+
+    const deleteResponse = await app.inject({
+      method: 'POST',
+      url: '/administrator/ajax/settings/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ action: 'deleteCustomVast', file_name: 'ajax-ad.xml' }).toString()
+    })
+    expect(deleteResponse.statusCode).toBe(200)
+    expect(deleteResponse.json()).toEqual({ status: 'ok', message: 'The VAST ad file has been successfully deleted' })
+    expect(JSON.parse(store.values.custom_vast ?? '')).toEqual([])
+  })
+
+  it('denies dotfiles and traversal through the dynamic upload route', async () => {
+    app = await createApp(new MemorySettingsStore())
+    const dotfile = await app.inject({ method: 'GET', url: '/uploads/.htaccess' })
+    const traversal = await app.inject({ method: 'GET', url: '/uploads/%2e%2e/package.json' })
+    expect(dotfile.statusCode).toBe(403)
+    expect([403, 404]).toContain(traversal.statusCode)
   })
 
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {
