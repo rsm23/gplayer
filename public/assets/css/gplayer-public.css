@@ -820,6 +820,58 @@
   align-content: start;
 }
 
+.settings-logo-preview {
+  display: block;
+  width: 76px;
+  height: 76px;
+  margin-top: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 15px;
+  background: var(--bg-raised);
+  object-fit: contain;
+}
+
+.settings-grid input[type="file"] {
+  height: auto;
+  min-height: 52px;
+  padding: 9px 12px;
+}
+
+.settings-grid input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--panel-strong);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-color-field {
+  position: relative;
+}
+
+.settings-color-field input[type="color"] {
+  min-height: 48px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.settings-color-field code {
+  position: absolute;
+  right: 12px;
+  bottom: 15px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg), transparent 12%);
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
 .settings-toggle {
   display: flex;
   min-height: 108px;

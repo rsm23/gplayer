@@ -44,6 +44,7 @@ const PUBLIC_BOOLEAN_KEYS = [
   'save_public_video'
 ] as const
 const SMTP_PROVIDERS = Object.freeze(['', 'gmail', 'ymail', 'outlook', 'other'] as const)
+const PWA_DISPLAYS = Object.freeze(['standalone', 'fullscreen', 'minimal-ui'] as const)
 const BOOLEAN_KEY_SET = new Set<string>(BOOLEAN_KEYS)
 const TIMEZONES = new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])
 
@@ -77,6 +78,20 @@ export type SmtpSettings = Readonly<{
   smtp_sender: string
   smtp_reply_email: string
   smtp_reply_name: string
+}>
+
+export type PwaDisplay = typeof PWA_DISPLAYS[number]
+
+export type SiteSettings = Readonly<{
+  site_name: string
+  site_slogan: string
+  site_description: string
+  custom_color: string
+  custom_color2: string
+  pwa_shortname: string
+  pwa_themecolor: string
+  pwa_backgroundcolor: string
+  pwa_display: PwaDisplay
 }>
 
 export type SettingEntry = Readonly<{ key: string; value: string }>
@@ -238,6 +253,49 @@ export class SettingsAdminService {
     await this.store.upsertMany(entries)
     return Object.freeze({ status: 'ok', message: 'The SMTP Settings have been successfully updated' })
   }
+
+  public async siteSettings(): Promise<SiteSettings> {
+    const raw = await this.store.getAll()
+    const display = raw.pwa_display ?? ''
+    return Object.freeze({
+      site_name: requiredText(raw.site_name, 100) ?? 'GPlayer',
+      site_slogan: requiredText(raw.site_slogan, 200) ?? 'Universal media gateway',
+      site_description: requiredText(raw.site_description, 5_000) ?? 'A Node.js media gateway with 63 registered source adapters.',
+      custom_color: normalizedHexColor(raw.custom_color) ?? 'ccea59',
+      custom_color2: normalizedHexColor(raw.custom_color2) ?? '172019',
+      pwa_shortname: requiredText(raw.pwa_shortname, 30) ?? 'GPlayer',
+      pwa_themecolor: normalizedHexColor(raw.pwa_themecolor) ?? '0b0e0c',
+      pwa_backgroundcolor: normalizedHexColor(raw.pwa_backgroundcolor) ?? '0b0e0c',
+      pwa_display: isPwaDisplay(display) ? display : 'standalone'
+    })
+  }
+
+  public async saveSite(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const entries: SettingEntry[] = []
+    for (const [key, maximum] of Object.entries({ site_name: 100, site_slogan: 200, site_description: 5_000, pwa_shortname: 30 })) {
+      if (!(key in input)) continue
+      const value = requiredText(input[key], maximum)
+      if (value === null) return invalid(`The ${key.replaceAll('_', ' ')} is invalid`)
+      entries.push({ key, value })
+    }
+
+    for (const key of ['custom_color', 'custom_color2', 'pwa_themecolor', 'pwa_backgroundcolor'] as const) {
+      if (!(key in input)) continue
+      const color = normalizedHexColor(input[key])
+      if (color === null) return invalid(`The ${key.replaceAll('_', ' ')} is invalid`)
+      entries.push({ key, value: color })
+    }
+
+    if ('pwa_display' in input) {
+      const display = scalarValue(input.pwa_display)
+      if (!isPwaDisplay(display)) return invalid('The PWA display mode is invalid')
+      entries.push({ key: 'pwa_display', value: display })
+    }
+
+    if (entries.length === 0) return invalid('No supported settings were submitted')
+    await this.store.upsertMany(entries)
+    return Object.freeze({ status: 'ok', message: 'The Site Settings have been successfully updated' })
+  }
 }
 
 export function generalSettings(raw: Readonly<Record<string, string>>, defaultBaseUrl: URL): GeneralSettings {
@@ -319,6 +377,16 @@ function boundedText(value: unknown, maximum: number): string | null {
   return candidate.length <= maximum ? candidate : null
 }
 
+function requiredText(value: unknown, maximum: number): string | null {
+  const candidate = scalarValue(value)
+  return candidate !== '' && candidate.length <= maximum ? candidate : null
+}
+
+function normalizedHexColor(value: unknown): string | null {
+  const candidate = scalarValue(value).replace(/^#/, '').toLowerCase()
+  return /^[0-9a-f]{6}$/.test(candidate) ? candidate : null
+}
+
 function boundedIntegerString(value: unknown, minimum: number, maximum: number): string | null {
   const candidate = scalarValue(value)
   if (!/^\d+$/.test(candidate)) return null
@@ -343,6 +411,10 @@ function isCacheMode(value: string): value is typeof CACHE_MODES[number] {
 
 function isSmtpProvider(value: string): value is SmtpProvider {
   return (SMTP_PROVIDERS as readonly string[]).includes(value)
+}
+
+function isPwaDisplay(value: string): value is PwaDisplay {
+  return (PWA_DISPLAYS as readonly string[]).includes(value)
 }
 
 function invalid(message: string): SettingsMutationResult {

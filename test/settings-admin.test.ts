@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
+import sharp from 'sharp'
 import { buildApp } from '../src/app.js'
 import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type SessionWrite, type StoredAuthUser } from '../src/auth/auth-service.js'
 import { UserAdminService, type AdminUserRecord, type UserAdminStore } from '../src/auth/user-admin-service.js'
 import { loadConfig } from '../src/config.js'
 import { MySqlSettingsAdminStore } from '../src/settings/mysql-settings-admin-store.js'
 import { SettingsAdminService, type SettingEntry, type SettingsAdminStore } from '../src/settings/settings-admin-service.js'
+import { FileSystemSiteAssetManager, type SiteAssetManager } from '../src/settings/site-assets-service.js'
 
 const token = 'settings-admin-token-1234567890'
 const userAgent = 'GPlayer settings test'
@@ -70,6 +75,20 @@ const routeUserStore: UserAdminStore = {
   updateEmail: async () => true,
   updateUsername: async () => true,
   deleteUser: async () => true
+}
+
+class MemorySiteAssets implements SiteAssetManager {
+  public logoAvailable = false
+  public readonly updates: Array<Readonly<{ logo?: Buffer; name: string }>> = []
+
+  public async hasLogo(): Promise<boolean> { return this.logoAvailable }
+  public async validateLogo(logo: Buffer): Promise<void> {
+    if (!logo.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) throw new Error('invalid logo')
+  }
+  public async update(settings: Awaited<ReturnType<SettingsAdminService['siteSettings']>>, logo?: Buffer): Promise<void> {
+    if (logo !== undefined) this.logoAvailable = true
+    this.updates.push(Object.freeze({ name: settings.site_name, ...(logo === undefined ? {} : { logo }) }))
+  }
 }
 
 describe('settings administration service', () => {
@@ -209,6 +228,73 @@ describe('settings administration service', () => {
     await expect(settings.saveSmtp({ clear_smtp_password: 'true' })).resolves.toEqual({ status: 'ok', message: 'The SMTP Settings have been successfully updated' })
     expect(store.values.smtp_password).toBe('')
   })
+
+  it('preserves and validates the nine-key site and PWA settings contract', async () => {
+    const store = new MemorySettingsStore({ site_name: 'My Player', pwa_display: 'fullscreen', custom_color: 'ABCDEF' })
+    const settings = new SettingsAdminService(store)
+    await expect(settings.siteSettings()).resolves.toEqual(expect.objectContaining({
+      site_name: 'My Player',
+      pwa_display: 'fullscreen',
+      custom_color: 'abcdef',
+      pwa_shortname: 'GPlayer'
+    }))
+
+    await expect(settings.saveSite({
+      site_name: 'GPlayer Node',
+      site_slogan: 'Media without detours',
+      site_description: 'A complete Node.js media gateway.',
+      custom_color: '#ccea59',
+      custom_color2: '#172019',
+      pwa_shortname: 'GPlayer',
+      pwa_themecolor: '#0b0e0c',
+      pwa_backgroundcolor: '#101511',
+      pwa_display: 'minimal-ui',
+      unknown_site_key: 'blocked'
+    })).resolves.toEqual({ status: 'ok', message: 'The Site Settings have been successfully updated' })
+    expect(store.values).toEqual(expect.objectContaining({ site_name: 'GPlayer Node', custom_color: 'ccea59', pwa_display: 'minimal-ui' }))
+    expect(store.values).not.toHaveProperty('unknown_site_key')
+  })
+
+  it('rejects empty copy, invalid colors, and unsupported PWA display modes', async () => {
+    const store = new MemorySettingsStore()
+    const settings = new SettingsAdminService(store)
+    await expect(settings.saveSite({ site_name: '' })).resolves.toEqual({ status: 'invalid', message: 'The site name is invalid' })
+    await expect(settings.saveSite({ custom_color: '#not-a-color' })).resolves.toEqual({ status: 'invalid', message: 'The custom color is invalid' })
+    await expect(settings.saveSite({ pwa_display: 'browser' })).resolves.toEqual({ status: 'invalid', message: 'The PWA display mode is invalid' })
+    expect(store.writes).toEqual([])
+  })
+})
+
+describe('site asset generation', () => {
+  it('normalizes one PNG into the legacy icon family, favicon, and manifest', async () => {
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'gplayer-site-assets-'))
+    try {
+      const logo = await sharp({ create: { width: 640, height: 320, channels: 4, background: '#ccea59' } }).png().toBuffer()
+      const settings = await new SettingsAdminService(new MemorySettingsStore({
+        site_name: 'GPlayer Test',
+        site_slogan: 'Test gateway',
+        site_description: 'Test manifest generation.',
+        pwa_shortname: 'GPlayer',
+        pwa_themecolor: '0b0e0c',
+        pwa_backgroundcolor: '101511',
+        pwa_display: 'standalone'
+      })).siteSettings()
+      const assets = new FileSystemSiteAssetManager(temporaryRoot, 'control')
+      await expect(assets.validateLogo(Buffer.from('not a PNG'))).rejects.toThrow('The logo must be a PNG image no larger than 5 MB')
+      await assets.update(settings, logo)
+
+      await expect(assets.hasLogo()).resolves.toBe(true)
+      const metadata = await sharp(path.join(temporaryRoot, 'assets/img/logo.png')).metadata()
+      expect([metadata.width, metadata.height]).toEqual([512, 512])
+      expect((await readFile(path.join(temporaryRoot, 'favicon.ico'))).subarray(0, 4)).toEqual(Buffer.from([0, 0, 1, 0]))
+      await expect(readFile(path.join(temporaryRoot, 'assets/img/apple-touch-icon-152x152.png'))).resolves.toBeInstanceOf(Buffer)
+      const manifest = JSON.parse(await readFile(path.join(temporaryRoot, 'manifest.json'), 'utf8')) as Record<string, unknown>
+      expect(manifest).toEqual(expect.objectContaining({ name: 'GPlayer Test', theme_color: '#0b0e0c', display: 'standalone' }))
+      expect(JSON.stringify(manifest)).toContain('./control/dashboard/?source=homescreen')
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('MySqlSettingsAdminStore', () => {
@@ -236,11 +322,12 @@ describe('general settings administration routes', () => {
     app = undefined
   })
 
-  async function createApp(settingsStore: MemorySettingsStore, routeAuth = new RouteAuthStore()): Promise<FastifyInstance> {
+  async function createApp(settingsStore: MemorySettingsStore, routeAuth = new RouteAuthStore(), siteAssets: SiteAssetManager = new MemorySiteAssets()): Promise<FastifyInstance> {
     return await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }), {
       auth: new AuthService(routeAuth),
       settings: new SettingsAdminService(settingsStore),
-      users: new UserAdminService(routeUserStore, { hashPassword: async () => 'hash' })
+      users: new UserAdminService(routeUserStore, { hashPassword: async () => 'hash' }),
+      siteAssets
     })
   }
 
@@ -345,6 +432,42 @@ describe('general settings administration routes', () => {
     expect(store.values).toEqual(expect.objectContaining({ smtp_provider: 'other', smtp_host: 'mail.example.test', smtp_port: '465', smtp_tls: 'false', smtp_password: 'never-render-this' }))
   })
 
+  it('renders and updates site settings from a signed multipart form with a PNG logo', async () => {
+    const store = new MemorySettingsStore({ site_name: 'GPlayer', pwa_display: 'standalone' })
+    const assets = new MemorySiteAssets()
+    app = await createApp(store, new RouteAuthStore(), assets)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/site/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Site settings.')
+    expect(page.body).toContain('enctype="multipart/form-data"')
+
+    const logo = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#ccea59' } }).png().toBuffer()
+    const multipart = multipartPayload({
+      csrf,
+      site_name: 'GPlayer Node',
+      site_slogan: 'Media gateway',
+      site_description: 'A complete media gateway.',
+      custom_color: '#ccea59',
+      custom_color2: '#172019',
+      pwa_shortname: 'GPlayer',
+      pwa_themecolor: '#0b0e0c',
+      pwa_backgroundcolor: '#101511',
+      pwa_display: 'standalone'
+    }, logo)
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/site/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': multipart.contentType },
+      payload: multipart.payload
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/site/?updated=1')
+    expect(store.values).toEqual(expect.objectContaining({ site_name: 'GPlayer Node', custom_color: 'ccea59', pwa_themecolor: '0b0e0c' }))
+    expect(assets.updates).toHaveLength(1)
+    expect(assets.updates[0]?.logo).toEqual(logo)
+  })
+
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {
     const store = new MemorySettingsStore()
     app = await createApp(store, new RouteAuthStore({ ...admin, role: 1 }))
@@ -371,3 +494,15 @@ describe('general settings administration routes', () => {
     expect(store.writes).toEqual([])
   })
 })
+
+function multipartPayload(fields: Readonly<Record<string, string>>, logo: Buffer): Readonly<{ contentType: string; payload: Buffer }> {
+  const boundary = '----gplayer-settings-test-boundary'
+  const chunks: Buffer[] = []
+  for (const [name, value] of Object.entries(fields)) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+  }
+  chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="favicon"; filename="logo.png"\r\nContent-Type: image/png\r\n\r\n`))
+  chunks.push(logo)
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`))
+  return Object.freeze({ contentType: `multipart/form-data; boundary=${boundary}`, payload: Buffer.concat(chunks) })
+}

@@ -1,7 +1,7 @@
 import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
-import { timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
+import { timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -345,6 +345,52 @@ export function renderAdminSmtpSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminSiteSettings(input: Readonly<{
+  adminBase: string
+  values: SiteSettings
+  logoAvailable: boolean
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const displayOptions = [
+    ['standalone', 'Standalone'],
+    ['fullscreen', 'Fullscreen'],
+    ['minimal-ui', 'Minimal UI']
+  ].map(([value, label]) => stringOption(value ?? '', label ?? '', input.values.pwa_display)).join('')
+
+  return adminDocument('Site settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Identity and install</p>
+  <div class="admin-dashboard-heading"><div><h1>Site settings.</h1><p>Manage public identity, brand colors, install metadata, and the generated icon family.</p></div><span class="admin-role">9 keys + logo</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'site')}
+  <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/settings/site/" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="site-identity-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Identity</p><h2 id="site-identity-title">Name and brand</h2><p>Define the public name, supporting copy, color pair, and square PNG used to generate application icons.</p>${input.logoAvailable ? '<img class="settings-logo-preview" src="/assets/img/logo.png" width="76" height="76" alt="Current uploaded site logo">' : ''}</div>
+      <div class="settings-grid">
+        ${settingsInput('site_name', 'Site name', escapeHtml(input.values.site_name), 'text', 'GPlayer', true)}
+        ${settingsInput('site_slogan', 'Slogan', escapeHtml(input.values.site_slogan), 'text', 'Universal media gateway', true)}
+        <div class="field settings-wide"><label for="site_description">Site description</label><textarea id="site_description" name="site_description" maxlength="5000" required>${escapeHtml(input.values.site_description)}</textarea></div>
+        <div class="field settings-wide"><label for="favicon">Logo PNG</label><input id="favicon" name="favicon" type="file" accept="image/png,.png"><p class="field-hint">Optional. Maximum 5 MB and 16.7 megapixels. The image is normalized to 512×512 and used to generate the legacy icon family and favicon.</p></div>
+        ${settingsColorInput('custom_color', 'Primary color', input.values.custom_color)}
+        ${settingsColorInput('custom_color2', 'Secondary color', input.values.custom_color2)}
+      </div>
+    </section>
+    <section class="settings-section" aria-labelledby="site-pwa-title">
+      <div class="settings-section-heading"><p class="panel-kicker">02 / PWA</p><h2 id="site-pwa-title">Installed experience</h2><p>Configure the generated web-app manifest used by browsers when GPlayer is installed.</p></div>
+      <div class="settings-grid">
+        ${settingsInput('pwa_shortname', 'Short name', escapeHtml(input.values.pwa_shortname), 'text', 'GPlayer', true)}
+        <div class="field"><label for="pwa_display">Display UI</label><select id="pwa_display" name="pwa_display" required>${displayOptions}</select></div>
+        ${settingsColorInput('pwa_themecolor', 'Theme color', input.values.pwa_themecolor)}
+        ${settingsColorInput('pwa_backgroundcolor', 'Background color', input.values.pwa_backgroundcolor)}
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update site settings</span><span aria-hidden="true">↗</span></button><p>Saving regenerates the web-app manifest. Uploading a logo also rebuilds favicon and Apple/PWA icon sizes.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminError(adminBase: string, status: 403 | 404 | 503, description: string): string {
   const title = status === 403 ? 'Access denied.' : status === 404 ? 'User not found.' : 'Service unavailable.'
   return adminDocument(String(status), `<main class="admin-error-main">
@@ -415,8 +461,12 @@ function settingsToggle(name: string, label: string, description: string, checke
   return `<label class="settings-toggle" for="${name}"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span><span class="settings-switch"><input type="hidden" name="${name}" value="false"><input id="${name}" name="${name}" type="checkbox" value="true"${checked}><i aria-hidden="true"></i></span></label>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a></nav>`
+function settingsColorInput(name: string, label: string, value: string): string {
+  return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
+}
+
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a></nav>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {

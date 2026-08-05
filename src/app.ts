@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import formbody from '@fastify/formbody'
+import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { createAuthRuntime } from './auth/auth-runtime.js'
@@ -16,6 +17,7 @@ import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
 import type { SettingsAdminService } from './settings/settings-admin-service.js'
+import { FileSystemSiteAssetManager, type SiteAssetManager } from './settings/site-assets-service.js'
 import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/source-api-routes.js'
 import { registerStreamingRoutes } from './http/streaming-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
@@ -29,6 +31,7 @@ export type AppDependencies = Readonly<{
   sessions?: SessionAdminService
   users?: UserAdminService
   settings?: SettingsAdminService
+  siteAssets?: SiteAssetManager
 }>
 
 export async function buildApp(
@@ -48,6 +51,9 @@ export async function buildApp(
   })
 
   await app.register(formbody)
+  await app.register(multipart, {
+    limits: { fieldNameSize: 100, fieldSize: 10_000, fields: 16, fileSize: 5_242_880, files: 1, parts: 17 }
+  })
   await app.register(cookie)
 
   const authRuntime = createAuthRuntime(app, config)
@@ -65,7 +71,8 @@ export async function buildApp(
     config,
     dependencies.auth ?? authRuntime.auth,
     dependencies.settings ?? authRuntime.settings,
-    dependencies.users ?? authRuntime.users
+    dependencies.users ?? authRuntime.users,
+    dependencies.siteAssets ?? new FileSystemSiteAssetManager(path.resolve(currentDirectory, '../public'), config.adminDirectory)
   )
   await registerPlayerRoutes(app, config)
   await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
