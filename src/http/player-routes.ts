@@ -40,6 +40,7 @@ export type PlayerRouteOptions = Readonly<{
   loadHostingSettings?: HostingSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
+  resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
 }>
 
 export async function registerPlayerRoutes(
@@ -139,17 +140,18 @@ export async function registerPlayerRoutes(
       secureSalt: config.secureSalt,
       allowPlaintextMedia: true
     })
-    if (parsed.media === null) {
+    const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
+    if (resolvedMedia === null) {
       reply.code(400).type('application/json; charset=utf-8')
       return { status: 'fail', message: parsed.errors[0] ?? 'Bad Request', result: null }
     }
     if (networkAccessRejected(request, misc, countryCode, true, config.baseUrl.origin) ||
-      mediaHostDisabled(parsed.media, misc.disable_host) ||
-      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(parsed.media))) {
+      mediaHostDisabled(resolvedMedia, misc.disable_host) ||
+      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(resolvedMedia))) {
       reply.code(403).type('application/json; charset=utf-8')
       return { status: 'fail', message: 'Access denied', result: null }
     }
-    const token = security.encryptURL(buildPlayerQuery(parsed.media))
+    const token = security.encryptURL(buildPlayerQuery(parsed.media as PlayerMediaQuery))
     return reply.redirect(routePath(player.slug_embed, token))
   }
 
@@ -173,18 +175,19 @@ export async function registerPlayerRoutes(
         repeat: player.repeat
       }
     })
-    if (parsed.media === null) {
+    const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
+    if (resolvedMedia === null) {
       reply.code(400).type('text/html; charset=utf-8')
       return renderEmbedError(parsed.errors[0] ?? 'The player link is invalid.')
     }
     applyEmbedHeaders(reply, ads)
     if (networkAccessRejected(request, misc, countryCode, true, config.baseUrl.origin) ||
-      mediaHostDisabled(parsed.media, misc.disable_host) ||
-      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(parsed.media))) {
+      mediaHostDisabled(resolvedMedia, misc.disable_host) ||
+      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(resolvedMedia))) {
       reply.code(403)
       return renderEmbedError('You are not allowed to access this player.')
     }
-    const media = proxyPlayerMedia(withDefaultPoster(parsed.media, player), security)
+    const media = proxyPlayerMedia(withDefaultPoster(resolvedMedia, player), security)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
       downloadUrl: routePath(player.slug_download, parsed.token),
@@ -208,20 +211,21 @@ export async function registerPlayerRoutes(
       secureSalt: config.secureSalt
     })
     applyDownloadHeaders(reply)
-    if (parsed.media === null) {
+    const resolvedMedia = await resolveSavedMedia(parsed.media, options.resolveSavedVideo)
+    if (resolvedMedia === null) {
       reply.code(400).type('text/html; charset=utf-8')
       return renderDownloadError(parsed.errors[0] ?? 'The download link is invalid.')
     }
     if (networkAccessRejected(request, misc, countryCode, false) ||
-      mediaHostDisabled(parsed.media, misc.disable_host) ||
-      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(parsed.media))) {
+      mediaHostDisabled(resolvedMedia, misc.disable_host) ||
+      accessPolicyFromMisc(misc).isTitleBlacklisted(playerMediaTitle(resolvedMedia))) {
       reply.code(403).type('text/html; charset=utf-8')
       return renderDownloadError('You are not allowed to access this download.')
     }
     const embedUrl = routePath(player.slug_embed, parsed.token)
-    const alternativeUrl = createAlternativeDownloadUrl(parsed.media, security, player.slug_download)
+    const alternativeUrl = createAlternativeDownloadUrl(resolvedMedia, security, player.slug_download, misc.disable_host)
     reply.type('text/html; charset=utf-8')
-    return renderDownloadPage(parsed.media, {
+    return renderDownloadPage(resolvedMedia, {
       embedUrl,
       ...(alternativeUrl === undefined ? {} : { alternativeUrl }),
       downloadLabel: player.text_download,
@@ -246,6 +250,39 @@ export async function registerPlayerRoutes(
 
   app.get('/:playerSlug', dispatchConfiguredPlayerRoute)
   app.get('/:playerSlug/', dispatchConfiguredPlayerRoute)
+
+  const dispatchSavedPlayerRoute = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    const parameters = request.params as { playerSlug?: unknown; savedSlug?: unknown }
+    const routeSlug = String(parameters.playerSlug ?? '').toLowerCase()
+    const savedSlug = String(parameters.savedSlug ?? '').trim()
+    if (savedSlug === '' || savedSlug.length > 150 || options.resolveSavedVideo === undefined) return reply.callNotFound()
+    const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)
+    const target = routeSlug === player.slug_embed.toLowerCase()
+      ? player.slug_embed
+      : routeSlug === player.slug_download.toLowerCase()
+        ? player.slug_download
+        : ''
+    if (target === '' || await options.resolveSavedVideo(savedSlug) === null) return reply.callNotFound()
+    const token = security.encryptURL(buildPlayerQuery({ source: 'db', id: savedSlug }))
+    return reply.redirect(routePath(target, token), 302)
+  }
+
+  app.get('/:playerSlug/:savedSlug', dispatchSavedPlayerRoute)
+  app.get('/:playerSlug/:savedSlug/', dispatchSavedPlayerRoute)
+}
+
+async function resolveSavedMedia(
+  media: PlayerMediaQuery | null,
+  resolve: PlayerRouteOptions['resolveSavedVideo']
+): Promise<PlayerMediaQuery | null> {
+  if (media === null) return null
+  if (media.source !== 'db') return media
+  if (resolve === undefined || media.id === undefined || media.id === '') return null
+  try {
+    return await resolve(media.id)
+  } catch {
+    return null
+  }
 }
 
 async function countryCodeForRequest(request: FastifyRequest, lookup: CountryCodeLookup | undefined): Promise<string> {
@@ -287,10 +324,11 @@ function mediaHostDisabled(media: PlayerMediaQuery, disabledHosts: readonly stri
 }
 
 function mediaContainsDisabledHost(media: PlayerMediaQuery, disabledHosts: readonly string[]): boolean {
-  return [media.host, media.ahost].some((host) => host !== undefined && disabledHosts.includes(host))
+  return mediaHosts(media).some((host) => disabledHosts.includes(host))
 }
 
 function playerMediaTitle(media: PlayerMediaQuery): string {
+  if (media.title?.trim()) return media.title.trim()
   if (media.host === 'direct' && media.id !== undefined) {
     try {
       const filename = decodeURIComponent(new URL(media.id).pathname.split('/').filter(Boolean).at(-1) ?? '')
@@ -300,6 +338,14 @@ function playerMediaTitle(media: PlayerMediaQuery): string {
     }
   }
   return `${(media.host ?? 'video').replaceAll(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} video`
+}
+
+function mediaHosts(media: PlayerMediaQuery): readonly string[] {
+  return [...new Set([
+    media.host,
+    media.ahost,
+    ...(media.alternatives ?? []).map((item) => item.host)
+  ].filter((host): host is string => host !== undefined && host.length > 0))]
 }
 
 function applyEmbedHeaders(
@@ -405,16 +451,20 @@ function routePath(slug: string, query: string): string {
 function createAlternativeDownloadUrl(
   media: ReturnType<typeof parsePlayerQuery>['media'] & object,
   security: Security,
-  downloadSlug: string
+  downloadSlug: string,
+  disabledHosts: readonly string[] = []
 ): string | undefined {
-  if (media.ahost === undefined || media.aid === undefined) return undefined
+  const alternative = media.ahost !== undefined && media.aid !== undefined && !disabledHosts.includes(media.ahost)
+    ? { host: media.ahost, id: media.aid }
+    : media.alternatives?.find((item) => !disabledHosts.includes(item.host))
+  if (alternative === undefined) return undefined
   const { host: _host, id: _id, ahost: _ahost, aid: _aid, ...shared } = media
-  const alternative = {
-    host: media.ahost,
-    id: media.aid,
+  const query = {
+    host: alternative.host,
+    id: alternative.id,
     ...shared
   }
-  return routePath(downloadSlug, security.encryptURL(buildPlayerQuery(alternative)))
+  return routePath(downloadSlug, security.encryptURL(buildPlayerQuery(query)))
 }
 
 function applyDownloadHeaders(reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]): void {

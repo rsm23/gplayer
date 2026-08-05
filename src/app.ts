@@ -15,6 +15,7 @@ import { ExtractorFactory } from './hosting/extractor-factory.js'
 import { registerAdminRoutes } from './http/admin-routes.js'
 import { registerAdminSettingsRoutes } from './http/admin-settings-routes.js'
 import { registerSubtitleAdminRoutes } from './http/subtitle-admin-routes.js'
+import { registerVideoAdminRoutes } from './http/video-admin-routes.js'
 import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
@@ -31,6 +32,8 @@ import type { HostingSettingsLoader } from './settings/hosting-runtime.js'
 import { legacyHostingHosts } from './settings/hosting-settings.js'
 import { SubtitleAdminService } from './subtitles/subtitle-admin-service.js'
 import { FileSystemSubtitleAssetManager } from './subtitles/subtitle-assets-service.js'
+import { VideoAdminService } from './videos/video-admin-service.js'
+import { FileSystemVideoPosterAssetManager } from './videos/video-assets-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -43,6 +46,7 @@ export type AppDependencies = Readonly<{
   siteAssets?: SiteAssetManager
   vastAssets?: VastAssetManager
   subtitles?: SubtitleAdminService
+  videos?: VideoAdminService
   countryCodeLookup?: CountryCodeLookup
 }>
 
@@ -64,7 +68,7 @@ export async function buildApp(
 
   await app.register(formbody)
   await app.register(multipart, {
-    limits: { fieldNameSize: 100, fieldSize: 10_000, fields: 16, fileSize: 5_242_880, files: 1, parts: 17 }
+    limits: { fieldNameSize: 100, fieldSize: 100_000, fields: 80, fileSize: 5_242_880, files: 24, parts: 104 }
   })
   await app.register(cookie)
 
@@ -76,6 +80,12 @@ export async function buildApp(
     new FileSystemSubtitleAssetManager(path.join(publicRoot, 'uploads/subtitles'), config.baseUrl),
     config.baseUrl
   )
+  const videosRuntime = dependencies.videos ?? new VideoAdminService(
+    authRuntime.videoStore,
+    new FileSystemVideoPosterAssetManager(path.join(publicRoot, 'uploads/images'), config.baseUrl),
+    config.baseUrl,
+    { embedSlug: config.slugs.embed, downloadSlug: config.slugs.download }
+  )
   let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
   const hostingHosts = legacyHostingHosts()
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
@@ -85,6 +95,7 @@ export async function buildApp(
   const countryCodeLookup = dependencies.countryCodeLookup ?? createCountryCodeLookup(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
   )
+  const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
 
   await registerSystemRoutes(app, config)
   await registerAdminRoutes(
@@ -111,16 +122,24 @@ export async function buildApp(
     dependencies.auth ?? authRuntime.auth,
     subtitlesRuntime
   )
+  await registerVideoAdminRoutes(
+    app,
+    config,
+    dependencies.auth ?? authRuntime.auth,
+    videosRuntime,
+    subtitlesRuntime,
+    loadPlayerSettings
+  )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
-  const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
-  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, loadHostingSettings, countryCodeLookup, supportedHosts })
+  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, loadHostingSettings, countryCodeLookup, supportedHosts, resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug) })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
     loadAdsSettings,
     loadPlayerSettings,
     loadMiscSettings,
     countryCodeLookup,
-    supportedHosts
+    supportedHosts,
+    resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug)
   })
   await registerMediaRoutes(app, config)
   await registerStreamingRoutes(app, config, {

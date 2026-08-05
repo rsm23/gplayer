@@ -170,9 +170,51 @@
     filter()
   }
 
+  const setupVideoEditor = () => {
+    const editor = document.querySelector('[data-video-editor]')
+    const list = editor?.querySelector('[data-video-alternative-list]')
+    const template = editor?.querySelector('template[data-video-alternative-template]')
+    const addButton = editor?.querySelector('[data-add-video-alternative]')
+    if (!(editor instanceof HTMLFormElement) || !(list instanceof HTMLElement) || !(template instanceof HTMLTemplateElement) || !(addButton instanceof HTMLButtonElement)) return
+
+    const maximum = Number(editor.dataset.maxAlternatives ?? '20')
+    const rows = () => [...list.querySelectorAll('[data-video-alt-row]')]
+    const reindex = () => {
+      rows().forEach((row, index) => {
+        const input = row.querySelector('[data-video-alt-input]')
+        const label = row.querySelector('[data-video-alt-label]')
+        const remove = row.querySelector('[data-remove-video-alternative]')
+        if (input instanceof HTMLInputElement) input.id = `alt-link-${index}`
+        if (label instanceof HTMLLabelElement) {
+          label.htmlFor = `alt-link-${index}`
+          label.textContent = `Alternative URL ${index + 1}`
+        }
+        if (remove instanceof HTMLButtonElement) remove.setAttribute('aria-label', `Remove alternative URL ${index + 1}`)
+      })
+      addButton.disabled = rows().length >= maximum
+    }
+
+    list.addEventListener('click', (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const remove = target.closest('[data-remove-video-alternative]')
+      if (!(remove instanceof HTMLButtonElement)) return
+      remove.closest('[data-video-alt-row]')?.remove()
+      reindex()
+    })
+    addButton.addEventListener('click', () => {
+      if (rows().length >= maximum) return
+      list.append(template.content.cloneNode(true))
+      reindex()
+      rows().at(-1)?.querySelector('input')?.focus()
+    })
+    reindex()
+  }
+
   setupCustomHeaders()
   setupVastSchedule()
   setupPlayerSettings()
   setupHostingSettings()
+  setupVideoEditor()
   revealActiveSettingsTab()
 })()

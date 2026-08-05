@@ -126,6 +126,7 @@ function renderAdFrame(url: string | undefined, title: string, kind: 'banner' | 
 }
 
 function mediaTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {
+  if (media.title?.trim()) return media.title.trim()
   if (media.host === 'direct' && media.id !== undefined) {
     const href = safeHttpUrl(media.id)
     if (href.length > 0) {

@@ -203,6 +203,7 @@ function renderPlayerToolbar(settings: PlayerSettings, downloadUrl: string): str
 }
 
 function playerTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {
+  if (media.title?.trim()) return media.title.trim()
   if (media.host === 'direct' && media.id !== undefined) {
     const source = safeHttpUrl(media.id)
     if (source.length > 0) {

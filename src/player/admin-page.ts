@@ -8,6 +8,7 @@ import { PLAYER_CHOICES, PLAYER_EDGE_STYLES, PLAYER_FONTS, PLAYER_LANGUAGE_OPTIO
 import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 import type { VastAsset } from '../settings/vast-assets-service.js'
 import type { SubtitleAdminRecord } from '../subtitles/subtitle-admin-service.js'
+import type { StoredVideoDetail, VideoAdminRecord } from '../videos/video-admin-service.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -50,7 +51,7 @@ export function renderAdminDashboard(adminBase: string, user: AuthUser): string 
     <article><span>Runtime</span><strong>Node 24</strong><p>No PHP process is loaded by the application runtime.</p></article>
     <article><span>Account</span><strong>${escapeHtml(user.username)}</strong><p>${escapeHtml(user.email)}</p></article>
   </section>
-  <section class="admin-next"><p class="section-index">Management</p><h2>Session control is online.</h2><p>Inspect active and historical browser sessions, then revoke individual records without exposing authentication tokens.</p><a class="hero-link-primary" href="${escapeHtml(adminBase)}/users/sessions/">Manage sessions <span aria-hidden="true">↗</span></a></section>
+  <section class="admin-next"><p class="section-index">Management</p><h2>Your media control plane is online.</h2><p>Create stable saved-video links, attach fallback sources and captions, and maintain uploaded subtitle assets from the authenticated Node.js administration surface.</p><div class="admin-next-actions"><a class="hero-link-primary" href="${escapeHtml(adminBase)}/videos/list/">Manage videos <span aria-hidden="true">↗</span></a><a class="admin-back-link" href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitle Manager</a>${user.role === 0 ? `<a class="admin-back-link" href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a>` : ''}</div></section>
 </main>`)
 }
 
@@ -126,6 +127,121 @@ export function renderAdminSubtitles(input: Readonly<{
     ${input.recordsTotal > input.subtitles.length ? `<p class="session-table-note">Showing ${input.subtitles.length} of ${input.recordsTotal} records. The legacy DataTables endpoint provides complete pagination.</p>` : ''}
   </section>
   ${migration}
+</main>`)
+}
+
+export function renderAdminVideos(input: Readonly<{
+  adminBase: string
+  videos: readonly VideoAdminRecord[]
+  recordsTotal: number
+  search: string
+  status: string
+  dmca: string
+  isAdmin: boolean
+  mutationCsrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rows = input.videos.map((video) => `<tr>
+    <td><span class="session-id">#${escapeHtml(video.id)}</span></td>
+    <td><a class="video-title-link" href="${escapeHtml(input.adminBase)}/videos/edit/?id=${escapeHtml(video.id)}"><strong>${escapeHtml(video.title || 'Untitled video')}</strong><span>${escapeHtml(video.slug)}</span></a></td>
+    <td><a class="video-host-link" href="${escapeHtml(video.mainUrl)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(video.host)}</strong><span>Open source ↗</span></a></td>
+    <td><span class="video-state video-state-${video.status}">${escapeHtml(videoStatusLabel(video.status))}</span>${video.dmca > 0 ? '<span class="video-dmca">DMCA</span>' : ''}</td>
+    <td>${video.views.toLocaleString('en-US')}</td>
+    <td>${escapeHtml(video.userName)}</td>
+    <td>${renderTimestamp(video.updated, 'Not updated')}</td>
+    <td><div class="video-row-actions">
+      <a href="${escapeHtml(video.embedUrl)}" target="_blank" rel="noopener noreferrer">Embed</a>
+      <a href="${escapeHtml(input.adminBase)}/videos/edit/?id=${escapeHtml(video.id)}">Edit</a>
+      <form action="${escapeHtml(input.adminBase)}/videos/status/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(video.id)}"><input type="hidden" name="sources" value="${video.status === 1 ? 'available' : ''}"><button type="submit">${video.status === 1 ? 'Mark active' : 'Mark failed'}</button></form>
+      ${input.isAdmin ? `<form action="${escapeHtml(input.adminBase)}/videos/dmca/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(video.id)}"><input type="hidden" name="takedown" value="${video.dmca > 0 ? '0' : '1'}"><button type="submit">${video.dmca > 0 ? 'Restore' : 'DMCA'}</button></form>` : ''}
+      <form action="${escapeHtml(input.adminBase)}/videos/delete/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.mutationCsrfToken)}"><input type="hidden" name="id" value="${escapeHtml(video.id)}"><button class="session-revoke" type="submit" aria-label="Delete ${escapeHtml(video.title || `video ${video.id}`)}">Delete</button></form>
+    </div></td>
+  </tr>`).join('')
+
+  return adminDocument('Video Manager', `${adminHeader(input.adminBase, 'videos', input.isAdmin)}
+<main class="admin-dashboard admin-videos-page">
+  <p class="eyebrow"><span></span>Saved playback</p>
+  <div class="admin-dashboard-heading"><div><h1>Video Manager.</h1><p>Create stable player links backed by the legacy-compatible video, alternative, subtitle, and source-cache tables.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
+  ${renderMessage(input.message)}
+  <section class="user-toolbar video-toolbar" aria-label="Video controls">
+    <a class="hero-link-primary" href="${escapeHtml(input.adminBase)}/videos/new/">Add video <span aria-hidden="true">+</span></a>
+    <form action="${escapeHtml(input.adminBase)}/videos/list/" method="get" role="search">
+      <label class="sr-only" for="video-search">Search videos</label><input id="video-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search title, host, source ID, slug, or user">
+      <label class="sr-only" for="video-status-filter">Status</label><select id="video-status-filter" name="status"><option value="">Any status</option>${selectStringOption('0', 'Active', input.status)}${selectStringOption('1', 'Failed', input.status)}${selectStringOption('2', 'Checking', input.status)}</select>
+      ${input.isAdmin ? `<label class="sr-only" for="video-dmca-filter">DMCA</label><select id="video-dmca-filter" name="dmca"><option value="">Any DMCA state</option>${selectStringOption('0', 'Available', input.dmca)}${selectStringOption('1', 'Takedown', input.dmca)}</select>` : ''}
+      <button type="submit">Filter</button>
+    </form>
+  </section>
+  <section class="session-table-shell video-table-shell" aria-labelledby="videos-table-title">
+    <div class="session-table-heading"><div><p class="panel-kicker">Saved videos</p><h2 id="videos-table-title">Playback links</h2></div><span>${input.isAdmin ? 'All users' : 'Your videos'} · scroll →</span></div>
+    <div class="session-table-scroll"><table class="session-table video-table"><thead><tr><th>ID</th><th>Title</th><th>Host</th><th>Status</th><th>Views</th><th>User</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="8">No videos found.</td></tr>'}</tbody></table></div>
+    ${input.recordsTotal > input.videos.length ? `<p class="session-table-note">Showing ${input.videos.length} of ${input.recordsTotal} records. The legacy DataTables endpoint provides complete pagination.</p>` : ''}
+  </section>
+</main>`)
+}
+
+export function renderAdminVideoForm(input: Readonly<{
+  adminBase: string
+  isAdmin: boolean
+  csrfToken: string
+  video?: StoredVideoDetail
+  mainUrl?: string
+  alternativeUrls?: readonly string[]
+  posterUrl?: string
+  embedUrl?: string
+  downloadUrl?: string
+  embedCode?: string
+  values?: Readonly<Record<string, unknown>>
+  message?: AdminMessage
+}>): string {
+  const edit = input.video !== undefined
+  const value = (name: string, fallback = ''): string => {
+    const current = input.values?.[name]
+    return typeof current === 'string' ? current : fallback
+  }
+  const valueArray = (primary: string, fallback: string): string[] => {
+    const current = input.values?.[primary] ?? input.values?.[fallback]
+    if (Array.isArray(current)) return current.filter((item): item is string => typeof item === 'string')
+    return typeof current === 'string' ? [current] : []
+  }
+  const title = value('title', input.video?.title ?? '')
+  const mainUrl = value('host_id', input.mainUrl ?? '')
+  const slug = value('slug', input.video?.slug ?? '')
+  const storedPosterInput = /^https?:\/\//iu.test(input.video?.poster ?? '') ? input.video?.poster ?? '' : ''
+  const posterUrl = value('poster-url', storedPosterInput)
+  const submittedAlternatives = valueArray('altLinks[]', 'altLinks')
+  const alternatives = input.values === undefined ? input.alternativeUrls ?? [] : submittedAlternatives
+  const alternativeRows = [...alternatives, ''].slice(0, 20).map((url, index) => videoAlternativeRow(url, index)).join('')
+  const submittedSubtitleUrls = valueArray('sub-url[]', 'sub-url')
+  const submittedSubtitleLanguages = valueArray('lang-url[]', 'lang-url')
+  const storedSubtitles = input.video?.subtitles ?? []
+  const existingSubtitles = input.values === undefined
+    ? storedSubtitles.map((subtitle, index) => videoSubtitleRow(subtitle.link, subtitle.language, index)).join('')
+    : submittedSubtitleUrls.map((url, index) => videoSubtitleRow(url, submittedSubtitleLanguages[index] ?? 'Unknown CC', index)).join('')
+  const subtitleOffset = input.values === undefined ? storedSubtitles.length : submittedSubtitleUrls.length
+  const newSubtitles = [0, 1].map((index) => videoSubtitleRow('', '', subtitleOffset + index, true)).join('')
+  const bulkAlternatives = value('multiAltUrls')
+  const bulkSubtitles = value('multiSubUrls')
+  const action = edit ? `${input.adminBase}/videos/edit/?id=${encodeURIComponent(input.video?.id ?? '')}` : `${input.adminBase}/videos/new/`
+  const posterPreview = !edit || input.posterUrl === undefined || input.posterUrl === '' ? '' : `<div class="video-poster-preview"><a href="${escapeHtml(input.posterUrl)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(input.posterUrl)}" alt="Current poster for ${escapeHtml(input.video?.title || 'video')}"></a></div>`
+  const posterRemove = !edit || input.posterUrl === undefined || input.posterUrl === '' ? '' : `<form class="video-poster-remove" action="${escapeHtml(input.adminBase)}/videos/poster/remove/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(input.video?.id ?? '')}"><button class="session-revoke" type="submit">Remove current poster</button></form>`
+  const generatedLinks = !edit ? '' : `<section class="settings-section video-generated-links" aria-labelledby="video-links-title"><div class="settings-section-heading"><p class="panel-kicker">Stable output</p><h2 id="video-links-title">Generated links</h2><p>The public slug resolves to the saved database record and its ordered media relationships.</p></div><div class="settings-grid"><div class="field"><label for="video-embed-url">Embed link</label><textarea id="video-embed-url" rows="3" readonly>${escapeHtml(input.embedUrl ?? '')}</textarea></div><div class="field"><label for="video-download-url">Download link</label><textarea id="video-download-url" rows="3" readonly>${escapeHtml(input.downloadUrl ?? '')}</textarea></div><div class="field settings-wide"><label for="video-embed-code">Embed code</label><textarea id="video-embed-code" rows="4" readonly>${escapeHtml(input.embedCode ?? '')}</textarea></div></div></section>`
+
+  return adminDocument(edit ? 'Edit Video' : 'New Video', `${adminHeader(input.adminBase, 'videos', input.isAdmin)}
+<main class="admin-dashboard admin-video-form-page">
+  <p class="eyebrow"><span></span>${edit ? 'Update saved playback' : 'Create saved playback'}</p>
+  <div class="admin-dashboard-heading"><div><h1>${edit ? 'Edit video.' : 'New video.'}</h1><p>Main and alternative providers are normalized through the same host classifier used by the Node extraction runtime.</p></div><a class="admin-back-link" href="${escapeHtml(input.adminBase)}/videos/list/">Back to videos</a></div>
+  ${renderMessage(input.message)}
+  <form class="settings-form video-editor-form" action="${escapeHtml(action)}" method="post" enctype="multipart/form-data" data-video-editor data-max-alternatives="20">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">${edit ? `<input type="hidden" name="id" value="${escapeHtml(input.video?.id ?? '')}">` : ''}
+    <section class="settings-section" aria-labelledby="video-source-title"><div class="settings-section-heading"><p class="panel-kicker">Playback identity</p><h2 id="video-source-title">Video source</h2><p>The main URL is required. Alternatives retain their submitted order and become fallback/download choices.</p></div><div class="settings-grid"><div class="field"><label for="video-title">Video title</label><input id="video-title" name="title" type="text" maxlength="255" value="${escapeHtml(title)}" placeholder="Movie title"></div><div class="field"><label for="video-main-url">Main video URL</label><input id="video-main-url" name="host_id" type="url" maxlength="2048" value="${escapeHtml(mainUrl)}" required placeholder="https://video-host.example/watch/..."></div><div class="field"><label for="video-slug">Custom slug</label><input id="video-slug" name="slug" type="text" maxlength="50" value="${escapeHtml(slug)}" placeholder="movie-title"><p class="field-hint">Leave blank to generate a unique slug.</p></div></div></section>
+    <section class="settings-section" aria-labelledby="video-alternatives-title"><div class="settings-section-heading"><p class="panel-kicker">Fallbacks</p><h2 id="video-alternatives-title">Alternative video URLs</h2><p>Invalid and duplicate URLs are ignored; up to 20 ordered alternatives are retained and tried if the main source has no playable media.</p></div><div><div class="video-repeat-list" data-video-alternative-list>${alternativeRows}</div><button class="admin-back-link video-add-row" type="button" data-add-video-alternative>Add another URL</button><div class="field video-bulk-alternatives"><label for="video-bulk-alternatives">Or paste URLs, one per line</label><textarea id="video-bulk-alternatives" name="multiAltUrls" rows="5" placeholder="https://video-host.example/watch/fallback-1&#10;https://video-host.example/watch/fallback-2">${escapeHtml(bulkAlternatives)}</textarea></div><template data-video-alternative-template>${videoAlternativeRow('', 'new')}</template></div></section>
+    <section class="settings-section" aria-labelledby="video-subtitles-title"><div class="settings-section-heading"><p class="panel-kicker">Captions</p><h2 id="video-subtitles-title">Attached subtitles</h2><p>Keep, edit, or add URL captions; bulk lines support Language|URL and URL|Language. Uploaded files also enter your Subtitle Manager library.</p></div><div class="video-repeat-list">${existingSubtitles}${newSubtitles}</div><div class="settings-grid video-bulk-subtitles"><div class="field"><label for="video-bulk-subtitles">Bulk subtitle URLs</label><textarea id="video-bulk-subtitles" name="multiSubUrls" rows="6" placeholder="English|https://captions.example/movie.srt&#10;https://captions.example/movie.fr.vtt">${escapeHtml(bulkSubtitles)}</textarea></div><div class="field"><label for="video-subtitle-files">Upload subtitle files</label><input id="video-subtitle-files" name="multiSubFiles" type="file" accept=".srt,.vtt,.ass,.sub,.stl,.dfxp,.ttml,.sbv,.txt" multiple><p class="field-hint">Each file is limited to 2 MiB. Language is inferred from a two-letter filename segment when possible.</p></div></div></section>
+    <section class="settings-section" aria-labelledby="video-poster-title"><div class="settings-section-heading"><p class="panel-kicker">Artwork</p><h2 id="video-poster-title">Poster</h2><p>Use a credential-free HTTP(S) URL or upload a validated JPG, PNG, WebP, or GIF up to 5 MiB.</p></div><div class="settings-grid"><div class="field"><label for="video-poster-url">Poster URL</label><input id="video-poster-url" name="poster-url" type="url" maxlength="2048" value="${escapeHtml(posterUrl)}" placeholder="https://images.example/poster.jpg"></div><div class="field"><label for="video-poster-file">Poster file</label><input id="video-poster-file" name="poster-file" type="file" accept=".jpg,.jpeg,.png,.webp,.gif"></div></div>${posterPreview}</section>
+    <button class="generate-button settings-save" type="submit"><span>${edit ? 'Update video' : 'Save video'}</span><span aria-hidden="true">↗</span></button>
+  </form>
+  ${posterRemove}
+  ${generatedLinks}
 </main>`)
 }
 
@@ -940,13 +1056,13 @@ function renderTimestamp(value: number, fallback: string): string {
   return `<time datetime="${iso}">${iso.slice(0, 16).replace('T', ' ')} UTC</time>`
 }
 
-function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'subtitles', isAdmin = true): string {
+function adminHeader(adminBase: string, current: 'dashboard' | 'users' | 'sessions' | 'settings' | 'videos' | 'subtitles', isAdmin = true): string {
   return `<header class="admin-bar">
   <a class="wordmark" href="${escapeHtml(adminBase)}/dashboard/" aria-label="GPlayer dashboard">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
     <span>G<span>PLAYER</span><small>NODE</small></span>
   </a>
-  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
+  <nav class="admin-nav" aria-label="Administration"><a${current === 'dashboard' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/dashboard/">Dashboard</a><a${current === 'videos' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/list/">Videos</a><a${current === 'subtitles' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/videos/subtitles/">Subtitles</a>${isAdmin ? `<a${current === 'users' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/">Users</a><a${current === 'sessions' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/users/sessions/">Sessions</a><a${current === 'settings' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">Settings</a>` : ''}</nav>
   <form action="${escapeHtml(adminBase)}/logout/" method="post"><button class="admin-logout" type="submit">Sign out</button></form>
 </header>`
 }
@@ -1023,6 +1139,25 @@ function userStatusLabel(status: number): string {
 
 function selectOption(value: number, label: string, selected: number): string {
   return `<option value="${value}"${selected === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
+}
+
+function selectStringOption(value: string, label: string, selected: string): string {
+  return `<option value="${escapeHtml(value)}"${selected === value ? ' selected' : ''}>${escapeHtml(label)}</option>`
+}
+
+function videoStatusLabel(status: number): string {
+  return ['Active', 'Failed', 'Checking'][status] ?? 'Unknown'
+}
+
+function videoAlternativeRow(url: string, index: number | string): string {
+  const suffix = String(index)
+  const position = typeof index === 'number' ? ` ${index + 1}` : ''
+  return `<div class="video-repeat-row" data-video-alt-row><div class="field"><label for="alt-link-${suffix}" data-video-alt-label>Alternative URL${position}</label><input id="alt-link-${suffix}" name="altLinks[]" type="url" maxlength="2048" value="${escapeHtml(url)}" placeholder="https://video-host.example/watch/..." data-video-alt-input></div><button type="button" data-remove-video-alternative aria-label="Remove alternative URL${position}">Remove</button></div>`
+}
+
+function videoSubtitleRow(url: string, language: string, index: number, fresh = false): string {
+  const prefix = fresh ? 'New subtitle' : 'Subtitle'
+  return `<div class="video-repeat-row video-subtitle-row"><div class="field"><label for="video-sub-url-${index}">${prefix} URL</label><input id="video-sub-url-${index}" name="sub-url[]" type="url" maxlength="2048" value="${escapeHtml(url)}" placeholder="https://captions.example/movie.en.vtt"></div><div class="field"><label for="video-sub-lang-${index}">Language</label><input id="video-sub-lang-${index}" name="lang-url[]" type="text" maxlength="50" value="${escapeHtml(language)}" placeholder="English"></div></div>`
 }
 
 function escapeHtml(value: string): string {

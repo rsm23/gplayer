@@ -11,6 +11,8 @@ import { MySqlSettingsAdminStore } from '../settings/mysql-settings-admin-store.
 import { SettingsAdminService, type SettingsAdminStore } from '../settings/settings-admin-service.js'
 import { MySqlSubtitleAdminStore } from '../subtitles/mysql-subtitle-admin-store.js'
 import type { SubtitleAdminStore } from '../subtitles/subtitle-admin-service.js'
+import { MySqlVideoAdminStore } from '../videos/mysql-video-admin-store.js'
+import type { VideoAdminStore } from '../videos/video-admin-service.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -18,6 +20,7 @@ export type AuthRuntime = Readonly<{
   users: UserAdminService
   settings: SettingsAdminService
   subtitleStore: SubtitleAdminStore
+  videoStore: VideoAdminStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -27,6 +30,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let userStore: MySqlUserAdminStore | undefined
   let settingsStore: MySqlSettingsAdminStore | undefined
   let subtitleStore: MySqlSubtitleAdminStore | undefined
+  let videoStore: MySqlVideoAdminStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -51,6 +55,10 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentSubtitleStore = (): MySqlSubtitleAdminStore => {
     subtitleStore ??= new MySqlSubtitleAdminStore(currentDatabase())
     return subtitleStore
+  }
+  const currentVideoStore = (): MySqlVideoAdminStore => {
+    videoStore ??= new MySqlVideoAdminStore(currentDatabase())
+    return videoStore
   }
 
   const lazyStore: AuthStore = {
@@ -88,6 +96,23 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     listSubtitleHosts: async () => await currentSubtitleStore().listSubtitleHosts(),
     migrateSubtitleHost: async (oldHost, newHost, updated) => await currentSubtitleStore().migrateSubtitleHost(oldHost, newHost, updated)
   }
+  const lazyVideoStore: VideoAdminStore = {
+    listVideos: async (query, access) => await currentVideoStore().listVideos(query, access),
+    getVideo: async (id, access) => await currentVideoStore().getVideo(id, access),
+    getPublicVideo: async (idOrSlug) => await currentVideoStore().getPublicVideo(idOrSlug),
+    slugExists: async (slug, excludeId) => await currentVideoStore().slugExists(slug, excludeId),
+    createVideo: async (value) => await currentVideoStore().createVideo(value),
+    updateVideo: async (id, access, value) => await currentVideoStore().updateVideo(id, access, value),
+    deleteVideo: async (id, access) => await currentVideoStore().deleteVideo(id, access),
+    renameVideo: async (id, access, title, updated) => await currentVideoStore().renameVideo(id, access, title, updated),
+    renameVideos: async (ids, access, transform, updated) => await currentVideoStore().renameVideos(ids, access, transform, updated),
+    updateVideoStatus: async (id, access, status) => await currentVideoStore().updateVideoStatus(id, access, status),
+    updateVideoDmca: async (id, takedown, updated) => await currentVideoStore().updateVideoDmca(id, takedown, updated),
+    updateVideoPoster: async (id, access, poster, updated) => await currentVideoStore().updateVideoPoster(id, access, poster, updated),
+    deleteVideoSubtitle: async (id, access) => await currentVideoStore().deleteVideoSubtitle(id, access),
+    updateVideoSubtitle: async (id, access, link, language, updated) => await currentVideoStore().updateVideoSubtitle(id, access, link, language, updated),
+    deleteVideosByHosts: async (hosts) => await currentVideoStore().deleteVideosByHosts(hosts)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -98,6 +123,7 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     sessions: new SessionAdminService(lazySessionStore),
     users: new UserAdminService(lazyUserStore),
     settings: new SettingsAdminService(lazySettingsStore),
-    subtitleStore: lazySubtitleStore
+    subtitleStore: lazySubtitleStore,
+    videoStore: lazyVideoStore
   })
 }

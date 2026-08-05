@@ -35,26 +35,32 @@ export function createSourceApiRuntime(
   return {
     supportedHosts,
     resolve: async (query, context) => {
-      const host = query.host ?? ''
-      const id = query.id ?? ''
-      if (!supportedHosts.has(host) || id.length === 0) return emptyMediaResult()
+      const candidates = [
+        { host: query.host ?? '', id: query.id ?? '' },
+        ...(query.alternatives ?? [])
+      ].filter((candidate) => supportedHosts.has(candidate.host) && candidate.id.length > 0)
+      if (candidates.length === 0) return emptyMediaResult()
 
       database ??= new Database(config.database)
       cache ??= new MySqlSourceCacheRepository(database)
-      return await new SourceResolver({
-        cache,
-        extractors,
-        clientIp: context.clientIp,
-        defaultUserAgent: DEFAULT_USER_AGENT,
-        defaultLanguage: DEFAULT_LANGUAGE,
-        requestUserAgent: context.userAgent,
-        requestLanguage: context.language,
-        directHosts: new Set(['direct']),
-        downloadableHosts: supportedHosts
-      })
-        .setQuery({ host, id, ...(query.email === undefined ? {} : { email: query.email }) })
-        .setDownload(context.downloadable)
-        .getResult()
+      for (const candidate of candidates) {
+        const result = await new SourceResolver({
+          cache,
+          extractors,
+          clientIp: context.clientIp,
+          defaultUserAgent: DEFAULT_USER_AGENT,
+          defaultLanguage: DEFAULT_LANGUAGE,
+          requestUserAgent: context.userAgent,
+          requestLanguage: context.language,
+          directHosts: new Set(['direct']),
+          downloadableHosts: supportedHosts
+        })
+          .setQuery({ host: candidate.host, id: candidate.id, ...(query.email === undefined ? {} : { email: query.email }) })
+          .setDownload(context.downloadable)
+          .getResult()
+        if (result.sources.length > 0) return result
+      }
+      return emptyMediaResult()
     }
   }
 }

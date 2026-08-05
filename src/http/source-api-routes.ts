@@ -39,6 +39,7 @@ export type SourceApiResolver = (
 
 export type SourceApiRouteOptions = Readonly<{
   resolve: SourceApiResolver
+  resolveSavedVideo?: (idOrSlug: string) => Promise<PlayerMediaQuery | null>
   supportedHosts?: ReadonlySet<string>
   loadAdsSettings?: AdsSettingsLoader
   loadPlayerSettings?: PlayerSettingsLoader
@@ -69,16 +70,18 @@ export async function registerSourceApiRoutes(
     const parsed = queryToken.length === 0
       ? null
       : parsePlayerQuery(queryToken, security, { secureSalt: config.secureSalt }).media
+    const resolved = await resolveSavedMedia(parsed, options.resolveSavedVideo)
     const [ads, player, misc, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
-    if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(parsed, misc.disable_host)) return plaintextFailure(reply)
+    if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(resolved, misc.disable_host)) return plaintextFailure(reply)
+    const configuredMedia = withoutDisabledAlternatives(resolved, misc.disable_host)
     const output = isDownloadConfigRequest(request)
-      ? createDownloadConfiguration(config, parsed, ads)
-      : createEmbedConfiguration(config, parsed, request.headers['user-agent'] ?? '', ads, player)
+      ? createDownloadConfiguration(config, configuredMedia, ads)
+      : createEmbedConfiguration(config, configuredMedia, request.headers['user-agent'] ?? '', ads, player)
 
     return reply
       .type('text/plain; charset=utf-8')
@@ -94,11 +97,13 @@ export async function registerSourceApiRoutes(
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
-    if (networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(envelope.media, misc.disable_host)) return plaintextFailure(reply)
+    const resolvedMedia = await resolveSavedMedia(envelope.media, options.resolveSavedVideo)
+    if (resolvedMedia === null || networkAccessRejected(request, misc, countryCode) || mediaHostDisabled(resolvedMedia, misc.disable_host)) return plaintextFailure(reply)
+    const playableMedia = withoutDisabledAlternatives(resolvedMedia, misc.disable_host)
 
     let result: MediaResult
     try {
-      result = await options.resolve(envelope.media, {
+      result = await options.resolve(playableMedia, {
         clientIp: request.ip,
         userAgent: request.headers['user-agent'] ?? '',
         language: request.headers['accept-language'] ?? '',
@@ -109,7 +114,7 @@ export async function registerSourceApiRoutes(
     }
     if (result.sources.length === 0) return plaintextFailure(reply)
     const policy = accessPolicyFromMisc(misc)
-    const resolvedTitle = result.title.length > 0 ? result.title : titleFromMedia(envelope.media)
+    const resolvedTitle = result.title.length > 0 ? result.title : titleFromMedia(playableMedia)
     if (policy.isTitleBlacklisted(resolvedTitle)) return plaintextFailure(reply)
     result = Object.freeze({ ...result, sources: filterSourcesByResolution(result.sources, misc.disable_resolution) })
 
@@ -118,7 +123,7 @@ export async function registerSourceApiRoutes(
       config,
       security,
       envelope.queryToken,
-      envelope.media,
+      playableMedia,
       result,
       player
     )
@@ -132,6 +137,20 @@ export async function registerSourceApiRoutes(
   app.get('/api-config/*', apiConfig)
   app.route({ method: ['GET', 'POST'], url: '/api', handler: api })
   app.route({ method: ['GET', 'POST'], url: '/api/', handler: api })
+}
+
+async function resolveSavedMedia(
+  media: PlayerMediaQuery | null,
+  resolve: SourceApiRouteOptions['resolveSavedVideo']
+): Promise<PlayerMediaQuery | null> {
+  if (media === null) return null
+  if (media.source !== 'db') return media
+  if (resolve === undefined || media.id === undefined || media.id === '') return null
+  try {
+    return await resolve(media.id)
+  } catch {
+    return null
+  }
 }
 
 async function countryCodeForRequest(request: FastifyRequest, lookup: CountryCodeLookup | undefined): Promise<string> {
@@ -160,24 +179,61 @@ function mediaHostDisabled(media: PlayerMediaQuery | null, disabledHosts: readon
   return media?.host !== undefined && disabledHosts.includes(media.host)
 }
 
+function withoutDisabledAlternatives(media: PlayerMediaQuery, disabledHosts: readonly string[]): PlayerMediaQuery
+function withoutDisabledAlternatives(media: null, disabledHosts: readonly string[]): null
+function withoutDisabledAlternatives(media: PlayerMediaQuery | null, disabledHosts: readonly string[]): PlayerMediaQuery | null
+function withoutDisabledAlternatives(media: PlayerMediaQuery | null, disabledHosts: readonly string[]): PlayerMediaQuery | null {
+  if (media === null || disabledHosts.length === 0) return media
+  const { ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
+  const alternatives = (media.alternatives ?? []).filter((item) => !disabledHosts.includes(item.host))
+  const selected = media.ahost !== undefined && media.aid !== undefined && !disabledHosts.includes(media.ahost)
+    ? { host: media.ahost, id: media.aid }
+    : alternatives[0]
+  return Object.freeze({
+    ...shared,
+    ...(selected === undefined ? {} : { ahost: selected.host, aid: selected.id }),
+    ...(alternatives.length === 0 ? {} : { alternatives: Object.freeze(alternatives) })
+  })
+}
+
 function parseApiRequest(
   request: FastifyRequest,
   security: Security,
   config: AppConfig
 ): ApiRequestEnvelope | null {
-  const password = passwordFromRequest(request, security)
   const body = typeof request.body === 'string' ? request.body.trim() : ''
-  if (password === null || body.length === 0 || body.length > MAX_API_TOKEN_LENGTH) return null
+  const envelope = body || legacyEnvelopeFromUrl(request.url)
+  if (envelope.length === 0 || envelope.length > MAX_API_TOKEN_LENGTH) return null
 
-  const separator = body.indexOf(SOURCE_TOKEN_SEPARATOR)
+  const separator = envelope.indexOf(SOURCE_TOKEN_SEPARATOR)
   if (separator < 0) return null
-  const queryToken = body.slice(0, separator)
-  const apiSaltToken = body.slice(separator + SOURCE_TOKEN_SEPARATOR.length)
+  const queryToken = envelope.slice(0, separator)
+  const apiSaltToken = envelope.slice(separator + SOURCE_TOKEN_SEPARATOR.length)
   if (!security.validateApiSalt(apiSaltToken)) return null
+
+  const password = passwordFromRequest(request, security) ?? legacyPasswordFromQueryToken(queryToken, security)
+  if (password === null) return null
 
   const media = parsePlayerQuery(queryToken, security, { secureSalt: config.secureSalt }).media
   if (media === null) return null
   return { queryToken, password, media }
+}
+
+function legacyEnvelopeFromUrl(requestUrl: string): string {
+  const raw = requestUrl.split('?', 2)[1]?.split('&', 1)[0]?.split('=', 1)[0] ?? ''
+  try {
+    return decodeURIComponent(raw.replaceAll('+', ' ')).trim()
+  } catch {
+    return ''
+  }
+}
+
+function legacyPasswordFromQueryToken(queryToken: string, security: Security): string | null {
+  const query = security.decryptURLStrict(queryToken)
+  if (query === null || query === '') return null
+  const token = new URLSearchParams(query).get('token') ?? ''
+  const password = security.decryptURLStrict(token)
+  return password === null || password.length === 0 || password.length > 1_024 ? null : password
 }
 
 function passwordFromRequest(request: FastifyRequest, security: Security): string | null {
@@ -374,7 +430,11 @@ function streamingRoute(source: MediaSource, target: URL): StreamingRoute {
 
 function mediaHosts(media: PlayerMediaQuery | null): readonly string[] {
   if (media === null) return []
-  return [...new Set([media.host, media.ahost].filter((host): host is string => host !== undefined && host.length > 0))]
+  return [...new Set([
+    media.host,
+    media.ahost,
+    ...(media.alternatives ?? []).map((item) => item.host)
+  ].filter((host): host is string => host !== undefined && host.length > 0))]
 }
 
 function absolutePlayerUrl(config: AppConfig, slug: string, token: string): string {
@@ -382,6 +442,7 @@ function absolutePlayerUrl(config: AppConfig, slug: string, token: string): stri
 }
 
 function titleFromMedia(media: PlayerMediaQuery): string {
+  if (media.title?.trim()) return media.title.trim()
   const value = media.id ?? ''
   try {
     const target = new URL(value)

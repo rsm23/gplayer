@@ -40,6 +40,10 @@ export type PlayerMediaQuery = Readonly<{
   email?: string
   download?: string
   onlylink?: string
+  /** Runtime-only metadata hydrated from a saved database video. */
+  title?: string
+  /** Runtime-only ordered fallbacks; these are never serialized into public tokens. */
+  alternatives?: readonly Readonly<{ host: string; id: string }>[]
 }>
 
 export type PlayerPublicOptions = Readonly<{
