@@ -8,6 +8,7 @@ const MAX_VIDEO_INFO_LENGTH = 5 * 1_024 * 1_024
 
 export type GdriveVideoInfo = Readonly<{
   sources: readonly Readonly<{ file: string, type: 'video/mp4', label: string }>[]
+  hls?: Readonly<{ file: string, type: 'hls', label: 'Original' }>
   image: string
   title: string
 }>
@@ -49,7 +50,23 @@ export class GdriveExtractor extends BaseExtractor {
       const response = await this.http.get({ url, headers: { referer: GDRIVE_REFERER } })
       if (response.status >= 200 && response.status < 300 && response.url.hostname === 'docs.google.com') {
         const info = parseGdriveVideoInfo(response.body)
-        if (info !== null && info.sources.length > 0) {
+        if (info !== null) {
+          if (this.hlsMode && !this.downloadable && info.hls !== undefined) {
+            this.sources.push(info.hls)
+            this.image = info.image
+            this.title = info.title
+            return
+          }
+          if (info.sources.length === 0) {
+            if (!this.downloadable && info.hls !== undefined) {
+              this.sources.push(info.hls)
+              this.image = info.image
+              this.title = info.title
+              return
+            }
+            await this.loadPrivate(settings.copy)
+            return
+          }
           this.sources.push(...info.sources)
           if (!this.downloadable) {
             const first = info.sources[0]
@@ -102,11 +119,31 @@ export function parseGdriveVideoInfo(input: string): GdriveVideoInfo | null {
     sources.push({ file, type: 'video/mp4', label: googleVideoLabel(itag) })
   }
 
+  const hlsFile = safeGoogleHlsUrl(
+    data.get('hlsvp') ?? data.get('hls_manifest_url') ?? data.get('hlsManifestUrl') ?? ''
+  )
   return Object.freeze({
     sources: Object.freeze(sources),
+    ...(hlsFile === '' ? {} : { hls: Object.freeze({ file: hlsFile, type: 'hls' as const, label: 'Original' as const }) }),
     image: safeGoogleImageUrl(data.get('iurl') ?? ''),
     title: (data.get('title') ?? '').trim()
   })
+}
+
+function safeGoogleHlsUrl(value: string): string {
+  if (value.length === 0 || value.length > 16_384) return ''
+  try {
+    const url = new URL(value.trim())
+    const hostname = url.hostname.toLowerCase()
+    const allowedHost = hostname === 'googlevideo.com' || hostname.endsWith('.googlevideo.com')
+    const manifestPath = url.pathname.toLowerCase()
+    return url.protocol === 'https:' && allowedHost && !url.username && !url.password &&
+      (manifestPath.endsWith('.m3u8') || manifestPath.includes('/manifest/hls'))
+      ? url.toString()
+      : ''
+  } catch {
+    return ''
+  }
 }
 
 function normalizeGdriveId(value: string): string {

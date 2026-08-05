@@ -65,6 +65,7 @@ export interface SourceCacheRepository {
 export interface HostingExtractor {
   setHost(host: string): this
   setDownloadable(downloadable: boolean): this
+  setHlsMode?(enabled: boolean): this
   setEmail(email: string): this
   getSources(): Promise<readonly MediaSource[]> | readonly MediaSource[]
   getTracks(): Promise<readonly MediaTrack[]> | readonly MediaTrack[]
@@ -126,6 +127,7 @@ export class SourceResolver {
 
   public async getResult(): Promise<MediaResult> {
     const criteria = this.criteria()
+    const googleHlsMode = this.googleHlsMode()
     const cached = await this.options.cache.find(criteria)
     if (cached !== null) {
       const parsed = parseCachedResult(cached.data, {
@@ -135,10 +137,9 @@ export class SourceResolver {
         language: cached.language
       })
       if (parsed !== null) {
-        const firstType = String(parsed.sources[0]?.type ?? '')
-        const invalidGoogleHls = this.options.googleHlsHosts?.has(this.#host) === true &&
-          firstType.length > 0 && !firstType.includes('mp4')
-        if (!invalidGoogleHls) return parsed
+        const cachedHls = isHlsSource(parsed.sources[0])
+        const staleGoogleMode = isGoogleMediaHost(this.#host) && (googleHlsMode || cachedHls)
+        if (!staleGoogleMode) return parsed
       }
       await this.options.cache.delete(criteria)
     }
@@ -184,6 +185,7 @@ export class SourceResolver {
       .setHost(capitalize(this.#host))
       .setDownloadable(this.#downloadable)
       .setEmail(this.#email)
+    extractor.setHlsMode?.(this.googleHlsMode())
 
     const sources = await extractor.getSources()
     if (sources.length === 0) return { result: empty, sources, serverIp: '' }
@@ -229,6 +231,10 @@ export class SourceResolver {
 
   private now(): number {
     return Math.floor((this.options.now?.() ?? Date.now()) / 1_000)
+  }
+
+  private googleHlsMode(): boolean {
+    return !this.#downloadable && this.options.googleHlsHosts?.has(this.#host) === true
   }
 }
 
@@ -292,4 +298,21 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
+}
+
+function isGoogleMediaHost(host: string): boolean {
+  return host === 'gdrive' || host === 'googlephotos'
+}
+
+function isHlsSource(source: MediaSource | undefined): boolean {
+  if (source === undefined) return false
+  const type = stringValue(source.type).toLowerCase()
+  if (type.includes('hls') || type.includes('mpegurl')) return true
+  const file = stringValue(source.file).toLowerCase()
+  if (file.includes('=mm,hls')) return true
+  try {
+    return new URL(file).pathname.endsWith('.m3u8')
+  } catch {
+    return false
+  }
 }

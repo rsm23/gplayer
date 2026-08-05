@@ -34,13 +34,20 @@ class MemorySourceCache implements SourceCacheRepository {
 class FakeExtractor implements HostingExtractor {
   public host = ''
   public downloadable = false
+  public hlsMode = false
   public email = ''
   public sourceCalls = 0
 
   public setHost(host: string): this { this.host = host; return this }
   public setDownloadable(downloadable: boolean): this { this.downloadable = downloadable; return this }
+  public setHlsMode(enabled: boolean): this { this.hlsMode = enabled; return this }
   public setEmail(email: string): this { this.email = email; return this }
-  public getSources() { this.sourceCalls += 1; return [{ file: 'https://cdn.example/video.mp4', type: 'mp4' }] }
+  public getSources() {
+    this.sourceCalls += 1
+    return this.hlsMode
+      ? [{ file: 'https://cdn.example/master.m3u8', type: 'hls' }]
+      : [{ file: 'https://cdn.example/video.mp4', type: 'mp4' }]
+  }
   public getTracks() { return [{ file: 'sub.vtt', kind: 'captions' }] }
   public getReferer() { return 'https://origin.example/' }
   public getTitle() { return 'Example' }
@@ -107,17 +114,68 @@ describe('Core source resolver parity', () => {
     }))
   })
 
-  it('deletes corrupt and non-mp4 Google HLS cache records', async () => {
+  it('refreshes a cached Google MP4 after HLS mode is enabled', async () => {
     const cache = new MemorySourceCache()
-    cache.record = record(result({ file: 'cached.m3u8', type: 'hls' }))
+    cache.record = record(result({ file: 'cached.mp4', type: 'video/mp4' }))
     const extractor = new FakeExtractor()
-    const resolver = createResolver(cache, extractor, { googleHlsHosts: new Set(['streamhg']) })
-      .setQuery({ host: 'streamhg', id: 'abc' })
+    const resolver = createResolver(cache, extractor, { googleHlsHosts: new Set(['googlephotos']) })
+      .setQuery({ host: 'googlephotos', id: 'abc' })
 
-    await resolver.getResult()
+    await expect(resolver.getResult()).resolves.toMatchObject({
+      sources: [{ file: 'https://cdn.example/master.m3u8', type: 'hls' }]
+    })
 
     expect(cache.deletes).toHaveLength(1)
     expect(extractor.sourceCalls).toBe(1)
+    expect(extractor.hlsMode).toBe(true)
+  })
+
+  it('refreshes expiring Google HLS manifests on every HLS-mode resolution', async () => {
+    const cache = new MemorySourceCache()
+    cache.record = record(result({ file: 'cached.m3u8', type: 'hls' }))
+    const extractor = new FakeExtractor()
+    const resolver = createResolver(cache, extractor, { googleHlsHosts: new Set(['gdrive']) })
+      .setQuery({ host: 'gdrive', id: 'abc' })
+
+    await expect(resolver.getResult()).resolves.toMatchObject({
+      sources: [{ file: 'https://cdn.example/master.m3u8', type: 'hls' }]
+    })
+
+    expect(cache.deletes).toHaveLength(1)
+    expect(extractor.hlsMode).toBe(true)
+  })
+
+  it('refreshes a cached Google HLS source after HLS mode is disabled', async () => {
+    const cache = new MemorySourceCache()
+    cache.record = record(result({ file: 'cached.m3u8', type: 'hls' }))
+    const extractor = new FakeExtractor()
+    const resolver = createResolver(cache, extractor).setQuery({ host: 'gdrive', id: 'abc' })
+
+    await expect(resolver.getResult()).resolves.toMatchObject({
+      sources: [{ file: 'https://cdn.example/video.mp4', type: 'mp4' }]
+    })
+
+    expect(cache.deletes).toHaveLength(1)
+    expect(extractor.hlsMode).toBe(false)
+  })
+
+  it('keeps Google downloads in MP4 mode even when playback HLS is enabled', async () => {
+    const cache = new MemorySourceCache()
+    cache.record = record(result({ file: 'cached.m3u8', type: 'hls' }))
+    const extractor = new FakeExtractor()
+    const resolver = createResolver(cache, extractor, {
+      googleHlsHosts: new Set(['gdrive']),
+      downloadableHosts: new Set(['gdrive'])
+    })
+      .setQuery({ host: 'gdrive', id: 'abc' })
+      .setDownload(true)
+
+    await expect(resolver.getResult()).resolves.toMatchObject({
+      sources: [{ file: 'https://cdn.example/video.mp4', type: 'mp4' }]
+    })
+
+    expect(cache.deletes).toHaveLength(1)
+    expect(extractor).toMatchObject({ downloadable: true, hlsMode: false })
   })
 
   it('recovers complete results written in the previous wrapper-shaped cache format', async () => {

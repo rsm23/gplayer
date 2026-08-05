@@ -4,6 +4,7 @@ import type { ProviderHttpClient } from './provider-http.js'
 const GOOGLE_PHOTOS_ORIGIN = 'https://photos.google.com/'
 const GOOGLE_PHOTOS_SHORT_ORIGIN = 'https://photos.app.goo.gl/'
 const GOOGLE_PHOTOS_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+const GOOGLE_PHOTOS_HLS_SUFFIX = '=mm,hls'
 
 const GOOGLE_PHOTOS_VARIANTS = Object.freeze([
   ['m18', '360p'],
@@ -41,6 +42,19 @@ export class GooglePhotosExtractor extends BaseExtractor {
       const page = parseGooglePhotosPage(response.body)
       if (page === null || !isGoogleMediaBase(page.mediaBase)) return
       this.image = page.image
+
+      if (this.hlsMode && !this.downloadable) {
+        const hls = `${page.mediaBase}${GOOGLE_PHOTOS_HLS_SUFFIX}`
+        try {
+          const manifest = await this.http.get({ url: hls, headers: { 'user-agent': GOOGLE_PHOTOS_USER_AGENT } })
+          if (manifest.status >= 200 && manifest.status < 300 && isGoogleHlsUrl(manifest.url) && isHlsManifest(manifest.body)) {
+            this.sources.push({ file: hls, type: 'hls', label: 'Original' })
+            return
+          }
+        } catch {
+          // HLS is a preference; unavailable manifests fall through to the MP4 rendition probes.
+        }
+      }
 
       for (const [format, label] of GOOGLE_PHOTOS_VARIANTS) {
         const file = `${page.mediaBase}=${format}`
@@ -110,6 +124,18 @@ function isGoogleMediaBase(value: string): boolean {
   } catch {
     return false
   }
+}
+
+function isGoogleHlsUrl(url: URL): boolean {
+  const hostname = url.hostname.toLowerCase()
+  return url.protocol === 'https:' && !url.username && !url.password && (
+    hostname === 'googleusercontent.com' || hostname.endsWith('.googleusercontent.com') ||
+    hostname === 'googlevideo.com' || hostname.endsWith('.googlevideo.com')
+  )
+}
+
+function isHlsManifest(value: string): boolean {
+  return value.trimStart().startsWith('#EXTM3U')
 }
 
 function decodeHtml(value: string): string {

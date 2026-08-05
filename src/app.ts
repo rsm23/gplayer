@@ -177,6 +177,7 @@ export async function buildApp(
     const settings = await settingsRuntime.general(config.baseUrl)
     return Object.freeze({ copy: settings.gdrive_copy === true, copyAll: settings.gdrive_copy_all === true })
   }
+  const loadGeneralSettings = async () => await settingsRuntime.general(config.baseUrl)
   const geoIpDetailsLookup = createGeoIpDetailsLookup(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb'),
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-ASN.mmdb')
@@ -226,6 +227,7 @@ export async function buildApp(
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
   const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config, {
     loadHostingSettings,
+    loadGeneralSettings,
     gdrive: { privateSources: driveMediaRuntime, loadSettings: loadDriveSettings }
   })
   const providerStreamContexts = sourceApiRuntime.providerContexts ?? new ProviderStreamContextRegistry()
@@ -276,7 +278,6 @@ export async function buildApp(
   )
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
   const loadPublicSettings = async () => await settingsRuntime.runtimePublicSettings()
-  const loadGeneralSettings = async () => await settingsRuntime.general(config.baseUrl)
   const shortlinkRuntime = dependencies.shortlinks ?? new ShortlinkService(
     async () => await settingsRuntime.runtimeShortlinkSettings()
   )

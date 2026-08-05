@@ -5,6 +5,7 @@ export abstract class BaseExtractor implements HostingExtractor {
   protected readonly tracks: MediaTrack[] = []
   protected host = ''
   protected downloadable = false
+  protected hlsMode = false
   protected email = ''
   protected referer = ''
   protected title = ''
@@ -17,6 +18,7 @@ export abstract class BaseExtractor implements HostingExtractor {
 
   public setHost(host: string): this { this.host = host; return this }
   public setDownloadable(downloadable: boolean): this { this.downloadable = downloadable; return this }
+  public setHlsMode(enabled: boolean): this { this.hlsMode = enabled; return this }
   public setEmail(email: string): this { this.email = email; return this }
   public getSources(): Promise<readonly MediaSource[]> | readonly MediaSource[] { return this.sources }
   public getTracks(): Promise<readonly MediaTrack[]> | readonly MediaTrack[] { return this.tracks }

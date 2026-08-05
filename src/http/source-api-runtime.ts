@@ -10,6 +10,8 @@ import type { SourceApiRouteOptions } from './source-api-routes.js'
 import type { DrivePrivateSourceResolver, DriveRuntimeSettingsLoader } from '../drive/drive-media-service.js'
 import { MySqlMediaDownloadStore } from '../background/mysql-media-download-store.js'
 import { playerMediaCandidates } from '../core/player-query.js'
+import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../settings/general-runtime.js'
+import type { GeneralSettings } from '../settings/settings-admin-service.js'
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
 const DEFAULT_LANGUAGE = 'en;q=0.9'
@@ -19,6 +21,7 @@ export function createSourceApiRuntime(
   config: AppConfig,
   options: Readonly<{
     loadHostingSettings?: HostingSettingsLoader
+    loadGeneralSettings?: GeneralSettingsLoader
     gdrive?: Readonly<{
       privateSources?: DrivePrivateSourceResolver
       loadSettings?: DriveRuntimeSettingsLoader
@@ -50,6 +53,9 @@ export function createSourceApiRuntime(
       const candidates = playerMediaCandidates(query).filter((candidate) => supportedHosts.has(candidate.host))
       if (candidates.length === 0) return emptyMediaResult()
 
+      const general = await loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
+      const googleHlsHosts = googleHlsHostsForRequest(general, context.downloadable)
+
       database ??= new Database(config.database)
       cache ??= new MySqlSourceCacheRepository(database)
       serverStore ??= new MySqlMediaDownloadStore(database)
@@ -68,7 +74,8 @@ export function createSourceApiRuntime(
           requestUserAgent: context.userAgent,
           requestLanguage: context.language,
           directHosts: new Set(['direct']),
-          downloadableHosts: supportedHosts
+          downloadableHosts: supportedHosts,
+          googleHlsHosts
         })
           .setQuery({ host: candidate.host, id: candidate.id, ...(query.email === undefined ? {} : { email: query.email }) })
           .setDownload(context.downloadable)
@@ -78,4 +85,15 @@ export function createSourceApiRuntime(
       return emptyMediaResult()
     }
   }
+}
+
+export function googleHlsHostsForRequest(
+  settings: Pick<GeneralSettings, 'gdrive_hls' | 'gphotos_hls'>,
+  downloadable: boolean
+): ReadonlySet<string> {
+  const hosts = new Set<string>()
+  if (downloadable) return hosts
+  if (settings.gdrive_hls === true) hosts.add('gdrive')
+  if (settings.gphotos_hls === true) hosts.add('googlephotos')
+  return hosts
 }

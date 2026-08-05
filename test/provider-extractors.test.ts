@@ -292,6 +292,36 @@ describe('recoverable provider adapters', () => {
     await expect(new GooglePhotosExtractor('../unsafe', new FixtureHttpClient([])).getSources()).resolves.toEqual([])
   })
 
+  it('prefers the Google Photos HLS manifest for playback and falls back to MP4 renditions', async () => {
+    const mediaBase = 'https://lh3.googleusercontent.com/pw/hls-media-token'
+    const html = `<meta property="og:video" content="${mediaBase}=m22">`
+    const hls = new FixtureHttpClient([
+      response(html, new Headers(), 'https://photos.google.com/share/share-id?key=share-key'),
+      response(
+        '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\n360/index.m3u8\n',
+        new Headers({ 'content-type': 'application/vnd.apple.mpegurl' }),
+        'https://manifest.googlevideo.com/api/manifest/hls_variant/file/index.m3u8'
+      )
+    ])
+    const preferred = new GooglePhotosExtractor('share-id?key=share-key', hls).setHlsMode(true)
+
+    await expect(preferred.getSources()).resolves.toEqual([{
+      file: `${mediaBase}=mm,hls`, type: 'hls', label: 'Original'
+    }])
+    expect(hls.methods).toEqual(['GET', 'GET'])
+
+    const fallback = new GooglePhotosExtractor('share-id?key=share-key', new FixtureHttpClient([
+      response(html, new Headers(), 'https://photos.google.com/share/share-id?key=share-key'),
+      response('manifest unavailable', new Headers(), `${mediaBase}=mm,hls`),
+      response('', new Headers(), 'https://edge.googlevideo.com/videoplayback?itag=18'),
+      response('', new Headers(), `${mediaBase}=m22`),
+      response('', new Headers(), `${mediaBase}=m37`)
+    ])).setHlsMode(true)
+    await expect(fallback.getSources()).resolves.toEqual([{
+      file: `${mediaBase}=m18`, type: 'video/mp4', label: '360p'
+    }])
+  })
+
   it('ports Blogger batchexecute sources, labels, title, and poster without browser execution', async () => {
     const bootstrapHtml = '<script>window.WIZ_global_data = {"FdrFJe":"-123456789","cfb2h":"boq_bloggeruiserver_20260805.01_p0"};</script>'
     expect(parseBloggerBootstrap(bootstrapHtml)).toEqual({
@@ -1796,6 +1826,38 @@ describe('recoverable provider adapters', () => {
       '1225BQ0G3QbioqbP7H5q5u8EqklWDKnDC',
       new FixtureHttpClient([response('status=ok', new Headers(), 'https://attacker.test/get_video_info')])
     ).getSources()).resolves.toEqual([])
+  })
+
+  it('prefers a safe Google Drive HLS manifest for playback but retains MP4 downloads', async () => {
+    const id = '1225BQ0G3QbioqbP7H5q5u8EqklWDKnDC'
+    const hlsFile = 'https://manifest.googlevideo.com/api/manifest/hls_variant/fixture/file/index.m3u8'
+    const body = new URLSearchParams({
+      status: 'ok',
+      title: 'Drive HLS fixture.mp4',
+      hlsvp: hlsFile,
+      fmt_stream_map: '18|https://rr1---sn.googlevideo.com/videoplayback?id=fixture&itag=18'
+    }).toString()
+    expect(parseGdriveVideoInfo(body)).toMatchObject({
+      hls: { file: hlsFile, type: 'hls', label: 'Original' },
+      sources: [{ file: 'https://rr1---sn.googlevideo.com/videoplayback?id=fixture&itag=18', type: 'video/mp4', label: '360p' }]
+    })
+
+    const playback = new GdriveExtractor(id, new FixtureHttpClient([
+      response(body, new Headers(), `https://docs.google.com/u/0/get_video_info?docid=${id}`)
+    ])).setHlsMode(true)
+    await expect(playback.getSources()).resolves.toEqual([{
+      file: hlsFile, type: 'hls', label: 'Original'
+    }])
+
+    const download = new GdriveExtractor(id, new FixtureHttpClient([
+      response(body, new Headers(), `https://docs.google.com/u/0/get_video_info?docid=${id}`)
+    ])).setHlsMode(true).setDownloadable(true)
+    await expect(download.getSources()).resolves.toEqual([{
+      file: 'https://rr1---sn.googlevideo.com/videoplayback?id=fixture&itag=18', type: 'video/mp4', label: '360p'
+    }])
+
+    const unsafe = new URLSearchParams({ status: 'ok', hlsvp: 'https://attacker.test/master.m3u8' }).toString()
+    expect(parseGdriveVideoInfo(unsafe)).toEqual({ sources: [], image: '', title: '' })
   })
 
   it('uses encrypted local Drive media for downloads and private-source fallback', async () => {
