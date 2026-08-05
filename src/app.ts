@@ -462,7 +462,15 @@ export async function buildApp(
   await registerStreamingRoutes(app, config, {
     customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target),
     cacheRoot,
-    loadFileCacheEnabled: async () => (await settingsRuntime.general(config.baseUrl)).enable_cache_file === true
+    loadCacheSettings: async () => {
+      const general = await settingsRuntime.general(config.baseUrl)
+      return Object.freeze({
+        enabled: general.enable_cache_file === true,
+        maxAgeSeconds: Number(general.cache_file_timeout),
+        mode: general.cache_mode as 'php' | 'apache' | 'litespeed' | 'nginx'
+      })
+    },
+    maximumBytesPerSecond: config.maxDownloadSpeed
   })
 
   await app.register(fastifyStatic, {
