@@ -962,6 +962,77 @@ describe('player HTTP routes', () => {
     expect(response.body).toContain('Direct-file extraction will be enabled')
   })
 
+  it('resolves downloadable MP4 renditions across ordered providers without exposing extractor credentials', async () => {
+    const resolve = vi.fn(async (query: { host?: string; id?: string }, context: { clientIp: string; userAgent: string; language: string; downloadable: boolean }) => query.host === 'streamhg'
+      ? {
+          sources: [{ file: 'https://primary.example/master.m3u8', type: 'hls', label: 'Auto' }],
+          tracks: [],
+          referer: 'https://primary.example/embed',
+          title: 'Primary stream',
+          email: '',
+          image: '',
+          cookies: [],
+          filmstrip: '',
+          clientip: context.clientIp,
+          upstream: { host: 'streamhg', id: query.id ?? '', userAgent: context.userAgent, language: context.language }
+        }
+      : {
+          sources: [
+            { file: 'https://download.example/video-720.mp4', type: 'video/mp4', label: '720p' },
+            { file: 'https://download.example/video-1080.mp4', type: 'video/mp4', label: '1080p' }
+          ],
+          tracks: [{ file: 'https://download.example/en.vtt', kind: 'captions', label: 'English' }],
+          referer: 'https://download.example/embed',
+          title: 'Resolved download title',
+          email: '',
+          image: '',
+          cookies: [{ name: 'provider_session', value: 'never-render-this' }],
+          filmstrip: '',
+          clientip: context.clientIp,
+          upstream: { host: 'direct', id: query.id ?? '', userAgent: context.userAgent, language: context.language }
+        })
+    app = await buildApp(loadConfig({
+      NODE_ENV: 'test',
+      BASE_URL: 'https://player.example/',
+      SECURE_SALT: secureSalt
+    }), {
+      sourceApi: { resolve, supportedHosts: new Set(['streamhg', 'direct']) }
+    })
+    const security = new Security(secureSalt)
+    const token = security.encryptURL('host=streamhg&id=primary-id&ahost=direct&aid=https%3A%2F%2Fbackup.example%2Ffallback.mp4&sub[]=https%3A%2F%2Fcaller.example%2Ffr.vtt&lang[]=French&poster=')
+    const response = await app.inject({
+      method: 'GET',
+      url: `/d/?${token}`,
+      headers: { 'user-agent': 'Download Browser', 'accept-language': 'fr-FR,fr;q=0.9' }
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(resolve).toHaveBeenCalledTimes(2)
+    expect(resolve.mock.calls.map(([query]) => query.host)).toEqual(['streamhg', 'direct'])
+    for (const call of resolve.mock.calls) {
+      expect(call[1]).toEqual({
+        clientIp: '127.0.0.1',
+        userAgent: 'Download Browser',
+        language: 'fr-FR,fr;q=0.9',
+        downloadable: true
+      })
+    }
+    expect(response.body).toContain('Resolved download title')
+    expect(response.body).toContain('Download 720p Video')
+    expect(response.body).toContain('Download 1080p Video')
+    expect(response.body).toContain('Download English Subtitle')
+    expect(response.body).toContain('Download French Subtitle')
+    expect(response.body.match(/<small>Subtitle file<\/small>/g)).toHaveLength(2)
+    expect(response.body.match(/href="https:\/\/player\.example\/stream-vid\//g)).toHaveLength(2)
+    expect(response.body.match(/href="https:\/\/player\.example\/subtitle\//g)).toHaveLength(2)
+    expect(response.body).toContain('data-download-servers')
+    expect(response.body).toContain('<span aria-current="page">Direct URL</span>')
+    expect(response.body).not.toContain('Open source page')
+    expect(response.body).not.toContain('Direct-file extraction will be enabled')
+    expect(response.body).not.toContain('provider_session')
+    expect(response.body).not.toContain('never-render-this')
+  })
+
   it('rejects malformed download tokens without reflecting them', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const response = await app.inject({ method: 'GET', url: '/d/?malformed-private-value' })

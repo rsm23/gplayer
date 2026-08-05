@@ -422,6 +422,8 @@ export function createSourceResponse(
   const posterSource = playerSettings.force_default_poster && configuredPoster.length > 0
     ? configuredPoster
     : media.poster || result.image || configuredPoster
+  const providerTrackFiles = new Set(result.tracks.flatMap((track) => typeof track.file === 'string' ? [track.file] : []))
+  const queryTracks = mediaSubtitleTracks(media).filter((track) => !providerTrackFiles.has(String(track.file ?? '')))
   const contextToken = providerContexts?.register({
     host: upstream.host,
     targets: [
@@ -463,8 +465,20 @@ export function createSourceResponse(
     poster,
     filmstrip: playerSettings.disable_filmstrip ? '' : proxyFilmstrip(result.filmstrip, security, deliveryBaseUrl, contextToken),
     sources: result.sources.flatMap((source) => proxySource(source, security, identity, config.baseUrl, deliveryBaseUrl)),
-    tracks: result.tracks.flatMap((track) => proxyTrack(track, security, deliveryBaseUrl, contextToken))
+    tracks: [
+      ...result.tracks.flatMap((track) => proxyTrack(track, security, deliveryBaseUrl, contextToken)),
+      ...queryTracks.flatMap((track) => proxyTrack(track, security, deliveryBaseUrl))
+    ]
   }
+}
+
+function mediaSubtitleTracks(media: PlayerMediaQuery): readonly MediaTrack[] {
+  const subtitles = [...(media.sub ?? []), ...(media.subs === undefined ? [] : [media.subs])]
+  return Object.freeze(subtitles.map((file, index) => Object.freeze({
+    file,
+    kind: 'captions',
+    label: media.lang?.[index]?.trim() || `Subtitle ${index + 1}`
+  })))
 }
 
 function sourceTargets(source: MediaSource): URL[] {

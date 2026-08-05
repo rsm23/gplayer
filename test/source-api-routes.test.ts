@@ -390,6 +390,30 @@ describe('legacy player source API routes', () => {
     expect(callerPoster).not.toContain('poster-secret')
   })
 
+  it('merges caller subtitles without attaching the extractor credential context to their origins', async () => {
+    const request = authenticatedRequest({
+      host: 'direct',
+      id: 'https://cdn.example.test/master.m3u8',
+      sub: ['https://caller.example.test/fr.vtt'],
+      lang: ['French']
+    })
+    resolve.mockResolvedValueOnce({ ...mediaResult(), cookies: ['session=subtitle-secret'] })
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+    const tracks = decryptJson(response.body, request.password).tracks as Array<{ file: string; label: string }>
+
+    expect(tracks).toHaveLength(2)
+    expect(tracks[0]).toMatchObject({ label: 'English' })
+    expect(tracks[0]?.file).toMatch(/[?&]gsc=[A-Za-z0-9_-]{43}(?:&|$)/)
+    expect(tracks[1]).toMatchObject({ label: 'French' })
+    expect(tracks[1]?.file).not.toContain('gsc=')
+    expect(JSON.stringify(tracks)).not.toContain('subtitle-secret')
+  })
+
   it('captures successfully played public media under the configured account', async () => {
     await app.close()
     const capturePublicVideo = vi.fn(async () => ({ status: 'ok', message: 'saved', id: '55' }))

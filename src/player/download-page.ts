@@ -1,6 +1,7 @@
 import { Hosting } from '../core/hosting.js'
 import type { HostingData } from '../core/hosting-data.js'
 import type { PlayerMediaQuery } from '../core/player-query.js'
+import type { MediaSource, MediaTrack } from '../core/source-resolver.js'
 
 export type DownloadPageOptions = Readonly<{
   embedUrl: string
@@ -15,6 +16,16 @@ export type DownloadPageOptions = Readonly<{
   shortenedLinks?: ReadonlyMap<string, string>
   showSubtitleDownloads?: boolean
   showWatchButton?: boolean
+  resolvedPlayback?: Readonly<{
+    title: string
+    sources: readonly MediaSource[]
+    tracks: readonly MediaTrack[]
+  }>
+  servers?: readonly Readonly<{
+    label: string
+    url: string
+    active: boolean
+  }>[]
 }>
 
 type DownloadItem = Readonly<{
@@ -30,12 +41,20 @@ type SubtitleTarget = Readonly<{
 }>
 
 export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPageOptions): string {
-  const title = mediaTitle(media, options.customNames)
-  const primary = mediaDownloadItem(media, title, options)
-  const subtitles = options.showSubtitleDownloads === false ? [] : subtitleDownloadItems(media, options.shortenedLinks)
-  const availableItems = primary === null ? subtitles : [primary, ...subtitles]
-  const adapterPending = media.host !== 'direct'
+  const resolved = options.resolvedPlayback
+  const title = resolved?.title.trim() || mediaTitle(media, options.customNames)
+  const primary = resolved === undefined
+    ? [mediaDownloadItem(media, title, options)].filter((item): item is DownloadItem => item !== null)
+    : resolvedSourceItems(resolved.sources, title, options)
+  const subtitles = options.showSubtitleDownloads === false
+    ? []
+    : resolved === undefined
+      ? subtitleDownloadItems(media, options.shortenedLinks)
+      : resolvedTrackItems(resolved.tracks, options.shortenedLinks)
+  const availableItems = [...primary, ...subtitles]
+  const adapterPending = media.host !== 'direct' && resolved === undefined
   const actions = renderDownloadActions(options)
+  const servers = renderDownloadServers(options.servers ?? [])
 
   return `<!doctype html>
 <html lang="en">
@@ -56,6 +75,7 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
       <p class="intro">Choose the media or subtitle file you want to open.</p>
       ${renderAdFrame(options.bannerTopFrameUrl, 'Advertisement above download options', 'banner')}
       ${actions}
+      ${servers}
       ${availableItems.length === 0
         ? '<div class="notice notice-error"><strong>No downloadable source is available.</strong><span>The link is valid, but this source cannot be opened safely.</span></div>'
         : `<ul class="download-list">${availableItems.map(renderDownloadItem).join('')}</ul>`}
@@ -68,6 +88,45 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
   ${renderAdFrame(options.popupFrameUrl, 'Advertisement', 'popup')}
 </body>
 </html>`
+}
+
+function resolvedSourceItems(sources: readonly MediaSource[], title: string, options: DownloadPageOptions): DownloadItem[] {
+  const safeSources = sources.slice(0, 100).flatMap((source) => {
+    const file = typeof source.file === 'string' ? safeHttpUrl(source.file) : ''
+    if (file.length === 0) return []
+    const label = typeof source.label === 'string' ? source.label.trim().slice(0, 100) : ''
+    return [{ file, label }]
+  })
+  return safeSources.map((source) => ({
+    href: transformedDownloadHref(source.file, options.shortenedLinks),
+    label: safeSources.length === 1
+      ? configuredDownloadLabel(options.downloadLabel, title)
+      : `Download ${source.label || 'Original'} Video`,
+    detail: source.label || fileDetail(source.file, 'Direct media file'),
+    kind: 'media' as const
+  }))
+}
+
+function resolvedTrackItems(tracks: readonly MediaTrack[], shortenedLinks?: ReadonlyMap<string, string>): DownloadItem[] {
+  return tracks.slice(0, 100).flatMap((track, index) => {
+    const file = typeof track.file === 'string' ? safeHttpUrl(track.file) : ''
+    if (file.length === 0) return []
+    const label = typeof track.label === 'string' && track.label.trim() !== '' ? track.label.trim().slice(0, 100) : `Subtitle ${index + 1}`
+    return [{
+      href: transformedDownloadHref(file, shortenedLinks),
+      label: `Download ${label} Subtitle`,
+      detail: 'Subtitle file',
+      kind: 'subtitle' as const
+    }]
+  })
+}
+
+function renderDownloadServers(servers: readonly Readonly<{ label: string; url: string; active: boolean }>[]): string {
+  if (servers.length < 2) return ''
+  const links = servers.map((server) => server.active
+    ? `<li><span aria-current="page">${escapeHtml(server.label)}</span></li>`
+    : `<li><a href="${escapeHtmlAttribute(server.url)}">${escapeHtml(server.label)}</a></li>`).join('')
+  return `<nav class="download-servers" data-download-servers aria-label="Download servers"><span>Servers</span><ul>${links}</ul></nav>`
 }
 
 export function downloadPageLinkTargets(media: PlayerMediaQuery, hostingData?: HostingData, includeSubtitles = true): readonly string[] {

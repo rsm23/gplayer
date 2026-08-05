@@ -397,7 +397,7 @@ export async function registerPlayerRoutes(
       }),
       ...fallbackPlayerUrl(playableMedia, extracted?.result ?? null, player.slug_embed, security),
       ...(general.load_balancer_rand ? {} : {
-        servers: playerServerOptions(playableMedia, extracted?.result ?? null, player.slug_embed, security, hosting.customNames)
+        servers: mediaServerOptions(playableMedia, extracted?.result ?? null, player.slug_embed, security, hosting.customNames)
       })
     })
   }
@@ -406,10 +406,11 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.embed}/`, showEmbed)
 
   const showDownload = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player, publicSettings, misc, hosting, countryCode] = await Promise.all([
+    const [ads, player, publicSettings, general, misc, hosting, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
       loadRuntimePublicSettings(options.loadPublicSettings),
+      loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
       loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
@@ -433,11 +434,50 @@ export async function registerPlayerRoutes(
       reply.code(403).type('text/html; charset=utf-8')
       return renderDownloadError('You are not allowed to access this download.')
     }
+    const configuredMedia = withoutDisabledAlternatives(resolvedMedia, misc.disable_host)
+    const playableMedia = general.load_balancer_rand ? randomizedPlaybackMedia(configuredMedia) : configuredMedia
+    const requestContext: SourceApiRequestContext = Object.freeze({
+      clientIp: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+      language: request.headers['accept-language'] ?? '',
+      downloadable: true
+    })
+    const extracted = await resolveDownloadPlayback(playableMedia, requestContext, options.resolvePlayback)
+    if (extracted !== null && accessPolicyFromMisc(misc).isTitleBlacklisted(extracted.result.title || playerMediaTitle(playableMedia))) {
+      reply.code(403).type('text/html; charset=utf-8')
+      return renderDownloadError('You are not allowed to access this download.')
+    }
+    const deliveryBaseUrl = extracted === null
+      ? new URL(config.baseUrl)
+      : await selectedDeliveryBaseUrl(config, options.selectDeliveryBaseUrl, {
+          clientIp: request.ip,
+          host: extracted.result.upstream?.host ?? playableMedia.host ?? '',
+          leastConnections: general.select_active_connections === true
+        })
+    const sourceResponse = extracted === null
+      ? null
+      : createSourceResponse(
+          config,
+          security,
+          parsed.token,
+          playableMedia,
+          extracted.result,
+          player,
+          requestContext,
+          options.providerContexts,
+          deliveryBaseUrl
+        )
     const embedUrl = routePath(player.slug_embed, parsed.token)
-    const alternativeUrl = createAlternativeDownloadUrl(resolvedMedia, security, player.slug_download, misc.disable_host)
-    const shortenedLinks = await transformDownloadLinks(resolvedMedia, hosting.data, publicSettings.show_sub_download, options.shortenUrl)
+    const alternativeUrl = nextCandidateRoute(playableMedia, extracted?.result ?? null, player.slug_download, security)
+    const shortenedLinks = await transformDownloadLinks(
+      playableMedia,
+      hosting.data,
+      publicSettings.show_sub_download,
+      options.shortenUrl,
+      sourceResponse === null ? undefined : sourceDownloadTargets(sourceResponse, publicSettings.show_sub_download)
+    )
     reply.type('text/html; charset=utf-8')
-    return renderDownloadPage(resolvedMedia, {
+    return renderDownloadPage(playableMedia, {
       embedUrl,
       ...(alternativeUrl === undefined ? {} : { alternativeUrl }),
       downloadLabel: player.text_download,
@@ -447,6 +487,16 @@ export async function registerPlayerRoutes(
       shortenedLinks,
       showSubtitleDownloads: publicSettings.show_sub_download,
       showWatchButton: publicSettings.show_watch_button,
+      ...(sourceResponse === null ? {} : {
+        resolvedPlayback: {
+          title: sourceResponse.title,
+          sources: sourceResponse.sources,
+          tracks: sourceResponse.tracks
+        }
+      }),
+      ...(general.load_balancer_rand ? {} : {
+        servers: mediaServerOptions(playableMedia, extracted?.result ?? null, player.slug_download, security, hosting.customNames)
+      }),
       ...downloadAdFrames(ads)
     })
   }
@@ -521,10 +571,11 @@ async function transformDownloadLinks(
   media: PlayerMediaQuery,
   hostingData: HostingData | undefined,
   includeSubtitles: boolean,
-  shortenUrl: PlayerRouteOptions['shortenUrl']
+  shortenUrl: PlayerRouteOptions['shortenUrl'],
+  overrideTargets?: readonly string[]
 ): Promise<ReadonlyMap<string, string>> {
   if (shortenUrl === undefined) return new Map()
-  const targets = downloadPageLinkTargets(media, hostingData, includeSubtitles).slice(0, MAX_SHORTLINK_TARGETS)
+  const targets = [...new Set(overrideTargets ?? downloadPageLinkTargets(media, hostingData, includeSubtitles))].slice(0, MAX_SHORTLINK_TARGETS)
   const transformed = await Promise.all(targets.map(async (target) => {
     try {
       return [target, await shortenUrl(target)] as const
@@ -779,6 +830,38 @@ async function resolveEmbedPlayback(
   }
 }
 
+async function resolveDownloadPlayback(
+  media: PlayerMediaQuery,
+  context: SourceApiRequestContext,
+  resolve: SourceApiResolver | undefined
+): Promise<Readonly<{ result: MediaResult }> | null> {
+  if (resolve === undefined) return null
+  const { host: _host, id: _id, ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
+  for (const candidate of playerMediaCandidates(media)) {
+    try {
+      const result = await resolve(Object.freeze({ ...shared, host: candidate.host, id: candidate.id }), context)
+      const sources = result.sources.filter(isDownloadableMediaSource)
+      if (sources.length === 0) continue
+      return Object.freeze({ result: Object.freeze({ ...result, sources: Object.freeze(sources) }) })
+    } catch {
+      // The supplied download client advances to the next configured server on transport failure.
+    }
+  }
+  return null
+}
+
+function isDownloadableMediaSource(source: Readonly<Record<string, unknown>>): boolean {
+  const file = typeof source.file === 'string' ? source.file : ''
+  const type = typeof source.type === 'string' ? source.type.toLowerCase() : ''
+  if (file.length === 0 || type.includes('hls') || type.includes('dash') || type.includes('mpd')) return false
+  if (type.includes('video')) return true
+  try {
+    return ['.mp4', '.m4v', '.mkv', '.webm'].some((extension) => new URL(file).pathname.toLowerCase().endsWith(extension))
+  } catch {
+    return false
+  }
+}
+
 function withoutDisabledAlternatives(media: PlayerMediaQuery, disabledHosts: readonly string[]): PlayerMediaQuery {
   if (disabledHosts.length === 0) return media
   const alternatives = (media.alternatives ?? []).filter((candidate) => !disabledHosts.includes(candidate.host))
@@ -797,14 +880,24 @@ function fallbackPlayerUrl(
   embedSlug: string,
   security: Security
 ): Readonly<{ fallbackUrl?: string }> {
+  const fallbackUrl = nextCandidateRoute(media, result, embedSlug, security)
+  return fallbackUrl === undefined ? Object.freeze({}) : Object.freeze({ fallbackUrl })
+}
+
+function nextCandidateRoute(
+  media: PlayerMediaQuery,
+  result: MediaResult | null,
+  slug: string,
+  security: Security
+): string | undefined {
   const candidates = playerMediaCandidates(media)
-  if (candidates.length < 2) return Object.freeze({})
+  if (candidates.length < 2) return undefined
   const resolvedHost = result?.upstream?.host ?? media.host ?? ''
   const resolvedId = result?.upstream?.id ?? media.id ?? ''
   const resolvedIndex = candidates.findIndex((candidate) => candidate.host === resolvedHost && candidate.id === resolvedId)
   const nextIndex = resolvedIndex < 0 ? 1 : resolvedIndex + 1
   const next = candidates[nextIndex]
-  if (next === undefined) return Object.freeze({})
+  if (next === undefined) return undefined
   const after = candidates[nextIndex + 1]
   const { host: _host, id: _id, ahost: _ahost, aid: _aid, alternatives: _alternatives, ...shared } = media
   const fallbackMedia: PlayerMediaQuery = Object.freeze({
@@ -813,7 +906,16 @@ function fallbackPlayerUrl(
     id: next.id,
     ...(after === undefined ? {} : { ahost: after.host, aid: after.id })
   })
-  return Object.freeze({ fallbackUrl: routePath(embedSlug, security.encryptURL(buildPlayerQuery(fallbackMedia))) })
+  return routePath(slug, security.encryptURL(buildPlayerQuery(fallbackMedia)))
+}
+
+function sourceDownloadTargets(response: PublicSourceResponse, includeSubtitles: boolean): readonly string[] {
+  return Object.freeze([
+    ...response.sources.flatMap((source) => typeof source.file === 'string' ? [source.file] : []),
+    ...(includeSubtitles
+      ? response.tracks.flatMap((track) => typeof track.file === 'string' ? [track.file] : [])
+      : [])
+  ])
 }
 
 function randomizedPlaybackMedia(media: PlayerMediaQuery): PlayerMediaQuery {
@@ -833,7 +935,7 @@ function randomizedPlaybackMedia(media: PlayerMediaQuery): PlayerMediaQuery {
   })
 }
 
-function playerServerOptions(
+function mediaServerOptions(
   media: PlayerMediaQuery,
   result: MediaResult | null,
   embedSlug: string,
@@ -870,25 +972,6 @@ function rawQueryFromUrl(url: string): string {
 
 function routePath(slug: string, query: string): string {
   return `/${slug.replace(/^\/+|\/+$/g, '')}/?${query}`
-}
-
-function createAlternativeDownloadUrl(
-  media: ReturnType<typeof parsePlayerQuery>['media'] & object,
-  security: Security,
-  downloadSlug: string,
-  disabledHosts: readonly string[] = []
-): string | undefined {
-  const alternative = media.ahost !== undefined && media.aid !== undefined && !disabledHosts.includes(media.ahost)
-    ? { host: media.ahost, id: media.aid }
-    : media.alternatives?.find((item) => !disabledHosts.includes(item.host))
-  if (alternative === undefined) return undefined
-  const { host: _host, id: _id, ahost: _ahost, aid: _aid, ...shared } = media
-  const query = {
-    host: alternative.host,
-    id: alternative.id,
-    ...shared
-  }
-  return routePath(downloadSlug, security.encryptURL(buildPlayerQuery(query)))
 }
 
 function applyDownloadHeaders(reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]): void {
