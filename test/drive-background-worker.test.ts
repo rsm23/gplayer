@@ -68,13 +68,43 @@ describe('Node-native Drive background queue', () => {
     const loadSettings = vi.fn(async () => ({ copy: true, copyAll: true }))
     const coordinator = new DriveBackgroundCoordinator({ runOnce }, loadSettings)
 
-    expect(coordinator.trigger()).toEqual({ running: true, started: true })
-    expect(coordinator.trigger()).toEqual({ running: true, started: false })
+    expect(coordinator.trigger()).toEqual({ running: true, started: true, jobs: { bg_gdrive: { running: true, started: true } } })
+    expect(coordinator.trigger()).toEqual({ running: true, started: false, jobs: { bg_gdrive: { running: true, started: false } } })
     await vi.waitFor(() => expect(runOnce).toHaveBeenCalledOnce())
     expect(runOnce).toHaveBeenCalledWith(true)
     release?.({ processed: 1, deleted: 1, retained: 0 })
     await expect(coordinator.waitForIdle()).resolves.toEqual({ processed: 1, deleted: 1, retained: 0 })
-    expect(coordinator.trigger()).toEqual({ running: true, started: true })
+    expect(coordinator.trigger()).toEqual({ running: true, started: true, jobs: { bg_gdrive: { running: true, started: true } } })
     await expect(coordinator.waitForIdle()).resolves.toEqual({ processed: 0, deleted: 0, retained: 0 })
+  })
+
+  it('starts and coalesces Drive and stats jobs independently', async () => {
+    const drive = { runOnce: vi.fn(async () => ({ processed: 0, deleted: 0, retained: 0 })) }
+    const stats = { runOnce: vi.fn(async () => ({ acquired: true, cleaned: 0, processed: 0, enriched: 0 })) }
+    const general = { runOnce: vi.fn(async () => ({ expiredSources: 0, normalizedSubtitles: 0, missingSubtitles: 0, temporaryEntries: 0, cacheCleared: false, lowSpace: false })) }
+    const coordinator = new DriveBackgroundCoordinator(drive, async () => ({ copy: false, copyAll: false }), { stats, general })
+    expect(coordinator.trigger()).toEqual({
+      running: true,
+      started: true,
+      jobs: {
+        bg_gdrive: { running: true, started: true },
+        bg_stats: { running: true, started: true },
+        bg_general: { running: true, started: true }
+      }
+    })
+    expect(coordinator.trigger()).toEqual({
+      running: true,
+      started: false,
+      jobs: {
+        bg_gdrive: { running: true, started: false },
+        bg_stats: { running: true, started: false },
+        bg_general: { running: true, started: false }
+      }
+    })
+    await vi.waitFor(() => {
+      expect(drive.runOnce).toHaveBeenCalledOnce()
+      expect(stats.runOnce).toHaveBeenCalledOnce()
+      expect(general.runOnce).toHaveBeenCalledOnce()
+    })
   })
 })

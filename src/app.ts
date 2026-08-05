@@ -47,6 +47,9 @@ import { DriveMediaService } from './drive/drive-media-service.js'
 import { DriveBackgroundCoordinator, DriveBackgroundWorker } from './drive/drive-background-worker.js'
 import { Security } from './security/security.js'
 import { RemoteProviderHttpClient } from './hosting/provider-http.js'
+import { StatsWorker } from './background/stats-worker.js'
+import { createGeoIpDetailsLookup } from './security/geoip-details.js'
+import { GeneralWorker } from './background/general-worker.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -70,6 +73,8 @@ export type AppDependencies = Readonly<{
   driveAdmin?: DriveAdminService
   driveMedia?: DriveMediaService
   driveBackground?: Pick<DriveBackgroundCoordinator, 'trigger'>
+  statsWorker?: StatsWorker
+  generalWorker?: GeneralWorker
   recaptchaVerifier?: Pick<RecaptchaVerifier, 'verify'>
   clearRuntimeCache?: () => boolean | Promise<boolean>
 }>
@@ -124,9 +129,28 @@ export async function buildApp(
     const settings = await settingsRuntime.general(config.baseUrl)
     return Object.freeze({ copy: settings.gdrive_copy === true, copyAll: settings.gdrive_copy_all === true })
   }
+  const statsWorkerRuntime = dependencies.statsWorker ?? new StatsWorker(
+    authRuntime.statsWorkerStore,
+    createGeoIpDetailsLookup(
+      path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb'),
+      path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-ASN.mmdb')
+    )
+  )
+  const generalWorkerRuntime = dependencies.generalWorker ?? new GeneralWorker(authRuntime.generalWorkerStore, {
+    baseUrl: config.baseUrl,
+    cacheRoot: path.resolve(currentDirectory, '../cache'),
+    temporaryRoot: path.resolve(currentDirectory, '../tmp'),
+    uploadsRoot: path.join(publicRoot, 'uploads'),
+    loadCacheMaxAge: async () => {
+      const settings = await settingsRuntime.general(config.baseUrl)
+      const configured = Number(settings.cache_file_timeout)
+      return Number.isSafeInteger(configured) && configured >= 0 ? configured : 10_800
+    }
+  })
   const driveBackgroundRuntime = dependencies.driveBackground ?? new DriveBackgroundCoordinator(
     new DriveBackgroundWorker(authRuntime.driveAdminStore, driveApi),
-    loadDriveSettings
+    loadDriveSettings,
+    { stats: statsWorkerRuntime, general: generalWorkerRuntime }
   )
   let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
   const hostingHosts = legacyHostingHosts()

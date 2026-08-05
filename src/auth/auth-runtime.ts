@@ -19,6 +19,10 @@ import { DriveAccountAdminService, type DriveAccountAdminStore } from '../drive/
 import { MySqlDriveAccountAdminStore } from '../drive/mysql-drive-account-admin-store.js'
 import { MySqlDriveAdminStore } from '../drive/mysql-drive-admin-store.js'
 import type { DriveAdminStore } from '../drive/drive-admin-service.js'
+import { MySqlStatsWorkerStore } from '../background/mysql-stats-worker-store.js'
+import type { StatsWorkerStore } from '../background/stats-worker.js'
+import { MySqlGeneralWorkerStore } from '../background/mysql-general-worker-store.js'
+import type { GeneralWorkerStore } from '../background/general-worker.js'
 
 export type AuthRuntime = Readonly<{
   auth: AuthService
@@ -30,6 +34,8 @@ export type AuthRuntime = Readonly<{
   driveStore: DriveStore
   driveAccounts: DriveAccountAdminService
   driveAdminStore: DriveAdminStore
+  statsWorkerStore: StatsWorkerStore
+  generalWorkerStore: GeneralWorkerStore
 }>
 
 export function createAuthRuntime(app: FastifyInstance, config: AppConfig): AuthRuntime {
@@ -43,6 +49,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   let driveStore: MySqlDriveStore | undefined
   let driveAccountStore: MySqlDriveAccountAdminStore | undefined
   let driveAdminStore: MySqlDriveAdminStore | undefined
+  let statsWorkerStore: MySqlStatsWorkerStore | undefined
+  let generalWorkerStore: MySqlGeneralWorkerStore | undefined
 
   const currentDatabase = (): Database => {
     database ??= new Database(config.database)
@@ -83,6 +91,14 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
   const currentDriveAdminStore = (): MySqlDriveAdminStore => {
     driveAdminStore ??= new MySqlDriveAdminStore(currentDatabase())
     return driveAdminStore
+  }
+  const currentStatsWorkerStore = (): MySqlStatsWorkerStore => {
+    statsWorkerStore ??= new MySqlStatsWorkerStore(currentDatabase())
+    return statsWorkerStore
+  }
+  const currentGeneralWorkerStore = (): MySqlGeneralWorkerStore => {
+    generalWorkerStore ??= new MySqlGeneralWorkerStore(currentDatabase())
+    return generalWorkerStore
   }
 
   const lazyStore: AuthStore = {
@@ -168,6 +184,19 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     duplicateExists: async (fingerprint) => await currentDriveAdminStore().duplicateExists(fingerprint),
     saveFingerprint: async (fingerprint) => await currentDriveAdminStore().saveFingerprint(fingerprint)
   }
+  const lazyStatsWorkerStore: StatsWorkerStore = {
+    acquire: async (now) => await currentStatsWorkerStore().acquire(now),
+    release: async () => await currentStatsWorkerStore().release(),
+    cleanupInvalid: async () => await currentStatsWorkerStore().cleanupInvalid(),
+    listMissingGeo: async (afterId, limit) => await currentStatsWorkerStore().listMissingGeo(afterId, limit),
+    saveGeo: async (ip, details) => await currentStatsWorkerStore().saveGeo(ip, details)
+  }
+  const lazyGeneralWorkerStore: GeneralWorkerStore = {
+    deleteExpiredSources: async (now) => await currentGeneralWorkerStore().deleteExpiredSources(now),
+    normalizeSubtitleLanguages: async () => await currentGeneralWorkerStore().normalizeSubtitleLanguages(),
+    listManagedSubtitles: async (host, afterId, limit) => await currentGeneralWorkerStore().listManagedSubtitles(host, afterId, limit),
+    deleteManagedSubtitle: async (id, host) => await currentGeneralWorkerStore().deleteManagedSubtitle(id, host)
+  }
 
   app.addHook('onClose', async () => {
     await database?.close()
@@ -182,6 +211,8 @@ export function createAuthRuntime(app: FastifyInstance, config: AppConfig): Auth
     videoStore: lazyVideoStore,
     driveStore: lazyDriveStore,
     driveAccounts: new DriveAccountAdminService(lazyDriveAccountStore),
-    driveAdminStore: lazyDriveAdminStore
+    driveAdminStore: lazyDriveAdminStore,
+    statsWorkerStore: lazyStatsWorkerStore,
+    generalWorkerStore: lazyGeneralWorkerStore
   })
 }

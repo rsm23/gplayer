@@ -1,5 +1,7 @@
 import type { DriveAdminStore, DriveApiClient } from './drive-admin-service.js'
 import type { DriveRuntimeSettingsLoader } from './drive-media-service.js'
+import type { StatsWorker } from '../background/stats-worker.js'
+import type { GeneralWorker } from '../background/general-worker.js'
 
 export type DriveBackgroundResult = Readonly<{
   processed: number
@@ -52,26 +54,51 @@ export class DriveBackgroundWorker {
   }
 }
 
-export type DriveBackgroundStatus = Readonly<{ running: boolean; started: boolean }>
+export type BackgroundJobStatus = Readonly<{ running: boolean; started: boolean }>
+export type DriveBackgroundStatus = BackgroundJobStatus & Readonly<{
+  jobs?: Readonly<Record<string, BackgroundJobStatus>>
+}>
 
 export class DriveBackgroundCoordinator {
-  private active: Promise<DriveBackgroundResult> | undefined
+  private readonly active = new Map<string, Promise<unknown>>()
 
   public constructor(
     private readonly worker: Pick<DriveBackgroundWorker, 'runOnce'>,
-    private readonly loadSettings: DriveRuntimeSettingsLoader
+    private readonly loadSettings: DriveRuntimeSettingsLoader,
+    private readonly workers: Readonly<{
+      stats?: Pick<StatsWorker, 'runOnce'>
+      general?: Pick<GeneralWorker, 'runOnce'>
+    }> = {}
   ) {}
 
   public trigger(): DriveBackgroundStatus {
-    if (this.active !== undefined) return Object.freeze({ running: true, started: false })
-    this.active = Promise.resolve()
-      .then(async () => await this.worker.runOnce((await this.loadSettings()).copyAll))
-      .catch(() => Object.freeze({ processed: 0, deleted: 0, retained: 0 }))
-      .finally(() => { this.active = undefined })
-    return Object.freeze({ running: true, started: true })
+    const jobs: Record<string, BackgroundJobStatus> = {
+      bg_gdrive: this.triggerJob('bg_gdrive', async () => await this.worker.runOnce((await this.loadSettings()).copyAll))
+    }
+    if (this.workers.stats !== undefined) jobs.bg_stats = this.triggerJob('bg_stats', async () => await this.workers.stats?.runOnce())
+    if (this.workers.general !== undefined) jobs.bg_general = this.triggerJob('bg_general', async () => await this.workers.general?.runOnce())
+    return Object.freeze({
+      running: true,
+      started: Object.values(jobs).some((job) => job.started),
+      jobs: Object.freeze(jobs)
+    })
   }
 
   public async waitForIdle(): Promise<DriveBackgroundResult | null> {
-    return await this.active ?? null
+    const active = this.active.get('bg_gdrive')
+    return active === undefined ? null : await active as DriveBackgroundResult | null
+  }
+
+  private triggerJob(name: string, run: () => Promise<unknown>): BackgroundJobStatus {
+    if (this.active.has(name)) return Object.freeze({ running: true, started: false })
+    let promise: Promise<unknown>
+    promise = Promise.resolve()
+      .then(run)
+      .catch(() => null)
+      .finally(() => {
+        if (this.active.get(name) === promise) this.active.delete(name)
+      })
+    this.active.set(name, promise)
+    return Object.freeze({ running: true, started: true })
   }
 }

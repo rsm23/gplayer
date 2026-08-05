@@ -55,10 +55,16 @@ export async function registerSystemRoutes(
   app.get('/ping', async (_request, reply) => {
     reply.header('cache-control', 'no-cache')
     const background = options.background?.trigger()
+    const jobs = background?.jobs
     return {
       running: true,
       pid: process.pid,
-      ...(background === undefined ? {} : { bg_gdrive: background.running ? process.pid : false, background_started: background.started })
+      ...(background === undefined ? {} : {
+        bg_gdrive: (jobs?.bg_gdrive?.running ?? background.running) ? process.pid : false,
+        ...(jobs?.bg_stats === undefined ? {} : { bg_stats: jobs.bg_stats.running ? process.pid : false }),
+        ...(jobs?.bg_general === undefined ? {} : { bg_general: jobs.bg_general.running ? process.pid : false }),
+        background_started: background.started
+      })
     }
   })
 
