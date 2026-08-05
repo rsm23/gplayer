@@ -540,7 +540,9 @@ describe('player HTTP routes', () => {
     const values = {
       enable_gsharer: 'true',
       recaptcha_site_key: 'site-key-123',
-      recaptcha_secret_key: 'secret-key-123'
+      recaptcha_secret_key: 'secret-key-123',
+      site_name: 'Drive Stream Lab',
+      site_slogan: 'Quota-aware delivery'
     }
     const captchaCalls: Array<readonly [string, string]> = []
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
@@ -564,6 +566,9 @@ describe('player HTTP routes', () => {
     expect(page.headers['content-security-policy']).toContain('https://www.google.com')
     expect(page.headers['content-security-policy']).toContain("connect-src 'self'")
     expect(page.body).toContain('Google Drive Bypass Engine')
+    expect(page.body).toContain('<title>Google Drive Bypass Engine | Drive Stream Lab</title>')
+    expect(page.body).toContain('Quota-aware delivery')
+    expect(page.body).toContain('/runtime-site.css')
     expect(page.body).toContain('id="frmBypassLimit"')
     expect(page.body).toContain('name="gdrive_id"')
     expect(page.body).toContain('data-sitekey="site-key-123"')

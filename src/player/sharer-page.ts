@@ -1,9 +1,10 @@
-import { renderPublicPage } from './public-page.js'
+import { renderPublicPage, type PublicNavigationOptions } from './public-page.js'
 
 export type SharerPageOptions = Readonly<{
   recaptchaSiteKey?: string
   bannerTopFrameUrl?: string
   bannerBottomFrameUrl?: string
+  publicPage?: PublicNavigationOptions
 }>
 
 export function renderSharerPage(options: SharerPageOptions = {}): string {
@@ -43,7 +44,7 @@ export function renderSharerPage(options: SharerPageOptions = {}): string {
 </div>
 ${renderAdFrame(options.bannerBottomFrameUrl, 'Bottom sponsor')}
 <script src="/assets/js/gplayer-sharer.js" defer></script>`
-  })
+  }, options.publicPage)
 }
 
 function renderAdFrame(url: string | undefined, title: string): string {

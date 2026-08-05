@@ -3,29 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="GPlayer is the full Node.js rewrite of GDPlayer 4.8.3: 63 media hosts, HLS, DASH, MP4, and authenticated embeds without a PHP runtime.">
-  <meta name="theme-color" content="#0b0e0c">
+  <meta data-runtime-site-description content="GPlayer is the full Node.js rewrite of GDPlayer 4.8.3: 63 media hosts, HLS, DASH, MP4, and authenticated embeds without a PHP runtime." name="description">
+  <meta data-runtime-site-theme-color content="#0b0e0c" name="theme-color">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="GPlayer - 63 sources, one Node.js player">
-  <meta property="og:description" content="A Node-native media gateway for provider links, adaptive streams, and direct video.">
+  <meta data-runtime-site-title content="GPlayer - 63 sources, one Node.js player" property="og:title">
+  <meta data-runtime-site-description content="A Node-native media gateway for provider links, adaptive streams, and direct video." property="og:description">
   <meta property="og:image" content="https://rsm23.github.io/gplayer/assets/img/film.png">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="GPlayer - 63 sources, one Node.js player">
-  <meta name="twitter:description" content="The GDPlayer 4.8.3 runtime, rebuilt in Node.js.">
-  <title>GPlayer | 63 sources, one Node.js player</title>
+  <meta data-runtime-site-title content="GPlayer - 63 sources, one Node.js player" name="twitter:title">
+  <meta data-runtime-site-description content="The GDPlayer 4.8.3 runtime, rebuilt in Node.js." name="twitter:description">
+  <title><!-- runtime-site-title -->GPlayer | 63 sources, one Node.js player<!-- /runtime-site-title --></title>
   <link rel="icon" href="./assets/img/logo/rr.ico">
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./assets/img/film.png">
   <link rel="stylesheet" href="./assets/css/gplayer-landing.css">
+  <!-- runtime-site-stylesheet -->
   <script src="./assets/js/gplayer-landing.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#generator">Skip to player generator</a>
 
   <header class="site-header">
-    <a class="wordmark" href="./" aria-label="GPlayer home">
+    <a class="wordmark" data-runtime-site-home-label href="./" aria-label="GPlayer home">
       <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-      <span>G<span>PLAYER</span><small>NODE</small></span>
+      <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
     </a>
     <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation">Menu</button>
     <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
@@ -41,8 +42,8 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy reveal">
         <p class="eyebrow"><span></span> GDPlayer 4.8.3 · rebuilt in Node.js</p>
-        <h1 id="hero-title">One runtime. Every source.</h1>
-        <p class="hero-lede">Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.</p>
+        <h1 id="hero-title"><!-- runtime-site-slogan -->One runtime. Every source.<!-- /runtime-site-slogan --></h1>
+        <p class="hero-lede"><!-- runtime-site-description -->Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.<!-- /runtime-site-description --></p>
         <p class="hero-proof"><span aria-hidden="true">●</span> Encrypted queries. DNS-pinned delivery. Portable embeds.</p>
         <div class="hero-actions">
           <a class="hero-link-primary" href="#generator">Build a player <span aria-hidden="true">↘</span></a>
@@ -277,11 +278,11 @@
 
   <footer class="site-footer">
     <div>
-      <a class="wordmark wordmark-footer" href="./" aria-label="GPlayer home">
+      <a class="wordmark wordmark-footer" data-runtime-site-home-label href="./" aria-label="GPlayer home">
         <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-        <span>G<span>PLAYER</span><small>NODE</small></span>
+        <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
       </a>
-      <p>Node-native video delivery for the web.</p>
+      <p><!-- runtime-site-slogan -->Node-native video delivery for the web.<!-- /runtime-site-slogan --></p>
     </div>
     <nav aria-label="Legal navigation">
        <a href="#workflow">How it works</a>
@@ -289,7 +290,7 @@
        <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">GitHub</a>
        <!-- runtime-contact-link -->
     </nav>
-    <p class="copyright">© <span id="copyright-year"></span> GPlayer</p>
+    <p class="copyright">© <span id="copyright-year"></span> <!-- runtime-site-name -->GPlayer<!-- /runtime-site-name --></p>
   </footer>
 
   <template id="subtitle-template">

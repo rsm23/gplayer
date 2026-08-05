@@ -26,6 +26,7 @@ import type { DriveBypassResult } from '../drive/drive-sharer-service.js'
 import { renderSharerPage } from '../player/sharer-page.js'
 import { applyPublicPageHeaders } from './system-routes.js'
 import { publicErrors, renderPublicError } from '../player/public-page.js'
+import { loadRuntimeSiteSettings, type SiteSettingsLoader } from '../settings/site-runtime.js'
 import { loadRuntimeGeneralSettings, visitCounterLimit, visitCounterRuntime, type GeneralSettingsLoader } from '../settings/general-runtime.js'
 import type { ViewCounterCapture } from '../stats/view-counter-service.js'
 import {
@@ -105,6 +106,7 @@ export type PlayerRouteOptions = Readonly<{
   loadMiscSettings?: MiscSettingsLoader
   loadHostingSettings?: HostingSettingsLoader
   loadPublicSettings?: PublicSettingsLoader
+  loadSiteSettings?: SiteSettingsLoader
   loadGeneralSettings?: GeneralSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
@@ -389,12 +391,16 @@ export async function registerPlayerRoutes(
   app.get('/ajax/', statCounter)
 
   const showSharer = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const publicSettings = await loadRuntimePublicSettings(options.loadPublicSettings)
+    const [publicSettings, site] = await Promise.all([
+      loadRuntimePublicSettings(options.loadPublicSettings),
+      loadRuntimeSiteSettings(options.loadSiteSettings)
+    ])
+    const publicPage = { site, ...(publicSettings.contact_page_link === '' ? {} : { contactUrl: publicSettings.contact_page_link }) }
     const admin = await authenticatedRequest(request, options.isAdmin)
     applyPublicPageHeaders(reply, true)
     if (!publicSettings.enable_gsharer && !admin) {
       reply.code(403).type('text/html; charset=utf-8')
-      return renderPublicError(publicErrors[403])
+      return renderPublicError(publicErrors[403], publicPage)
     }
     const [ads, recaptchaSiteKey] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
@@ -406,6 +412,7 @@ export async function registerPlayerRoutes(
     reply.type('text/html; charset=utf-8')
     return renderSharerPage({
       recaptchaSiteKey,
+      publicPage,
       ...sharerAdFrames(ads)
     })
   }

@@ -8,6 +8,7 @@ import {
   renderDmcaPage,
   renderPrivacyPage,
   renderPublicError,
+  renderPublicThemeCss,
   renderTermsPage
 } from '../player/public-page.js'
 import { Security } from '../security/security.js'
@@ -17,6 +18,8 @@ import { loadRuntimeGeneralSettings, type GeneralSettingsLoader } from '../setti
 import { disqusConfig, disqusCsp, renderDisqus, type DisqusConfig } from '../player/disqus.js'
 import type { ProxyMaintenanceResult } from '../background/proxy-maintenance-worker.js'
 import { registerLegacyFrontendAliases } from './legacy-frontend-routes.js'
+import { loadRuntimeSiteSettings, type SiteSettingsLoader } from '../settings/site-runtime.js'
+import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../settings/settings-admin-service.js'
 
 const DEFAULT_PUBLIC_PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'"
 
@@ -43,6 +46,7 @@ export async function registerSystemRoutes(
   options: Readonly<{
     loadPublicSettings?: PublicSettingsLoader
     loadGeneralSettings?: GeneralSettingsLoader
+    loadSiteSettings?: SiteSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
     background?: Pick<DriveBackgroundCoordinator, 'trigger'>
     proxyMaintenance?: Readonly<{ runOnce(): Promise<ProxyMaintenanceResult> }>
@@ -53,25 +57,38 @@ export async function registerSystemRoutes(
 
   app.addHook('onRequest', async (request, reply) => {
     if ((request.method !== 'GET' && request.method !== 'HEAD') || !isLegacyIndexRequest(request.url)) return
-    const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+    const [settings, site] = await Promise.all([
+      loadRuntimePublicSettings(options.loadPublicSettings),
+      loadRuntimeSiteSettings(options.loadSiteSettings)
+    ])
     if (settings.anonymous_generator || await authenticatedRequest(request, options.isAuthenticated)) return
     applyPublicPageHeaders(reply, true)
-    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(publicErrors[403], publicNavigation(settings.contact_page_link)))
+    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(publicErrors[403], publicNavigation(settings.contact_page_link, site)))
+  })
+
+  app.get('/runtime-site.css', async (_request, reply) => {
+    const site = await loadRuntimeSiteSettings(options.loadSiteSettings)
+    return reply
+      .header('cache-control', 'public, max-age=60')
+      .header('x-content-type-options', 'nosniff')
+      .type('text/css; charset=utf-8')
+      .send(renderPublicThemeCss(site))
   })
 
   const landingHtml = options.landingHtml
   if (landingHtml !== undefined) {
     const landing = async (_request: FastifyRequest, reply: FastifyReply) => {
-      const [settings, general] = await Promise.all([
+      const [settings, general, site] = await Promise.all([
         loadRuntimePublicSettings(options.loadPublicSettings),
-        loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl)
+        loadRuntimeGeneralSettings(options.loadGeneralSettings, config.baseUrl),
+        loadRuntimeSiteSettings(options.loadSiteSettings)
       ])
       const comments = disqusConfig(general, config.baseUrl)
       const recaptchaSiteKey = validRecaptchaSiteKey(String(general.recaptcha_site_key))
       applyPublicPageHeaders(reply, false, comments, recaptchaSiteKey !== '')
       reply.header('cache-control', settings.anonymous_generator ? 'public, max-age=60' : 'private, no-store').type('text/html; charset=utf-8')
       return renderLandingRecaptcha(
-        renderLandingDisqus(renderLandingContact(landingHtml, settings.contact_page_link), comments),
+        renderLandingDisqus(renderLandingContact(renderLandingSite(landingHtml, site), settings.contact_page_link), comments),
         recaptchaSiteKey
       )
     }
@@ -170,28 +187,38 @@ export async function registerSystemRoutes(
 
   for (const page of pages) {
     registerLegacyFrontendAliases(app, [page.alias], async (_request, reply) => {
-      const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+      const [settings, site] = await Promise.all([
+        loadRuntimePublicSettings(options.loadPublicSettings),
+        loadRuntimeSiteSettings(options.loadSiteSettings)
+      ])
       applyPublicPageHeaders(reply)
       reply.header('cache-control', 'public, max-age=300').type('text/html; charset=utf-8')
-      return page.render(publicNavigation(settings.contact_page_link))
+      return page.render(publicNavigation(settings.contact_page_link, site))
     })
   }
 
   for (const error of Object.values(publicErrors)) {
     registerLegacyFrontendAliases(app, [String(error.status)], async (_request, reply) => {
-      const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+      const [settings, site] = await Promise.all([
+        loadRuntimePublicSettings(options.loadPublicSettings),
+        loadRuntimeSiteSettings(options.loadSiteSettings)
+      ])
       applyPublicPageHeaders(reply, true)
       reply.code(error.status).type('text/html; charset=utf-8')
-      return renderPublicError(error, publicNavigation(settings.contact_page_link))
+      return renderPublicError(error, publicNavigation(settings.contact_page_link, site))
     })
   }
 
   registerLegacyFrontendAliases(app, ['redirect'], async (request, reply) => {
     const target = parseLegacyRedirect(request.url, security)
     if (target === null) {
+      const [settings, site] = await Promise.all([
+        loadRuntimePublicSettings(options.loadPublicSettings),
+        loadRuntimeSiteSettings(options.loadSiteSettings)
+      ])
       applyPublicPageHeaders(reply, true)
       reply.code(400).type('text/html; charset=utf-8')
-      return renderPublicError(publicErrors[400])
+      return renderPublicError(publicErrors[400], publicNavigation(settings.contact_page_link, site))
     }
     return reply.redirect(target.href)
   })
@@ -204,16 +231,61 @@ function isLegacyIndexRequest(requestUrl: string): boolean {
   return firstSegment.split('.', 1)[0] === 'index'
 }
 
-function publicNavigation(contactUrl: string): Readonly<{ contactUrl?: string }> {
-  if (contactUrl === '') return Object.freeze({})
+function publicNavigation(contactUrl: string, site: SiteSettings = DEFAULT_SITE_SETTINGS): Readonly<{ contactUrl?: string; site: SiteSettings }> {
+  if (contactUrl === '') return Object.freeze({ site })
   try {
     const url = new URL(contactUrl)
     return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === ''
-      ? Object.freeze({ contactUrl: url.href })
-      : Object.freeze({})
+      ? Object.freeze({ contactUrl: url.href, site })
+      : Object.freeze({ site })
   } catch {
-    return Object.freeze({})
+    return Object.freeze({ site })
   }
+}
+
+export function renderLandingSite(html: string, site: SiteSettings): string {
+  const siteName = escapeHtml(site.site_name)
+  const siteSlogan = escapeHtml(site.site_slogan)
+  const siteDescription = escapeHtml(site.site_description)
+  const title = `${site.site_name} | ${site.site_slogan}`
+  let rendered = replaceRuntimeMarker(html, 'title', escapeHtml(title))
+  rendered = replaceRuntimeMarker(rendered, 'name', siteName)
+  rendered = replaceRuntimeMarker(rendered, 'slogan', siteSlogan)
+  rendered = replaceRuntimeMarker(rendered, 'description', siteDescription)
+  rendered = replaceRuntimeMeta(rendered, 'title', title)
+  rendered = replaceRuntimeMeta(rendered, 'description', site.site_description)
+  rendered = replaceRuntimeMeta(rendered, 'theme-color', `#${site.pwa_themecolor}`)
+  rendered = rendered.replaceAll('<!-- runtime-site-stylesheet -->', '<link rel="stylesheet" href="/runtime-site.css">')
+  return rendered.replace(
+    /(<a\b[^>]*\bdata-runtime-site-home-label\b[^>]*\baria-label=")[^"]*(")/gu,
+    (_match, prefix: string, suffix: string) => `${prefix}${escapeHtmlAttribute(`${site.site_name} home`)}${suffix}`
+  )
+}
+
+function replaceRuntimeMarker(html: string, marker: string, value: string): string {
+  const opening = `<!-- runtime-site-${marker} -->`
+  const closing = `<!-- /runtime-site-${marker} -->`
+  let rendered = html
+  while (true) {
+    const start = rendered.indexOf(opening)
+    if (start < 0) return rendered
+    const end = rendered.indexOf(closing, start + opening.length)
+    if (end < 0) return rendered
+    rendered = `${rendered.slice(0, start)}${value}${rendered.slice(end + closing.length)}`
+  }
+}
+
+function replaceRuntimeMeta(html: string, marker: string, value: string): string {
+  const pattern = new RegExp(`(<meta data-runtime-site-${marker} content=")[^"]*(")`, 'gu')
+  return html.replace(pattern, (_match, prefix: string, suffix: string) => `${prefix}${escapeHtmlAttribute(value)}${suffix}`)
+}
+
+function escapeHtml(value: string): string {
+  return escapeHtmlAttribute(value).replaceAll("'", '&#39;')
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 export function renderLandingContact(html: string, contactUrl: string): string {

@@ -1,4 +1,4 @@
-const productName = 'GDPlayer'
+import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../settings/settings-admin-service.js'
 
 export type PublicPageOptions = Readonly<{
   title: string
@@ -9,7 +9,10 @@ export type PublicPageOptions = Readonly<{
   robots?: 'index, follow' | 'noindex, nofollow'
 }>
 
-export type PublicNavigationOptions = Readonly<{ contactUrl?: string }>
+export type PublicNavigationOptions = Readonly<{
+  contactUrl?: string
+  site?: SiteSettings
+}>
 
 export type PublicError = Readonly<{
   status: 400 | 401 | 403 | 404 | 500 | 503
@@ -27,6 +30,7 @@ export const publicErrors: Readonly<Record<PublicError['status'], PublicError>> 
 })
 
 export function renderPublicPage(options: PublicPageOptions, navigation: PublicNavigationOptions = {}): string {
+  const site = publicSiteSettings(navigation.site)
   const title = escapeHtml(options.title)
   const heading = escapeHtml(options.heading ?? options.title)
   const description = escapeHtml(options.description)
@@ -40,17 +44,18 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${description}">
   <meta name="robots" content="${robots}">
-  <meta name="theme-color" content="#0b0b10">
-  <title>${title} | ${productName}</title>
+  <meta name="theme-color" content="#${safeHex(site.pwa_themecolor, DEFAULT_SITE_SETTINGS.pwa_themecolor)}">
+  <title>${title} | ${escapeHtml(site.site_name)}</title>
   <link rel="icon" href="/assets/img/logo/rr.ico">
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/assets/css/gplayer-landing.css">
+  <link rel="stylesheet" href="/runtime-site.css">
   <link rel="stylesheet" href="/assets/css/gplayer-public.css">
   <script src="/assets/js/gplayer-landing.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
-  ${renderHeader()}
+  ${renderHeader(site)}
   <main id="main-content" class="public-main">
     <header class="public-hero">
       <p class="eyebrow"><span></span>${eyebrow}</p>
@@ -59,7 +64,7 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
     </header>
     <article class="public-article">${options.body}</article>
   </main>
-  ${renderFooter(navigation)}
+  ${renderFooter(navigation, site)}
 </body>
 </html>`
 }
@@ -117,11 +122,12 @@ export function renderPrivacyPage(navigation: PublicNavigationOptions = {}): str
 }
 
 export function renderDmcaPage(navigation: PublicNavigationOptions = {}): string {
+  const siteName = escapeHtml(publicSiteSettings(navigation.site).site_name)
   return renderPublicPage({
     title: 'DMCA Takedown Policy',
     description: 'DMCA Takedown Policy',
     eyebrow: 'Legal / Copyright',
-    body: `<section><h2>Introduction</h2><p>GDPlayer respects the intellectual-property rights of others and expects users to do the same. The site operator responds to clear notices of alleged infringement that comply with the Digital Millennium Copyright Act.</p></section>
+    body: `<section><h2>Introduction</h2><p>${siteName} respects the intellectual-property rights of others and expects users to do the same. The site operator responds to clear notices of alleged infringement that comply with the Digital Millennium Copyright Act.</p></section>
 <section><h2>Reporting copyright infringement</h2><p>A written notice should include:</p><ol><li>A physical or electronic signature of a person authorized to act for the copyright owner.</li><li>Identification of the copyrighted work, or a representative list of works.</li><li>Identification and location of the material claimed to be infringing.</li><li>Your address, telephone number, and email address.</li><li>A statement of good-faith belief that the disputed use is not authorized.</li><li>A statement, under penalty of perjury, that the notice is accurate and that you are authorized to act.</li></ol></section>
 <section><h2>Submit your notice</h2><p>Send the notice to the designated DMCA contact published by the operator of this deployment with the subject <strong>DMCA Takedown Request</strong>. A deployment must configure its real legal contact before operating publicly.</p></section>
 <section><h2>Counter-notification</h2><p>A counter-notification should identify the removed material and its prior location; include your signature and contact information; state under penalty of perjury that removal resulted from mistake or misidentification; and include the jurisdiction and service-of-process consent required by 17 U.S.C. § 512(g).</p></section>
@@ -146,11 +152,19 @@ export function renderChangelogPage(navigation: PublicNavigationOptions = {}): s
   }, navigation)
 }
 
-function renderHeader(): string {
+export function renderPublicThemeCss(input: SiteSettings = DEFAULT_SITE_SETTINGS): string {
+  const site = publicSiteSettings(input)
+  const primary = safeHex(site.custom_color, DEFAULT_SITE_SETTINGS.custom_color)
+  const secondary = safeHex(site.custom_color2, DEFAULT_SITE_SETTINGS.custom_color2)
+  return `:root {\n  --brand: #${primary};\n  --brand-soft: #${secondary};\n  --success: #${primary};\n  --focus: #${secondary};\n}\n`
+}
+
+function renderHeader(site: SiteSettings): string {
+  const siteName = escapeHtml(site.site_name)
   return `<header class="site-header">
-  <a class="wordmark" href="/" aria-label="GDPlayer home">
+  <a class="wordmark" href="/" aria-label="${siteName} home">
     <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-    <span>GD<span>PLAYER</span></span>
+    <span>${siteName}</span>
   </a>
   <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation">Menu</button>
   <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
@@ -163,22 +177,32 @@ function renderHeader(): string {
 </header>`
 }
 
-function renderFooter(navigation: PublicNavigationOptions): string {
+function renderFooter(navigation: PublicNavigationOptions, site: SiteSettings): string {
   const contactUrl = safePublicContactUrl(navigation.contactUrl)
   const contact = contactUrl === '' ? '' : `<a href="${escapeHtml(contactUrl)}">Contact</a>`
+  const siteName = escapeHtml(site.site_name)
   return `<footer class="site-footer public-footer">
   <div>
-    <a class="wordmark wordmark-footer" href="/" aria-label="GDPlayer home">
+    <a class="wordmark wordmark-footer" href="/" aria-label="${siteName} home">
       <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-      <span>GD<span>PLAYER</span></span>
+      <span>${siteName}</span>
     </a>
-    <p>Universal video delivery for the web.</p>
+    <p>${escapeHtml(site.site_slogan)}</p>
   </div>
   <nav aria-label="Legal navigation">
     <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/dmca/">DMCA</a><a href="/changelog/">Changelog</a>${contact}
   </nav>
-  <p class="copyright">© <span id="copyright-year">2026</span> GDPlayer</p>
+  <p class="copyright">© <span id="copyright-year">2026</span> ${siteName}</p>
 </footer>`
+}
+
+function publicSiteSettings(value: SiteSettings | undefined): SiteSettings {
+  return value ?? DEFAULT_SITE_SETTINGS
+}
+
+function safeHex(value: string, fallback: string): string {
+  const normalized = value.trim().replace(/^#/u, '').toLowerCase()
+  return /^[0-9a-f]{6}$/u.test(normalized) ? normalized : fallback
 }
 
 function safePublicContactUrl(value: string | undefined): string {

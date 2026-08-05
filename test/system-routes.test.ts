@@ -152,6 +152,51 @@ describe('legacy-compatible system routes', () => {
     expect(renderLandingContact('before<!-- runtime-contact-link -->after', 'https://user:secret@support.example.test/')).toBe('beforeafter')
   })
 
+  it('applies escaped Site Settings branding and colors to every public shell', async () => {
+    const values = {
+      site_name: '$1 Media & Player',
+      site_slogan: 'Stream <everything> safely',
+      site_description: 'Media "everywhere" & <fast>',
+      custom_color: '123abc',
+      custom_color2: 'fedcba',
+      pwa_themecolor: '010203'
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+
+    const [landing, dmca, missing, theme] = await Promise.all([
+      app.inject({ method: 'GET', url: '/' }),
+      app.inject({ method: 'GET', url: '/dmca/' }),
+      app.inject({ method: 'GET', url: '/missing-branded-page' }),
+      app.inject({ method: 'GET', url: '/runtime-site.css' })
+    ])
+
+    expect(landing.body).toContain('<title>$1 Media &amp; Player | Stream &lt;everything&gt; safely</title>')
+    expect(landing.body).toContain('content="Media &quot;everywhere&quot; &amp; &lt;fast&gt;"')
+    expect(landing.body).toContain('<h1 id="hero-title">Stream &lt;everything&gt; safely</h1>')
+    expect(landing.body).toContain('aria-label="$1 Media &amp; Player home"')
+    expect(landing.body).toContain('<link rel="stylesheet" href="/runtime-site.css">')
+    expect(landing.body).not.toContain('<!-- runtime-site-')
+    expect(landing.body).not.toContain('<everything>')
+
+    for (const response of [dmca, missing]) {
+      expect(response.body).toContain('| $1 Media &amp; Player</title>')
+      expect(response.body).toContain('aria-label="$1 Media &amp; Player home"')
+      expect(response.body).toContain('<link rel="stylesheet" href="/runtime-site.css">')
+      expect(response.body).toContain('Stream &lt;everything&gt; safely')
+    }
+    expect(dmca.body).toContain('$1 Media &amp; Player respects the intellectual-property rights')
+    expect(missing.statusCode).toBe(404)
+
+    expect(theme.statusCode).toBe(200)
+    expect(theme.headers['content-type']).toContain('text/css')
+    expect(theme.headers['cache-control']).toBe('public, max-age=60')
+    expect(theme.body).toContain('--brand: #123abc;')
+    expect(theme.body).toContain('--brand-soft: #fedcba;')
+    expect(theme.body).not.toContain('<')
+  })
+
   it('mounts a configured Disqus thread through the bounded local bootstrap and scoped CSP', async () => {
     const values = { disqus_shortname: 'Community-42' }
     app = await buildApp(loadConfig({

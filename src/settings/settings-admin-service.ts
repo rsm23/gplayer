@@ -172,6 +172,18 @@ export type SiteSettings = Readonly<{
   pwa_display: PwaDisplay
 }>
 
+export const DEFAULT_SITE_SETTINGS: SiteSettings = Object.freeze({
+  site_name: 'GPlayer',
+  site_slogan: 'One runtime. Every source.',
+  site_description: 'Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.',
+  custom_color: 'c8df69',
+  custom_color2: 'e1ecae',
+  pwa_shortname: 'GPlayer',
+  pwa_themecolor: '0b0e0c',
+  pwa_backgroundcolor: '0b0e0c',
+  pwa_display: 'standalone'
+})
+
 export type ShortenerProvider = typeof SHORTENER_PROVIDERS[number]
 export type ShortenerProviderId = ShortenerProvider['id']
 
@@ -442,15 +454,15 @@ export class SettingsAdminService {
     const raw = await this.store.getAll()
     const display = raw.pwa_display ?? ''
     return Object.freeze({
-      site_name: requiredText(raw.site_name, 100) ?? 'GPlayer',
-      site_slogan: requiredText(raw.site_slogan, 200) ?? 'Universal media gateway',
-      site_description: requiredText(raw.site_description, 5_000) ?? 'A Node.js media gateway with 63 registered source adapters.',
-      custom_color: normalizedHexColor(raw.custom_color) ?? 'ccea59',
-      custom_color2: normalizedHexColor(raw.custom_color2) ?? '172019',
-      pwa_shortname: requiredText(raw.pwa_shortname, 30) ?? 'GPlayer',
-      pwa_themecolor: normalizedHexColor(raw.pwa_themecolor) ?? '0b0e0c',
-      pwa_backgroundcolor: normalizedHexColor(raw.pwa_backgroundcolor) ?? '0b0e0c',
-      pwa_display: isPwaDisplay(display) ? display : 'standalone'
+      site_name: requiredText(raw.site_name, 100) ?? DEFAULT_SITE_SETTINGS.site_name,
+      site_slogan: requiredText(raw.site_slogan, 200) ?? DEFAULT_SITE_SETTINGS.site_slogan,
+      site_description: requiredText(raw.site_description, 5_000) ?? DEFAULT_SITE_SETTINGS.site_description,
+      custom_color: normalizedHexColor(raw.custom_color) ?? DEFAULT_SITE_SETTINGS.custom_color,
+      custom_color2: normalizedHexColor(raw.custom_color2) ?? DEFAULT_SITE_SETTINGS.custom_color2,
+      pwa_shortname: requiredText(raw.pwa_shortname, 30) ?? DEFAULT_SITE_SETTINGS.pwa_shortname,
+      pwa_themecolor: normalizedHexColor(raw.pwa_themecolor) ?? DEFAULT_SITE_SETTINGS.pwa_themecolor,
+      pwa_backgroundcolor: normalizedHexColor(raw.pwa_backgroundcolor) ?? DEFAULT_SITE_SETTINGS.pwa_backgroundcolor,
+      pwa_display: isPwaDisplay(display) ? display : DEFAULT_SITE_SETTINGS.pwa_display
     })
   }
 

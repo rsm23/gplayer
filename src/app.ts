@@ -23,6 +23,7 @@ import { registerMediaRoutes } from './http/media-routes.js'
 import { registerPlayerRoutes, type PublicGeneratorUploads } from './http/player-routes.js'
 import { createSourceApiRuntime } from './http/source-api-runtime.js'
 import { DEFAULT_ACCOUNT_LIFECYCLE_SETTINGS, type SettingsAdminService } from './settings/settings-admin-service.js'
+import { loadRuntimeSiteSettings } from './settings/site-runtime.js'
 import { FileSystemSiteAssetManager, type SiteAssetManager } from './settings/site-assets-service.js'
 import { FileSystemVastAssetManager, type VastAssetManager } from './settings/vast-assets-service.js'
 import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/source-api-routes.js'
@@ -306,6 +307,7 @@ export async function buildApp(
   )
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
   const loadPublicSettings = async () => await settingsRuntime.runtimePublicSettings()
+  const loadSiteSettings = async () => await settingsRuntime.siteSettings()
   const shortlinkRuntime = dependencies.shortlinks ?? new ShortlinkService(
     async () => await settingsRuntime.runtimeShortlinkSettings()
   )
@@ -371,6 +373,7 @@ export async function buildApp(
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
     loadGeneralSettings,
+    loadSiteSettings,
     isAuthenticated,
     background: driveBackgroundRuntime,
     proxyMaintenance: proxyMaintenanceRuntime,
@@ -501,6 +504,7 @@ export async function buildApp(
     loadAdsSettings,
     loadPlayerSettings,
     loadPublicSettings,
+    loadSiteSettings,
     loadGeneralSettings,
     loadMiscSettings,
     loadHostingSettings,
@@ -632,10 +636,13 @@ export async function buildApp(
 
   app.setNotFoundHandler(async (request, reply) => {
     if (request.method === 'HEAD') return sendLegacyHeadFallback(request, reply)
-    const contactUrl = await loadPublicSettings().then((settings) => settings.contact_page_link).catch(() => '')
+    const [contactUrl, site] = await Promise.all([
+      loadPublicSettings().then((settings) => settings.contact_page_link).catch(() => ''),
+      loadRuntimeSiteSettings(loadSiteSettings)
+    ])
     applyPublicPageHeaders(reply, true)
     reply.code(404).type('text/html; charset=utf-8')
-    return renderPublicError(publicErrors[404], contactUrl === '' ? {} : { contactUrl })
+    return renderPublicError(publicErrors[404], contactUrl === '' ? { site } : { contactUrl, site })
   })
 
   return app

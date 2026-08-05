@@ -1178,7 +1178,7 @@ export function renderAdminSiteSettings(input: Readonly<{
       <div class="settings-section-heading"><p class="panel-kicker">01 / Identity</p><h2 id="site-identity-title">Name and brand</h2><p>Define the public name, supporting copy, color pair, and square PNG used to generate application icons.</p>${input.logoAvailable ? '<img class="settings-logo-preview" src="/assets/img/logo.png" width="76" height="76" alt="Current uploaded site logo">' : ''}</div>
       <div class="settings-grid">
         ${settingsInput('site_name', 'Site name', escapeHtml(input.values.site_name), 'text', 'GPlayer', true)}
-        ${settingsInput('site_slogan', 'Slogan', escapeHtml(input.values.site_slogan), 'text', 'Universal media gateway', true)}
+        ${settingsInput('site_slogan', 'Slogan', escapeHtml(input.values.site_slogan), 'text', 'One runtime. Every source.', true)}
         <div class="field settings-wide"><label for="site_description">Site description</label><textarea id="site_description" name="site_description" maxlength="5000" required>${escapeHtml(input.values.site_description)}</textarea></div>
         <div class="field settings-wide"><label for="favicon">Logo PNG</label><input id="favicon" name="favicon" type="file" accept="image/png,.png"><p class="field-hint">Optional. Maximum 5 MB and 16.7 megapixels. The image is normalized to 512×512 and used to generate the legacy icon family and favicon.</p></div>
         ${settingsColorInput('custom_color', 'Primary color', input.values.custom_color)}
