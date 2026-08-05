@@ -124,6 +124,14 @@ export class MySqlVideoAdminStore implements VideoAdminStore {
     return rows[0] === undefined ? null : await this.detail(rows[0])
   }
 
+  public async findVideoBySource(host: string, hostId: string, userId: string): Promise<string | null> {
+    const rows = await this.database.write<Array<RowDataPacket & { id: string | number }>>(
+      'SELECT `id` FROM `tb_videos` WHERE `host` = ? AND `host_id` = ? AND `uid` = ? ORDER BY `id` ASC LIMIT 1',
+      [host, hostId, userId]
+    )
+    return rows[0] === undefined ? null : String(rows[0].id)
+  }
+
   public async slugExists(slug: string, excludeId?: string): Promise<boolean> {
     const rows = await this.database.read<Array<RowDataPacket & { found: number }>>(
       `SELECT 1 AS \`found\` FROM \`tb_videos\` WHERE \`slug\` = ?${excludeId === undefined ? '' : ' AND `id` <> ?'} LIMIT 1`,

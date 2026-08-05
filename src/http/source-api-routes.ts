@@ -46,6 +46,7 @@ export type SourceApiRouteOptions = Readonly<{
   loadMiscSettings?: MiscSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   filterResponse?: (response: unknown, query: Readonly<Record<string, unknown>>) => Promise<unknown>
+  capturePublicVideo?: (media: PlayerMediaQuery, result: MediaResult) => Promise<unknown>
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -118,6 +119,7 @@ export async function registerSourceApiRoutes(
     const policy = accessPolicyFromMisc(misc)
     const resolvedTitle = result.title.length > 0 ? result.title : titleFromMedia(playableMedia)
     if (policy.isTitleBlacklisted(resolvedTitle)) return plaintextFailure(reply)
+    await options.capturePublicVideo?.(playableMedia, result).catch(() => undefined)
     result = Object.freeze({ ...result, sources: filterSourcesByResolution(result.sources, misc.disable_resolution) })
 
     const player = await loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults)

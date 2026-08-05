@@ -300,6 +300,33 @@ describe('legacy player source API routes', () => {
     )
   })
 
+  it('captures successfully played public media under the configured account', async () => {
+    await app.close()
+    const capturePublicVideo = vi.fn(async () => ({ status: 'ok', message: 'saved', id: '55' }))
+    app = await buildApp(config, {
+      sourceApi: { resolve, supportedHosts: new Set(['direct']) },
+      settings: new SettingsAdminService({
+        getAll: async () => ({ save_public_video: 'true', public_video_user: '9' }),
+        upsertMany: async () => {}
+      }),
+      videos: { capturePublicVideo, savedQuery: async () => null } as never
+    })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/captured.mp4' })
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api?p=${request.passwordToken}`,
+      headers: { 'content-type': 'text/plain' },
+      payload: request.body
+    })
+
+    expect(response.headers['content-type']).toContain('text/plain')
+    expect(capturePublicVideo).toHaveBeenCalledWith(
+      { host: 'direct', id: 'https://cdn.example.test/captured.mp4' },
+      '9',
+      expect.objectContaining({ title: 'Example title', sources: expect.any(Array) })
+    )
+  })
+
   it('keeps only the signed same-origin Drive media route out of the generic proxy', async () => {
     const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
     resolve.mockResolvedValueOnce({

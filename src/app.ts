@@ -62,7 +62,7 @@ import { ProxyMaintenanceWorker } from './background/proxy-maintenance-worker.js
 import { SourceRefreshWorker } from './background/source-refresh-worker.js'
 import { MediaDownloadWorker } from './background/media-download-worker.js'
 import { RemoteStream } from './stream/remote-stream.js'
-import { statfs } from 'node:fs/promises'
+import { readFile, statfs } from 'node:fs/promises'
 import { PluginBackgroundManager } from './plugins/plugin-background-manager.js'
 import { PluginMaintenanceWorker } from './plugins/plugin-maintenance-worker.js'
 import { PluginSyncClient } from './plugins/plugin-sync-client.js'
@@ -146,6 +146,7 @@ export async function buildApp(
   const authService = dependencies.auth ?? authRuntime.auth
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
   const publicRoot = path.resolve(currentDirectory, '../public')
+  const landingHtml = await readFile(path.join(publicRoot, 'index.html'), 'utf8')
   const cacheRoot = path.resolve(currentDirectory, '../cache')
   const subtitlesRuntime = dependencies.subtitles ?? new SubtitleAdminService(
     authRuntime.subtitleStore,
@@ -321,7 +322,8 @@ export async function buildApp(
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
     isAuthenticated,
-    background: driveBackgroundRuntime
+    background: driveBackgroundRuntime,
+    landingHtml
   })
   await registerPrivateAdminRoutes(app, config, authService, privateAdminRuntime)
   const loadAccountSettings: AccountSettingsLoader = dependencies.accountSettings ?? (
@@ -437,7 +439,8 @@ export async function buildApp(
     loadRecaptchaSiteKey: async () => {
       const general = await settingsRuntime.general(config.baseUrl)
       return String(general.recaptcha_site_key)
-    }
+    },
+    capturePublicVideo: async (media, ownerId) => await videosRuntime.capturePublicVideo(media, ownerId)
   })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
@@ -447,6 +450,12 @@ export async function buildApp(
     countryCodeLookup,
     supportedHosts,
     resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
+    capturePublicVideo: async (media, result) => {
+      const settings = await loadPublicSettings()
+      if (settings.save_public_video && settings.public_video_user !== '') {
+        await videosRuntime.capturePublicVideo(media, settings.public_video_user, result)
+      }
+    },
     filterResponse: async (response, query) => {
       const base = sourceApiRuntime.filterResponse === undefined ? response : await sourceApiRuntime.filterResponse(response, query)
       return await pluginExtensionRuntime.filterApiResponse(base, query).catch(() => base)
@@ -477,13 +486,15 @@ export async function buildApp(
     root: publicRoot,
     prefix: '/',
     decorateReply: false,
-    wildcard: false
+    wildcard: false,
+    index: false
   })
 
   app.setNotFoundHandler(async (_request, reply) => {
+    const contactUrl = await loadPublicSettings().then((settings) => settings.contact_page_link).catch(() => '')
     applyPublicPageHeaders(reply, true)
     reply.code(404).type('text/html; charset=utf-8')
-    return renderPublicError(publicErrors[404])
+    return renderPublicError(publicErrors[404], contactUrl === '' ? {} : { contactUrl })
   })
 
   return app

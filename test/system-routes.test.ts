@@ -5,6 +5,7 @@ import { AUTH_COOKIE_NAME, AuthService, type AuthStore, type AuthUser, type Sess
 import { loadConfig } from '../src/config.js'
 import { Security } from '../src/security/security.js'
 import { SettingsAdminService } from '../src/settings/settings-admin-service.js'
+import { renderLandingContact } from '../src/http/system-routes.js'
 
 let app: FastifyInstance | undefined
 const secureSalt = '1234567890123456'
@@ -100,6 +101,25 @@ describe('legacy-compatible system routes', () => {
       payload: 'action=createPlayer&id=https%3A%2F%2Fcdn.example%2Fmovie.mp4'
     })
     expect(authenticatedGenerator.json()).toMatchObject({ status: 'ok' })
+  })
+
+  it('renders the validated Contact URL into the landing, legal, and error navigation', async () => {
+    const values = { contact_page_link: 'https://support.example.test/contact?from=gplayer' }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const [landing, terms, missing] = await Promise.all([
+      app.inject({ method: 'GET', url: '/' }),
+      app.inject({ method: 'GET', url: '/terms/' }),
+      app.inject({ method: 'GET', url: '/missing-contact-test' })
+    ])
+    for (const response of [landing, terms, missing]) {
+      expect(response.body).toContain('href="https://support.example.test/contact?from=gplayer"')
+      expect(response.body).toContain('>Contact</a>')
+      expect(response.body).not.toContain('runtime-contact-link')
+    }
+    expect(renderLandingContact('before<!-- runtime-contact-link -->after', 'javascript:alert(1)')).toBe('beforeafter')
+    expect(renderLandingContact('before<!-- runtime-contact-link -->after', 'https://user:secret@support.example.test/')).toBe('beforeafter')
   })
 
   it('serves the health contract', async () => {

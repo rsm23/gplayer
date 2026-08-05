@@ -9,6 +9,8 @@ export type PublicPageOptions = Readonly<{
   robots?: 'index, follow' | 'noindex, nofollow'
 }>
 
+export type PublicNavigationOptions = Readonly<{ contactUrl?: string }>
+
 export type PublicError = Readonly<{
   status: 400 | 401 | 403 | 404 | 500 | 503
   title: string
@@ -24,7 +26,7 @@ export const publicErrors: Readonly<Record<PublicError['status'], PublicError>> 
   503: Object.freeze({ status: 503, title: '503 Service Unavailable', description: 'Sorry, the server is currently unavailable. Please try again later.' })
 })
 
-export function renderPublicPage(options: PublicPageOptions): string {
+export function renderPublicPage(options: PublicPageOptions, navigation: PublicNavigationOptions = {}): string {
   const title = escapeHtml(options.title)
   const heading = escapeHtml(options.heading ?? options.title)
   const description = escapeHtml(options.description)
@@ -57,12 +59,12 @@ export function renderPublicPage(options: PublicPageOptions): string {
     </header>
     <article class="public-article">${options.body}</article>
   </main>
-  ${renderFooter()}
+  ${renderFooter(navigation)}
 </body>
 </html>`
 }
 
-export function renderPublicError(error: PublicError): string {
+export function renderPublicError(error: PublicError, navigation: PublicNavigationOptions = {}): string {
   const homeLabel = error.status >= 500 ? 'Try the homepage' : 'Return home'
   return renderPublicPage({
     title: error.title,
@@ -70,10 +72,10 @@ export function renderPublicError(error: PublicError): string {
     eyebrow: `HTTP ${error.status}`,
     robots: 'noindex, nofollow',
     body: `<div class="error-action"><a class="public-button" href="/">${homeLabel}<span aria-hidden="true">↗</span></a></div>`
-  })
+  }, navigation)
 }
 
-export function renderTermsPage(): string {
+export function renderTermsPage(navigation: PublicNavigationOptions = {}): string {
   return renderPublicPage({
     title: 'Terms & Conditions',
     heading: 'Terms and Conditions',
@@ -93,10 +95,10 @@ export function renderTermsPage(): string {
   <li><h2>Governing law</h2><p>These Terms are governed by the laws of the USA.</p></li>
   <li><h2>Changes to terms</h2><p>We may update these Terms at any time. Continued use of the Service after changes constitutes acceptance.</p></li>
 </ol>`
-  })
+  }, navigation)
 }
 
-export function renderPrivacyPage(): string {
+export function renderPrivacyPage(navigation: PublicNavigationOptions = {}): string {
   return renderPublicPage({
     title: 'Privacy Policy',
     description: 'By using this site, you agree to follow all the privacy policies set out on this page.',
@@ -111,10 +113,10 @@ export function renderPrivacyPage(): string {
 <section><h2>7. International data transfers</h2><p>Non-personal service data may be processed in countries with different data-protection laws.</p></section>
 <section><h2>8. Changes to this policy</h2><p>We may update this policy and publish the current version on this page. Continued use after an update constitutes acceptance.</p></section>
 <section><h2>9. Contact</h2><p>Contact the site operator if you have questions about this policy.</p></section>`
-  })
+  }, navigation)
 }
 
-export function renderDmcaPage(): string {
+export function renderDmcaPage(navigation: PublicNavigationOptions = {}): string {
   return renderPublicPage({
     title: 'DMCA Takedown Policy',
     description: 'DMCA Takedown Policy',
@@ -125,10 +127,10 @@ export function renderDmcaPage(): string {
 <section><h2>Counter-notification</h2><p>A counter-notification should identify the removed material and its prior location; include your signature and contact information; state under penalty of perjury that removal resulted from mistake or misidentification; and include the jurisdiction and service-of-process consent required by 17 U.S.C. § 512(g).</p></section>
 <section><h2>Repeat infringers</h2><p>The operator may terminate access for repeat infringers in appropriate circumstances.</p></section>
 <section><h2>Disclaimer</h2><p>This policy is informational and is not legal advice. Seek advice from a qualified attorney if you are unsure of your rights or obligations.</p></section>`
-  })
+  }, navigation)
 }
 
-export function renderChangelogPage(): string {
+export function renderChangelogPage(navigation: PublicNavigationOptions = {}): string {
   return renderPublicPage({
     title: 'Change Log',
     description: 'These change logs indicate that this website is being kept up to date.',
@@ -141,7 +143,7 @@ export function renderChangelogPage(): string {
   <li><div><time datetime="2026-07-26">26 Jul 2026</time><span class="release-tag">v4.8.1</span></div><h2>Plugin and stream engine update</h2><ul><li><strong>Added</strong> plugin overrides, synchronization, and server-status monitoring.</li><li><strong>Improved</strong> live-stream cache bypass, MPD trailing-slash preservation, and static poster/subtitle delivery.</li><li><strong>Fixed</strong> HLS player state, database indexes, admin responsiveness, and multiple provider adapters.</li></ul></li>
   <li><div><time datetime="2026-06-22">22 Jun 2026</time><span class="release-tag">v4.8.0</span></div><h2>Stream runtime maintenance</h2><ul><li><strong>Added</strong> shared HTTP client support.</li><li><strong>Fixed</strong> database versioning, headless-browser extraction, player loaders, and provider adapters.</li><li><strong>Changed</strong> upstream HTTP preference to HTTP/1.1 for stability.</li></ul></li>
 </ol>`
-  })
+  }, navigation)
 }
 
 function renderHeader(): string {
@@ -161,7 +163,9 @@ function renderHeader(): string {
 </header>`
 }
 
-function renderFooter(): string {
+function renderFooter(navigation: PublicNavigationOptions): string {
+  const contactUrl = safePublicContactUrl(navigation.contactUrl)
+  const contact = contactUrl === '' ? '' : `<a href="${escapeHtml(contactUrl)}">Contact</a>`
   return `<footer class="site-footer public-footer">
   <div>
     <a class="wordmark wordmark-footer" href="/" aria-label="GDPlayer home">
@@ -171,10 +175,20 @@ function renderFooter(): string {
     <p>Universal video delivery for the web.</p>
   </div>
   <nav aria-label="Legal navigation">
-    <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/dmca/">DMCA</a><a href="/changelog/">Changelog</a>
+    <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/dmca/">DMCA</a><a href="/changelog/">Changelog</a>${contact}
   </nav>
   <p class="copyright">© <span id="copyright-year">2026</span> GDPlayer</p>
 </footer>`
+}
+
+function safePublicContactUrl(value: string | undefined): string {
+  if (value === undefined || value === '') return ''
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' ? url.href : ''
+  } catch {
+    return ''
+  }
 }
 
 function escapeHtml(value: string): string {

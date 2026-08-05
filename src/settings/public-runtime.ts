@@ -10,7 +10,10 @@ export const DEFAULT_RUNTIME_PUBLIC: RuntimePublicSettings = Object.freeze({
   enable_json_subtitles: true,
   enable_download_page: true,
   show_sub_download: true,
-  show_watch_button: true
+  show_watch_button: true,
+  save_public_video: false,
+  public_video_user: '',
+  contact_page_link: ''
 })
 
 export async function loadRuntimePublicSettings(loader?: PublicSettingsLoader): Promise<RuntimePublicSettings> {

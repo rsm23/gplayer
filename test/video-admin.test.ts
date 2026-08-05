@@ -107,6 +107,10 @@ class MemoryVideoStore implements VideoAdminStore {
     return this.videos.find((item) => (item.id === idOrSlug || item.slug === idOrSlug) && item.dmca === 0) ?? null
   }
 
+  public async findVideoBySource(host: string, hostId: string, userId: string): Promise<string | null> {
+    return this.videos.find((item) => item.host === host && item.hostId === hostId && item.userId === userId)?.id ?? null
+  }
+
   public async slugExists(slug: string, excludeId?: string): Promise<boolean> {
     return this.videos.some((item) => item.slug === slug && item.id !== excludeId)
   }
@@ -381,6 +385,52 @@ describe('video administration service', () => {
     ])
   })
 
+  it('captures generated and resolved public videos under the configured owner without duplicates', async () => {
+    const store = new MemoryVideoStore()
+    const videos = service(store)
+    const resolved: MediaResult = Object.freeze({
+      sources: Object.freeze([{ file: 'https://media.example/public.mp4', type: 'video/mp4' }]),
+      tracks: Object.freeze([
+        Object.freeze({ file: 'https://captions.example/public.en.vtt', label: 'English' }),
+        Object.freeze({ file: 'file:///private.vtt', label: 'Unsafe' })
+      ]),
+      referer: '',
+      title: 'Resolved public movie',
+      email: '',
+      image: 'https://images.example/public.jpg',
+      cookies: Object.freeze([]),
+      filmstrip: '',
+      clientip: '127.0.0.1'
+    })
+    const media: PlayerMediaQuery = Object.freeze({
+      host: 'youtube',
+      id: 'public-main',
+      ahost: 'vimeo',
+      aid: '1234',
+      alternatives: Object.freeze([{ host: 'vimeo', id: '1234' }, { host: 'youtube', id: 'public-main' }]),
+      sub: Object.freeze(['https://captions.example/fallback.fr.vtt']),
+      lang: Object.freeze(['French'])
+    })
+
+    await expect(videos.capturePublicVideo(media, '2', resolved)).resolves.toEqual({ status: 'ok', message: 'The public video has been saved', id: '3' })
+    expect(store.lastCreate).toEqual(expect.objectContaining({
+      title: 'Resolved public movie',
+      host: 'youtube',
+      hostId: 'public-main',
+      userId: '2',
+      status: 0,
+      poster: 'https://images.example/public.jpg',
+      alternatives: [{ host: 'vimeo', hostId: '1234', order: 0 }]
+    }))
+    expect(store.lastCreate?.subtitles).toEqual([
+      expect.objectContaining({ link: 'https://captions.example/public.en.vtt', language: 'English', userId: '2' }),
+      expect.objectContaining({ link: 'https://captions.example/fallback.fr.vtt', language: 'French', userId: '2' })
+    ])
+    await expect(videos.capturePublicVideo(media, '2')).resolves.toEqual({ status: 'ok', message: 'The public video is already saved', id: '3' })
+    expect(store.videos).toHaveLength(3)
+    await expect(videos.capturePublicVideo(media, '0')).resolves.toEqual({ status: 'fail', message: 'The public video is invalid' })
+  })
+
   it('applies scoped mutations and admin-only hostname deletion with exact legacy messages', async () => {
     const store = new MemoryVideoStore()
     const videos = service(store)
@@ -527,6 +577,7 @@ describe('MySqlVideoAdminStore', () => {
         .mockResolvedValueOnce([{ id: 2, title: 'Member', host: 'direct', host_id: 'https://cdn.example/m.mp4', uid: 2, name: 'Member', slug: 'member', status: 0, dmca: 0, views: 2, poster: '', created: 1, updated: 2, has_alt: 0, has_sub: 0 }])
         .mockResolvedValueOnce([{ count: '4' }])
         .mockResolvedValueOnce([{ count: '1' }]),
+      write: vi.fn().mockResolvedValueOnce([{ id: 9 }]),
       transaction: vi.fn(async (work: (target: typeof transaction) => Promise<unknown>) => await work(transaction))
     }
     const store = new MySqlVideoAdminStore(database as unknown as Database)
@@ -535,6 +586,11 @@ describe('MySqlVideoAdminStore', () => {
     expect(database.read.mock.calls[0]?.[0]).toContain('ORDER BY v.`updated` DESC LIMIT ?, ?')
     expect(database.read.mock.calls[0]?.[0]).not.toContain("x' OR 1=1")
     expect(database.read.mock.calls[0]?.[1]).toEqual(['2', "%x' OR 1=1%", "%x' OR 1=1%", "%x' OR 1=1%", "%x' OR 1=1%", "%x' OR 1=1%", "%x' OR 1=1%", "x' OR 1=1", 0, 25])
+    await expect(store.findVideoBySource('direct', 'https://cdn.example/movie.mp4', '2')).resolves.toBe('9')
+    expect(database.write).toHaveBeenCalledWith(
+      'SELECT `id` FROM `tb_videos` WHERE `host` = ? AND `host_id` = ? AND `uid` = ? ORDER BY `id` ASC LIMIT 1',
+      ['direct', 'https://cdn.example/movie.mp4', '2']
+    )
     await expect(store.deleteVideosByHosts(['direct'])).resolves.toEqual(['poster.png'])
     expect(transaction.execute.mock.calls[0]?.[0]).toContain('WHERE `host` IN (?) FOR UPDATE')
     for (const call of [...database.read.mock.calls, ...transaction.execute.mock.calls]) expect(String(call[0])).not.toContain("x' OR 1=1")

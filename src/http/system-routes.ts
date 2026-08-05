@@ -40,6 +40,7 @@ export async function registerSystemRoutes(
     loadPublicSettings?: PublicSettingsLoader
     isAuthenticated?: (request: FastifyRequest) => Promise<boolean>
     background?: Pick<DriveBackgroundCoordinator, 'trigger'>
+    landingHtml?: string
   }> = {}
 ): Promise<void> {
   const security = new Security(config.secureSalt)
@@ -49,8 +50,18 @@ export async function registerSystemRoutes(
     const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
     if (settings.anonymous_generator || await authenticatedRequest(request, options.isAuthenticated)) return
     applyPublicPageHeaders(reply, true)
-    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(publicErrors[403]))
+    return reply.code(403).type('text/html; charset=utf-8').send(renderPublicError(publicErrors[403], publicNavigation(settings.contact_page_link)))
   })
+
+  const landingHtml = options.landingHtml
+  if (landingHtml !== undefined) {
+    app.get('/', async (_request, reply) => {
+      const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
+      applyPublicPageHeaders(reply)
+      reply.header('cache-control', settings.anonymous_generator ? 'public, max-age=60' : 'private, no-store').type('text/html; charset=utf-8')
+      return renderLandingContact(landingHtml, settings.contact_page_link)
+    })
+  }
 
   app.get('/ping', async (_request, reply) => {
     reply.header('cache-control', 'no-cache')
@@ -115,9 +126,10 @@ export async function registerSystemRoutes(
   for (const page of pages) {
     for (const path of page.paths) {
       app.get(path, async (_request, reply) => {
+        const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
         applyPublicPageHeaders(reply)
         reply.header('cache-control', 'public, max-age=300').type('text/html; charset=utf-8')
-        return page.render()
+        return page.render(publicNavigation(settings.contact_page_link))
       })
     }
   }
@@ -125,9 +137,10 @@ export async function registerSystemRoutes(
   for (const error of Object.values(publicErrors)) {
     for (const path of [`/${error.status}`, `/${error.status}/`]) {
       app.get(path, async (_request, reply) => {
+        const settings = await loadRuntimePublicSettings(options.loadPublicSettings)
         applyPublicPageHeaders(reply, true)
         reply.code(error.status).type('text/html; charset=utf-8')
-        return renderPublicError(error)
+        return renderPublicError(error, publicNavigation(settings.contact_page_link))
       })
     }
   }
@@ -151,6 +164,29 @@ export async function registerSystemRoutes(
     const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
     return reply.redirect(`/r/${query}`)
   })
+}
+
+function publicNavigation(contactUrl: string): Readonly<{ contactUrl?: string }> {
+  if (contactUrl === '') return Object.freeze({})
+  try {
+    const url = new URL(contactUrl)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === ''
+      ? Object.freeze({ contactUrl: url.href })
+      : Object.freeze({})
+  } catch {
+    return Object.freeze({})
+  }
+}
+
+export function renderLandingContact(html: string, contactUrl: string): string {
+  const navigation = publicNavigation(contactUrl)
+  if (navigation.contactUrl === undefined) return html.replace('<!-- runtime-contact-link -->', '')
+  const escaped = navigation.contactUrl
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+  return html.replace('<!-- runtime-contact-link -->', `<a href="${escaped}">Contact</a>`)
 }
 
 async function authenticatedRequest(

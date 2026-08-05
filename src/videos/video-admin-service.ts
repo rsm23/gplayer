@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { Hosting } from '../core/hosting.js'
 import type { PlayerMediaQuery } from '../core/player-query.js'
+import type { MediaResult } from '../core/source-resolver.js'
 import type { VideoPosterAssetManager } from './video-assets-service.js'
 
 const VIDEO_COLUMNS = ['id', 'title', 'host', 'slug', 'status', 'dmca', 'id', 'views', 'name', 'created', 'updated', 'poster', 'host_id'] as const
@@ -103,6 +104,7 @@ export interface VideoAdminStore {
   listVideos(query: VideoListQuery, access: VideoAccess): Promise<VideoListResult>
   getVideo(id: string, access: VideoAccess): Promise<StoredVideoDetail | null>
   getPublicVideo(idOrSlug: string): Promise<StoredVideoDetail | null>
+  findVideoBySource?(host: string, hostId: string, userId: string): Promise<string | null>
   slugExists(slug: string, excludeId?: string): Promise<boolean>
   createVideo(value: VideoCreateWrite): Promise<string | null>
   updateVideo(id: string, access: VideoAccess, value: VideoUpdateWrite): Promise<boolean>
@@ -240,6 +242,45 @@ export class VideoAdminService {
 
   public async createResolved(input: VideoFormSubmission, access: VideoAccess, status: 0 | 1): Promise<VideoMutationResult> {
     return await this.createWithStatus(input, access, status, true)
+  }
+
+  public async capturePublicVideo(media: PlayerMediaQuery, ownerId: string, resolved?: MediaResult): Promise<VideoMutationResult> {
+    const userId = publicOwnerId(ownerId)
+    const host = stringValue(media.host).trim().toLowerCase()
+    const hostId = stringValue(media.id).trim()
+    if (userId === null || !/^[a-z0-9_-]{1,50}$/u.test(host) || hostId === '' || hostId.length > 2_048) return fail('The public video is invalid')
+
+    try {
+      const existing = await this.store.findVideoBySource?.(host, hostId, userId) ?? null
+      if (existing !== null) return Object.freeze({ status: 'ok', message: 'The public video is already saved', id: existing })
+
+      const now = this.now()
+      const title = publicVideoTitle(media, resolved)
+      const slug = await this.uniqueImportedSlug(title)
+      if (slug === null) return fail('The public video failed to save')
+      const poster = publicVideoPoster(media, resolved)
+      const value: VideoCreateWrite = Object.freeze({
+        title,
+        host,
+        hostId,
+        userId,
+        slug,
+        status: resolved !== undefined && resolved.sources.length === 0 ? 1 : 0,
+        dmca: 0,
+        views: 0,
+        poster,
+        created: now,
+        updated: now,
+        alternatives: publicVideoAlternatives(media, host, hostId),
+        subtitles: publicVideoSubtitles(media, resolved, userId, now)
+      })
+      const id = await this.store.createVideo(value)
+      return id === null
+        ? fail('The public video failed to save')
+        : Object.freeze({ status: 'ok', message: 'The public video has been saved', id })
+    } catch {
+      return fail('The public video failed to save')
+    }
   }
 
   public async record(id: unknown, access: VideoAccess, slugs?: VideoLinkSlugs): Promise<VideoAdminRecord | null> {
@@ -604,6 +645,79 @@ export function videoListQuery(input: Record<string, unknown>, access: VideoAcce
     dmca: nullableFilter(input.dmca, 0, 1),
     userId: access.isAdmin ? videoId(input.uid) : null
   })
+}
+
+function publicOwnerId(value: unknown): string | null {
+  const normalized = stringValue(value).trim()
+  if (!/^[1-9]\d{0,9}$/u.test(normalized)) return null
+  const parsed = Number(normalized)
+  return Number.isSafeInteger(parsed) && parsed <= 4_294_967_295 ? normalized : null
+}
+
+function publicVideoTitle(media: PlayerMediaQuery, resolved?: MediaResult): string {
+  const supplied = boundedString(resolved?.title || media.title, 255).trim()
+  if (supplied !== '') return supplied
+  if (media.host === 'direct' && media.id !== undefined) {
+    try {
+      const filename = decodeURIComponent(new URL(media.id).pathname.split('/').filter(Boolean).at(-1) ?? '').replace(/\.[a-z0-9]{1,8}$/iu, '').trim()
+      if (filename !== '') return boundedString(filename, 255)
+    } catch {
+      // Fall through to a stable provider label.
+    }
+  }
+  const provider = boundedString(media.host, 50).replaceAll(/[-_]+/gu, ' ').replace(/\b\w/gu, (letter) => letter.toUpperCase()).trim()
+  return `${provider || 'Public'} video`.slice(0, 255)
+}
+
+function publicVideoPoster(media: PlayerMediaQuery, resolved?: MediaResult): string {
+  for (const candidate of [resolved?.image, media.poster]) {
+    const url = safeHttpUrl(stringValue(candidate))
+    if (url !== null && url.href.length <= 2_048) return url.href
+  }
+  return ''
+}
+
+function publicVideoAlternatives(media: PlayerMediaQuery, mainHost: string, mainId: string): readonly VideoAlternativeWrite[] {
+  const result: VideoAlternativeWrite[] = []
+  const seen = new Set([`${mainHost}\u0000${mainId}`])
+  const candidates = [
+    ...(media.ahost !== undefined && media.aid !== undefined ? [{ host: media.ahost, id: media.aid }] : []),
+    ...(media.alternatives ?? [])
+  ]
+  for (const candidate of candidates) {
+    const host = stringValue(candidate.host).trim().toLowerCase()
+    const hostId = stringValue(candidate.id).trim()
+    const key = `${host}\u0000${hostId}`
+    if (!/^[a-z0-9_-]{1,50}$/u.test(host) || hostId === '' || hostId.length > 2_048 || seen.has(key)) continue
+    seen.add(key)
+    result.push(Object.freeze({ host, hostId, order: result.length }))
+    if (result.length >= MAX_ALTERNATIVES) break
+  }
+  return Object.freeze(result)
+}
+
+function publicVideoSubtitles(media: PlayerMediaQuery, resolved: MediaResult | undefined, userId: string, now: number): readonly VideoSubtitleWrite[] {
+  const result: VideoSubtitleWrite[] = []
+  const seen = new Set<string>()
+  const candidates = [
+    ...(resolved?.tracks ?? []).map((track) => ({ url: objectValue(track).file, language: objectValue(track).label })),
+    ...(media.sub ?? []).map((url, index) => ({ url, language: media.lang?.[index] }))
+  ]
+  for (const candidate of candidates) {
+    const url = safeHttpUrl(stringValue(candidate.url))
+    if (url === null || url.href.length > 2_048 || seen.has(url.href)) continue
+    seen.add(url.href)
+    result.push(Object.freeze({
+      link: url.href,
+      language: boundedString(candidate.language, 50).trim() || inferredSubtitleLanguage(url),
+      order: result.length,
+      userId,
+      created: now,
+      updated: now
+    }))
+    if (result.length >= MAX_SUBTITLES) break
+  }
+  return Object.freeze(result)
 }
 
 function inferredSubtitleLanguage(url: URL): string {

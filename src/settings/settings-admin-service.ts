@@ -109,6 +109,9 @@ export type RuntimePublicSettings = Readonly<{
   enable_download_page: boolean
   show_sub_download: boolean
   show_watch_button: boolean
+  save_public_video: boolean
+  public_video_user: string
+  contact_page_link: string
 }>
 
 export type SmtpProvider = typeof SMTP_PROVIDERS[number]
@@ -301,7 +304,10 @@ export class SettingsAdminService {
       enable_json_subtitles: enabled('enable_json_subtitles'),
       enable_download_page: enabled('enable_download_page'),
       show_sub_download: enabled('show_sub_download'),
-      show_watch_button: enabled('show_watch_button')
+      show_watch_button: enabled('show_watch_button'),
+      save_public_video: raw.save_public_video === 'true',
+      public_video_user: positiveId(raw.public_video_user) ?? '',
+      contact_page_link: normalizedOptionalHttpUrl(raw.contact_page_link) ?? ''
     })
   }
 

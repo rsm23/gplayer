@@ -61,6 +61,7 @@ export type PlayerRouteOptions = Readonly<{
   bypassDrive?: (input: string) => Promise<DriveBypassResult | null>
   verifyRecaptcha?: (responseToken: string, remoteIp: string) => Promise<boolean>
   loadRecaptchaSiteKey?: () => Promise<string>
+  capturePublicVideo?: (media: PlayerMediaQuery, ownerId: string) => Promise<unknown>
 }>
 
 export async function registerPlayerRoutes(
@@ -138,6 +139,9 @@ export async function registerPlayerRoutes(
         ...(parsed.data.uid !== undefined ? { uid: parsed.data.uid } : {})
       })
       if (mediaContainsDisabledHost(generated.query, misc.disable_host)) throw new Error('This video host is disabled')
+      if (publicSettings.save_public_video && publicSettings.public_video_user !== '') {
+        await options.capturePublicVideo?.(generated.query, publicSettings.public_video_user).catch(() => undefined)
+      }
       reply.code(200)
       return {
         status: 'ok',

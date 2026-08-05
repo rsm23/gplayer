@@ -229,7 +229,10 @@ describe('settings administration service', () => {
       enable_json_subtitles: true,
       enable_download_page: true,
       show_sub_download: true,
-      show_watch_button: true
+      show_watch_button: true,
+      save_public_video: false,
+      public_video_user: '1',
+      contact_page_link: 'https://example.test/contact'
     })
 
     await expect(settings.savePublic({
