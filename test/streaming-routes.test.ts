@@ -17,11 +17,14 @@ let upstream: Server
 let upstreamUrl: URL
 let app: FastifyInstance | undefined
 let lastUpstreamUrl = ''
+let lastUpstreamHeaders: import('node:http').IncomingHttpHeaders = {}
 
 beforeEach(async () => {
   lastUpstreamUrl = ''
+  lastUpstreamHeaders = {}
   upstream = createServer((request, response) => {
     lastUpstreamUrl = request.url ?? ''
+    lastUpstreamHeaders = request.headers
     if (request.url === '/master.m3u8') {
       response.writeHead(200, { 'content-type': 'application/vnd.apple.mpegurl' }).end(
         '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000\nvariant.m3u8\n'
@@ -85,12 +88,15 @@ afterEach(async () => {
   await once(upstream, 'close')
 })
 
-async function buildStreamingApp(allowPrivateNetworks = true): Promise<FastifyInstance> {
+async function buildStreamingApp(
+  allowPrivateNetworks = true,
+  customHeaders?: (target: URL) => RequestInit['headers'] | Promise<RequestInit['headers']>
+): Promise<FastifyInstance> {
   const instance = Fastify()
   await registerStreamingRoutes(
     instance,
     loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }),
-    { allowPrivateNetworks }
+    { allowPrivateNetworks, ...(customHeaders === undefined ? {} : { customHeaders }) }
   )
   return instance
 }
@@ -142,6 +148,20 @@ describe('authenticated streaming routes', () => {
     expect(response.statusCode).toBe(206)
     expect(response.headers['content-range']).toBe(`bytes 4-9/${media.length}`)
     expect(response.rawPayload).toEqual(media.subarray(4, 10))
+  })
+
+  it('applies server-controlled custom headers to the validated upstream target', async () => {
+    app = await buildStreamingApp(true, async (target) => target.pathname.endsWith('/video.mp4')
+      ? { Referer: 'https://app.example/', 'X-Playback-Token': 'server-secret', Host: 'attacker.example' }
+      : {})
+    const target = new URL('/video.mp4', upstreamUrl)
+    const path = createStreamingProxyPath('stream-vid', target, new Security(secureSalt))
+    const response = await app.inject({ method: 'GET', url: path })
+
+    expect(response.statusCode).toBe(200)
+    expect(lastUpstreamHeaders.referer).toBe('https://app.example/')
+    expect(lastUpstreamHeaders['x-playback-token']).toBe('server-secret')
+    expect(lastUpstreamHeaders.host).not.toBe('attacker.example')
   })
 
   it('rewrites DASH templates while leaving placeholders outside encrypted tokens', async () => {

@@ -1,3 +1,5 @@
+import { customHeadersForUrl, decodeCustomHeaderRules, defaultCustomHeaderRules, parseCustomHeaderSubmission, type CustomHeaderRule } from './custom-headers.js'
+
 const BOOLEAN_KEYS = [
   'production_mode',
   'enable_cache_file',
@@ -129,6 +131,8 @@ export type SettingsMutationResult =
   | Readonly<{ status: 'invalid'; message: string }>
 
 export class SettingsAdminService {
+  private customHeaderCache?: Readonly<{ expiresAt: number; rules: readonly CustomHeaderRule[] }>
+
   public constructor(private readonly store: SettingsAdminStore) {}
 
   public async general(defaultBaseUrl: URL): Promise<GeneralSettings> {
@@ -358,6 +362,26 @@ export class SettingsAdminService {
     if (entries.length === 0) return invalid('No supported settings were submitted')
     await this.store.upsertMany(entries)
     return Object.freeze({ status: 'ok', message: 'The Shortlink Settings have been successfully updated' })
+  }
+
+  public async customHeaderSettings(): Promise<readonly CustomHeaderRule[]> {
+    if (this.customHeaderCache !== undefined && this.customHeaderCache.expiresAt > Date.now()) return this.customHeaderCache.rules
+    const raw = await this.store.getAll()
+    const rules = raw.custom_headers === undefined ? defaultCustomHeaderRules() : decodeCustomHeaderRules(raw.custom_headers)
+    this.customHeaderCache = Object.freeze({ expiresAt: Date.now() + 60_000, rules })
+    return rules
+  }
+
+  public async customHeadersForUrl(url: string | URL): Promise<Readonly<Record<string, string>>> {
+    return customHeadersForUrl(await this.customHeaderSettings(), url)
+  }
+
+  public async saveCustomHeaders(input: Record<string, unknown>): Promise<SettingsMutationResult> {
+    const result = parseCustomHeaderSubmission(input)
+    if (result.status === 'invalid') return result
+    await this.store.upsertMany([{ key: 'custom_headers', value: JSON.stringify(result.rules) }])
+    this.customHeaderCache = Object.freeze({ expiresAt: Date.now() + 60_000, rules: result.rules })
+    return Object.freeze({ status: 'ok', message: 'The Custom Headers Settings have been successfully updated' })
   }
 }
 

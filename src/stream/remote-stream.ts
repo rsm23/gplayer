@@ -58,6 +58,8 @@ export type RemoteStreamRequest = Readonly<{
   preserveRedirectCookies?: boolean
   /** Internal-only response metadata. Public proxy routes must not forward these headers. */
   includeResponseHeaders?: readonly 'set-cookie'[]
+  /** Server-controlled headers resolved independently for every validated redirect target. */
+  headersForTarget?: (target: URL) => RequestInit['headers'] | Promise<RequestInit['headers']>
 }>
 
 export type RemoteStreamResponse = Readonly<{
@@ -140,13 +142,19 @@ export class RemoteStream {
     let target = request.url instanceof URL ? new URL(request.url) : new URL(request.url)
     let method = request.method ?? 'GET'
     let body = request.body
-    const headers = filteredRequestHeaders(request.headers)
+    const baseHeaders = filteredRequestHeaders(request.headers)
     const maximumRedirects = request.maximumRedirects ?? 5
     const redirectCookies = new Map<string, string>()
-    if (request.preserveRedirectCookies === true) addCookieHeader(redirectCookies, headers.get('cookie') ?? '')
+    if (request.preserveRedirectCookies === true) addCookieHeader(redirectCookies, baseHeaders.get('cookie') ?? '')
 
     for (let redirectCount = 0; redirectCount <= maximumRedirects; redirectCount += 1) {
       const resolved = await resolveAllowedTarget(target, request.allowPrivateNetworks ?? false)
+      const headers = new Headers(baseHeaders)
+      if (request.headersForTarget !== undefined) mergeTrustedRequestHeaders(headers, await request.headersForTarget(new URL(target)))
+      if (request.preserveRedirectCookies === true) {
+        if (redirectCookies.size > 0) headers.set('cookie', [...redirectCookies.values()].join('; '))
+        else headers.delete('cookie')
+      }
       const response = this.fetchImplementation === undefined
         ? await openPinnedConnection(target, method, headers, resolved, body, request.signal)
         : await this.fetchImplementation(target, {
@@ -159,8 +167,6 @@ export class RemoteStream {
 
       if (request.preserveRedirectCookies === true) {
         for (const value of setCookieValues(response.headers)) addSetCookie(redirectCookies, value)
-        if (redirectCookies.size > 0) headers.set('cookie', [...redirectCookies.values()].join('; '))
-        else headers.delete('cookie')
       }
 
       if (response.status < 300 || response.status >= 400 || !response.headers.has('location')) {
@@ -183,7 +189,7 @@ export class RemoteStream {
       const redirectedTarget = new URL(location ?? '', target)
       if (redirectedTarget.origin !== target.origin) {
         if (method === 'POST') throw new Error('Cross-origin POST redirects are not allowed')
-        for (const name of ['authorization', 'cookie', 'x-website-token']) headers.delete(name)
+        for (const name of ['authorization', 'cookie', 'x-website-token']) baseHeaders.delete(name)
         redirectCookies.clear()
       }
       target = redirectedTarget
@@ -193,6 +199,14 @@ export class RemoteStream {
     }
 
     throw new Error('Unreachable redirect state')
+  }
+}
+
+function mergeTrustedRequestHeaders(target: Headers, input: RequestInit['headers']): void {
+  if (input === undefined) return
+  const forbidden = new Set(['connection', 'content-length', 'host', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'])
+  for (const [name, value] of new Headers(input)) {
+    if (!forbidden.has(name.toLowerCase())) target.set(name, value)
   }
 }
 

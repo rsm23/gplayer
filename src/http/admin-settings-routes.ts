@@ -3,11 +3,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AUTH_COOKIE_NAME, AuthService, authTokenFromRequest, type AuthUser } from '../auth/auth-service.js'
 import type { UserAdminService } from '../auth/user-admin-service.js'
 import type { AppConfig } from '../config.js'
-import { renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
+import { renderAdminCustomHeaderSettings, renderAdminError, renderAdminGeneralSettings, renderAdminPublicSettings, renderAdminShortlinkSettings, renderAdminSiteSettings, renderAdminSmtpSettings, type AdminMessage } from '../player/admin-page.js'
 import type { SettingsAdminService } from '../settings/settings-admin-service.js'
 import { InvalidSiteAssetError, type SiteAssetManager } from '../settings/site-assets-service.js'
 
-const ADMIN_CSP = "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 export async function registerAdminSettingsRoutes(
   app: FastifyInstance,
@@ -24,12 +24,14 @@ export async function registerAdminSettingsRoutes(
   const smtpUrl = `${adminBase}/settings/smtp/`
   const siteUrl = `${adminBase}/settings/site/`
   const shortlinkUrl = `${adminBase}/settings/shortlink/`
+  const customHeadersUrl = `${adminBase}/settings/custom-headers/`
 
   app.get(`${adminBase}/settings/general`, async (_request, reply) => await reply.redirect(generalUrl, 308))
   app.get(`${adminBase}/settings/public`, async (_request, reply) => await reply.redirect(publicUrl, 308))
   app.get(`${adminBase}/settings/smtp`, async (_request, reply) => await reply.redirect(smtpUrl, 308))
   app.get(`${adminBase}/settings/site`, async (_request, reply) => await reply.redirect(siteUrl, 308))
   app.get(`${adminBase}/settings/shortlink`, async (_request, reply) => await reply.redirect(shortlinkUrl, 308))
+  app.get(`${adminBase}/settings/custom-headers`, async (_request, reply) => await reply.redirect(customHeadersUrl, 308))
 
   app.get(generalUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -285,6 +287,53 @@ export async function registerAdminSettingsRoutes(
       }))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The shortlink settings could not be saved.'))
+    }
+  })
+
+  app.get(customHeadersUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    try {
+      const rules = await settings.customHeaderSettings()
+      const message: AdminMessage | undefined = stringValue(objectValue(request.query).updated) === '1'
+        ? { kind: 'success', text: 'The Custom Headers Settings have been successfully updated' }
+        : undefined
+      return reply.type('text/html; charset=utf-8').send(renderAdminCustomHeaderSettings({
+        adminBase,
+        rules,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-custom-headers'),
+        ...(message === undefined ? {} : { message })
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The custom-header settings are temporarily unavailable.'))
+    }
+  })
+
+  app.post(customHeadersUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request did not originate from this application.'))
+    }
+    const user = await authenticatedAdministrator(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'settings-custom-headers')) {
+      return reply.code(403).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'The settings request could not be verified.'))
+    }
+
+    try {
+      const result = await settings.saveCustomHeaders(body)
+      if (result.status === 'ok') return await reply.redirect(`${customHeadersUrl}?updated=1`, 303)
+      const rules = await settings.customHeaderSettings()
+      return reply.code(400).type('text/html; charset=utf-8').send(renderAdminCustomHeaderSettings({
+        adminBase,
+        rules,
+        csrfToken: csrfToken(config, tokenFor(request), 'settings-custom-headers'),
+        message: { kind: 'error', text: result.message }
+      }))
+    } catch {
+      return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The custom-header settings could not be saved.'))
     }
   })
 }

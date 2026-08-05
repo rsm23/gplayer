@@ -1,6 +1,7 @@
 import type { AuthUser } from '../auth/auth-service.js'
 import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
+import type { CustomHeaderRule } from '../settings/custom-headers.js'
 import { shortenerProviderList, timezoneList, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 
 export type AdminMessage = Readonly<{
@@ -436,6 +437,36 @@ export function renderAdminShortlinkSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminCustomHeaderSettings(input: Readonly<{
+  adminBase: string
+  rules: readonly CustomHeaderRule[]
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const rules = input.rules.length === 0 ? [{ keywords: [], headers: {} }] : input.rules
+  const rows = rules.map((rule, index) => customHeaderRow(rule, index)).join('')
+
+  return adminDocument('Custom headers', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Upstream requests</p>
+  <div class="admin-dashboard-heading"><div><h1>Custom headers.</h1><p>Attach server-controlled request headers to streaming URLs using ordered keyword rules.</p></div><span class="admin-role">1 JSON key</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'custom-headers')}
+  <form class="admin-settings-form custom-header-editor" action="${escapeHtml(input.adminBase)}/settings/custom-headers/" method="post" data-max-rules="50">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="settings-section" aria-labelledby="custom-headers-title">
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Matching</p><h2 id="custom-headers-title">URL rules</h2><p>Rules run from top to bottom. The first case-insensitive keyword match supplies its headers to that validated upstream target.</p></div>
+      <div>
+        <div class="settings-custom-header-list" data-custom-header-list>${rows}</div>
+        <button class="settings-add-rule" type="button" data-add-custom-header>+ Add header rule</button>
+      </div>
+    </section>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update custom headers</span><span aria-hidden="true">↗</span></button><p>Host, connection, content-length, transfer-encoding, and other hop-by-hop header overrides are rejected.</p></div>
+  </form>
+  <template data-custom-header-template>${customHeaderRow({ keywords: [], headers: {} }, '__INDEX__')}</template>
+</main>`)
+}
+
 export function renderAdminError(adminBase: string, status: 403 | 404 | 503, description: string): string {
   const title = status === 403 ? 'Access denied.' : status === 404 ? 'User not found.' : 'Service unavailable.'
   return adminDocument(String(status), `<main class="admin-error-main">
@@ -458,6 +489,7 @@ function adminDocument(title: string, body: string): string {
   <link rel="icon" href="/assets/img/logo/rr.ico">
   <link rel="stylesheet" href="/assets/css/gplayer-landing.css">
   <link rel="stylesheet" href="/assets/css/gplayer-public.css">
+  <script src="/assets/js/gplayer-admin-settings.js" defer></script>
 </head>
 <body class="admin-body">${body}</body>
 </html>`
@@ -510,8 +542,21 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a></nav>`
+}
+
+function customHeaderRow(rule: Pick<CustomHeaderRule, 'keywords' | 'headers'>, index: number | string): string {
+  const suffix = String(index)
+  const keywords = escapeHtml(rule.keywords.join('\n'))
+  const headers = escapeHtml(Object.entries(rule.headers).map(([name, value]) => `${name}: ${value}`).join('\n'))
+  return `<article class="settings-custom-header-card" data-custom-header-row>
+    <div class="settings-custom-header-title"><strong data-custom-header-title>Header rule ${typeof index === 'number' ? index + 1 : ''}</strong><button type="button" data-remove-custom-header>Remove</button></div>
+    <div class="settings-grid">
+      <div class="field"><label for="custom-header-keywords-${suffix}" data-custom-header-keywords-label>Keywords</label><textarea id="custom-header-keywords-${suffix}" name="items[${suffix}][keywords]" rows="5" placeholder="cdn.example.com" data-custom-header-keywords>${keywords}</textarea><p class="field-hint">One URL substring per line.</p></div>
+      <div class="field"><label for="custom-header-values-${suffix}" data-custom-header-values-label>Headers</label><textarea id="custom-header-values-${suffix}" name="items[${suffix}][headers]" rows="5" placeholder="Referer: https://example.com/" data-custom-header-values>${headers}</textarea><p class="field-hint">One Header-Name: value pair per line.</p></div>
+    </div>
+  </article>`
 }
 
 function stringOption(value: string, label: string, selected: string | boolean): string {

@@ -721,12 +721,14 @@
 .settings-subnav {
   display: flex;
   width: fit-content;
+  max-width: 100%;
   gap: 7px;
   margin-top: 38px;
   padding: 5px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: var(--panel);
+  overflow-x: auto;
 }
 
 .settings-subnav a {
@@ -883,6 +885,60 @@
 
 .settings-clear-secret input {
   accent-color: var(--brand);
+}
+
+.settings-custom-header-list {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-custom-header-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised), transparent 24%);
+}
+
+.settings-custom-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.settings-custom-header-title strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.settings-custom-header-title button,
+.settings-add-rule {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-custom-header-title button {
+  padding: 7px 9px;
+}
+
+.settings-add-rule {
+  width: 100%;
+  margin-top: 18px;
+  padding: 13px;
+  border-style: dashed;
+  color: var(--brand-soft);
+}
+
+.settings-add-rule:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .settings-logo-preview {
@@ -1160,10 +1216,15 @@
 
   .settings-subnav {
     width: 100%;
+    gap: 3px;
+    padding: 3px;
   }
 
   .settings-subnav a {
     flex: 1;
+    min-width: 0;
+    padding: 8px 7px;
+    font-size: 10px;
     text-align: center;
   }
 

@@ -57,6 +57,7 @@ export async function buildApp(
   await app.register(cookie)
 
   const authRuntime = createAuthRuntime(app, config)
+  const settingsRuntime = dependencies.settings ?? authRuntime.settings
 
   await registerSystemRoutes(app, config)
   await registerAdminRoutes(
@@ -70,14 +71,16 @@ export async function buildApp(
     app,
     config,
     dependencies.auth ?? authRuntime.auth,
-    dependencies.settings ?? authRuntime.settings,
+    settingsRuntime,
     dependencies.users ?? authRuntime.users,
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(path.resolve(currentDirectory, '../public'), config.adminDirectory)
   )
   await registerPlayerRoutes(app, config)
   await registerSourceApiRoutes(app, config, dependencies.sourceApi ?? createSourceApiRuntime(app, config))
   await registerMediaRoutes(app, config)
-  await registerStreamingRoutes(app, config)
+  await registerStreamingRoutes(app, config, {
+    customHeaders: async (target) => await settingsRuntime.customHeadersForUrl(target)
+  })
 
   await app.register(fastifyStatic, {
     root: path.resolve(currentDirectory, '../public'),

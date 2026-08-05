@@ -320,6 +320,40 @@ describe('settings administration service', () => {
       .resolves.toEqual({ status: 'invalid', message: 'Choose either a new ouo.io API key or remove the stored key' })
     expect(store.writes).toHaveLength(writeCount)
   })
+
+  it('loads the bundled custom-header defaults and preserves first-match URL semantics', async () => {
+    const settings = new SettingsAdminService(new MemorySettingsStore())
+    const rules = await settings.customHeaderSettings()
+    expect(rules).toHaveLength(11)
+    expect(rules[0]).toEqual({ keywords: ['cdn.dzen.ru'], headers: { Referer: 'https://dzen.ru/' } })
+    await expect(settings.customHeadersForUrl('https://CDN.DZEN.RU/video/master.m3u8')).resolves.toEqual({ Referer: 'https://dzen.ru/' })
+    await expect(settings.customHeadersForUrl('https://unmatched.example/video.mp4')).resolves.toEqual({})
+  })
+
+  it('validates and serializes ordered custom-header rules into the single legacy JSON key', async () => {
+    const store = new MemorySettingsStore()
+    const settings = new SettingsAdminService(store)
+    await expect(settings.saveCustomHeaders({
+      'items[0][keywords]': 'media.example\ncdn.example',
+      'items[0][headers]': 'Origin: https://app.example\nReferer: https://app.example/',
+      'items[1][keywords]': 'tokenized.example',
+      'items[1][headers]': 'X-Playback-Token: server-secret',
+      ignored_custom_header_key: 'blocked'
+    })).resolves.toEqual({ status: 'ok', message: 'The Custom Headers Settings have been successfully updated' })
+    expect(store.writes.at(-1)).toEqual([{ key: 'custom_headers', value: expect.any(String) }])
+    expect(JSON.parse(store.values.custom_headers ?? '')).toEqual([
+      { keywords: ['media.example', 'cdn.example'], headers: { Origin: 'https://app.example', Referer: 'https://app.example/' } },
+      { keywords: ['tokenized.example'], headers: { 'X-Playback-Token': 'server-secret' } }
+    ])
+    await expect(settings.customHeadersForUrl('https://cdn.example/segment.ts')).resolves.toEqual({ Origin: 'https://app.example', Referer: 'https://app.example/' })
+
+    const writeCount = store.writes.length
+    await expect(settings.saveCustomHeaders({ 'items[0][keywords]': 'example.test', 'items[0][headers]': 'Host: attacker.example' }))
+      .resolves.toEqual({ status: 'invalid', message: 'Custom-header rule 1 contains the unsafe header Host' })
+    await expect(settings.saveCustomHeaders({ 'items[0][keywords]': 'example.test', 'items[0][headers]': 'missing-separator' }))
+      .resolves.toEqual({ status: 'invalid', message: 'Custom-header rule 1 contains a malformed header' })
+    expect(store.writes).toHaveLength(writeCount)
+  })
 })
 
 describe('site asset generation', () => {
@@ -558,6 +592,37 @@ describe('general settings administration routes', () => {
     expect(updated.body).toContain('The Shortlink Settings have been successfully updated')
     expect(updated.body).not.toContain('stored-shortlink-secret')
     expect(updated.body).not.toContain('submitted-shortlink-secret')
+  })
+
+  it('renders and updates the ordered custom-header editor through a signed form', async () => {
+    const store = new MemorySettingsStore()
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/custom-headers/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1]
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Custom headers.')
+    expect(page.body).toContain('cdn.dzen.ru')
+    expect(page.body).toContain('/assets/js/gplayer-admin-settings.js')
+    expect(page.headers['content-security-policy']).toContain("script-src 'self'")
+
+    const payload = new URLSearchParams({
+      csrf: csrf ?? '',
+      'items[0][keywords]': 'media.example',
+      'items[0][headers]': 'Origin: https://app.example\nX-Playback-Token: route-secret',
+      'items[1][keywords]': '',
+      'items[1][headers]': ''
+    }).toString()
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/custom-headers/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/custom-headers/?updated=1')
+    expect(JSON.parse(store.values.custom_headers ?? '')).toEqual([
+      { keywords: ['media.example'], headers: { Origin: 'https://app.example', 'X-Playback-Token': 'route-secret' } }
+    ])
   })
 
   it('rejects non-admin, cross-origin, and invalid-CSRF settings writes', async () => {

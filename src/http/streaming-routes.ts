@@ -31,6 +31,7 @@ export type StreamingRouteOptions = Readonly<{
   remoteStream?: RemoteStream
   /** Integration-test escape hatch. Public deployments must keep this false. */
   allowPrivateNetworks?: boolean
+  customHeaders?: (target: URL) => RequestInit['headers'] | Promise<RequestInit['headers']>
 }>
 
 export function createStreamingProxyPath(
@@ -68,6 +69,7 @@ export async function registerStreamingRoutes(
         url: parsed.target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
+        ...(options.customHeaders === undefined ? {} : { headersForTarget: options.customHeaders }),
         allowPrivateNetworks
       })
       if (response.status === 304) return reply.code(304).send()
@@ -117,6 +119,7 @@ export async function registerStreamingRoutes(
         url: parsed.target,
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers: requestHeaders(request),
+        ...(options.customHeaders === undefined ? {} : { headersForTarget: options.customHeaders }),
         allowPrivateNetworks
       })
       if (response.status < 200 || response.status >= 300) {
