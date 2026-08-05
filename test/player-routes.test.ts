@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import sharp from 'sharp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -828,10 +829,23 @@ describe('player HTTP routes', () => {
     expect(top.statusCode).toBe(200)
     expect(top.body).toContain('<a href="https://sponsor.example/top">Top sponsor</a>')
 
-    const bait = await app.inject({ method: 'GET', url: '/ads/advertisement.png' })
-    expect(bait.statusCode).toBe(200)
-    expect(bait.headers['content-type']).toBe('image/png')
-    expect(bait.rawPayload.length).toBeGreaterThan(40)
+    const embedRuntime = await app.inject({ method: 'GET', url: '/assets/js/gplayer-embed.js' })
+    expect(embedRuntime.body).toContain('bait.src = `/ads/?${Date.now()}`')
+    const [legacyBait, slashBait, namedBait] = await Promise.all([
+      app.inject({ method: 'GET', url: '/ads' }),
+      app.inject({ method: 'GET', url: '/ads/' }),
+      app.inject({ method: 'GET', url: '/ads/advertisement.png' })
+    ])
+    expect(legacyBait.statusCode).toBe(200)
+    expect(legacyBait.headers['content-type']).toBe('image/png')
+    expect(legacyBait.headers['cache-control']).toBe('no-cache, no-store, must-revalidate')
+    expect(slashBait.rawPayload).toEqual(legacyBait.rawPayload)
+    expect(namedBait.rawPayload).toEqual(legacyBait.rawPayload)
+    await expect(sharp(legacyBait.rawPayload).metadata()).resolves.toMatchObject({
+      format: 'png',
+      width: 300,
+      height: 300
+    })
   })
 
   it('serializes the complete VAST schedule for the local player runtime', async () => {

@@ -11,6 +11,7 @@ import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../setting
 import type { PlayerSettings } from '../settings/player-settings.js'
 import type { AdsSettings } from '../settings/settings-admin-service.js'
 import { renderAdFrameDocument, type AdFrameContent } from '../player/ad-frame.js'
+import { legacyAdBaitImage } from '../player/ad-bait-image.js'
 import { downloadPageLinkTargets, renderDownloadError, renderDownloadPage } from '../player/download-page.js'
 import { P2P_CORE_IMPORT_MAP_CSP_HASH, renderEmbedError, renderEmbedPage, type EmbedAdsOptions } from '../player/embed-page.js'
 import { PlayerLinkGenerator } from '../player/link-generator.js'
@@ -85,7 +86,6 @@ const emailLookupSchema = z.object({
 }).passthrough()
 
 const adFrameSlotSchema = z.enum(['popup', 'download-top', 'download-bottom', 'sharer-top', 'sharer-bottom'])
-const TRANSPARENT_PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 const MAX_SHORTLINK_TARGETS = 20
 const MAX_PUBLIC_SUBTITLE_FILES = 10
 
@@ -409,13 +409,28 @@ export async function registerPlayerRoutes(
   app.get('/sharer', showSharer)
   app.get('/sharer/', showSharer)
 
-  app.get('/ads/advertisement.png', async (_request, reply) => reply
-    .header('cache-control', 'private, no-store')
-    .header('content-security-policy', "default-src 'none'; sandbox")
-    .header('cross-origin-resource-policy', 'same-origin')
-    .header('x-content-type-options', 'nosniff')
-    .type('image/png')
-    .send(TRANSPARENT_PIXEL))
+  const adBait = async (_request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
+    try {
+      const image = await legacyAdBaitImage()
+      return reply
+        .header('cache-control', 'no-cache, no-store, must-revalidate')
+        .header('content-security-policy', "default-src 'none'; sandbox")
+        .header('cross-origin-resource-policy', 'same-origin')
+        .header('x-content-type-options', 'nosniff')
+        .type('image/png')
+        .send(image)
+    } catch {
+      return reply
+        .header('cache-control', 'no-cache, no-store, must-revalidate')
+        .type('text/plain; charset=utf-8')
+        .code(500)
+        .send('Ad image unavailable')
+    }
+  }
+
+  app.get('/ads', adBait)
+  app.get('/ads/', adBait)
+  app.get('/ads/advertisement.png', adBait)
 
   app.get('/ads/frame/:slot', async (request, reply) => {
     const slot = adFrameSlotSchema.safeParse((request.params as { slot?: unknown }).slot)

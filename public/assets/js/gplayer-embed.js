@@ -1237,7 +1237,7 @@
       bait.remove()
     }, { once: true })
     bait.addEventListener('error', showBlocked, { once: true })
-    bait.src = `/ads/advertisement.png?${Date.now()}`
+    bait.src = `/ads/?${Date.now()}`
     document.body.append(bait)
     window.setTimeout(showBlocked, 3_000)
   }
