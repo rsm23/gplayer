@@ -34,6 +34,7 @@ import { SubtitleAdminService } from './subtitles/subtitle-admin-service.js'
 import { FileSystemSubtitleAssetManager } from './subtitles/subtitle-assets-service.js'
 import { VideoAdminService } from './videos/video-admin-service.js'
 import { FileSystemVideoPosterAssetManager } from './videos/video-assets-service.js'
+import { VideoTransferService } from './videos/video-transfer-service.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -47,6 +48,7 @@ export type AppDependencies = Readonly<{
   vastAssets?: VastAssetManager
   subtitles?: SubtitleAdminService
   videos?: VideoAdminService
+  videoTransfer?: VideoTransferService
   countryCodeLookup?: CountryCodeLookup
 }>
 
@@ -86,6 +88,7 @@ export async function buildApp(
     config.baseUrl,
     { embedSlug: config.slugs.embed, downloadSlug: config.slugs.download }
   )
+  const videoTransferRuntime = dependencies.videoTransfer ?? new VideoTransferService(videosRuntime, config.baseUrl)
   let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
   const hostingHosts = legacyHostingHosts()
   const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
@@ -96,6 +99,11 @@ export async function buildApp(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
   )
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
+  const loadImportFileSize = async (): Promise<number> => {
+    const settings = await settingsRuntime.general(config.baseUrl)
+    const configured = Number(settings.import_filesize)
+    return Number.isSafeInteger(configured) && configured > 0 ? configured : 1024
+  }
 
   await registerSystemRoutes(app, config)
   await registerAdminRoutes(
@@ -127,8 +135,10 @@ export async function buildApp(
     config,
     dependencies.auth ?? authRuntime.auth,
     videosRuntime,
+    videoTransferRuntime,
     subtitlesRuntime,
-    loadPlayerSettings
+    loadPlayerSettings,
+    loadImportFileSize
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, loadHostingSettings, countryCodeLookup, supportedHosts, resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug) })

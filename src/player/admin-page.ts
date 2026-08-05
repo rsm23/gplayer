@@ -139,10 +139,12 @@ export function renderAdminVideos(input: Readonly<{
   dmca: string
   isAdmin: boolean
   mutationCsrfToken: string
+  transferCsrfToken: string
+  importFileSizeKiB: number
   message?: AdminMessage
 }>): string {
   const rows = input.videos.map((video) => `<tr>
-    <td><span class="session-id">#${escapeHtml(video.id)}</span></td>
+    <td><label class="video-export-choice"><input type="checkbox" name="ids[]" value="${escapeHtml(video.id)}" form="video-export-form" aria-label="Select ${escapeHtml(video.title || `video ${video.id}`)} for export"><span class="session-id">#${escapeHtml(video.id)}</span></label></td>
     <td><a class="video-title-link" href="${escapeHtml(input.adminBase)}/videos/edit/?id=${escapeHtml(video.id)}"><strong>${escapeHtml(video.title || 'Untitled video')}</strong><span>${escapeHtml(video.slug)}</span></a></td>
     <td><a class="video-host-link" href="${escapeHtml(video.mainUrl)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(video.host)}</strong><span>Open source ↗</span></a></td>
     <td><span class="video-state video-state-${video.status}">${escapeHtml(videoStatusLabel(video.status))}</span>${video.dmca > 0 ? '<span class="video-dmca">DMCA</span>' : ''}</td>
@@ -170,6 +172,19 @@ export function renderAdminVideos(input: Readonly<{
       <label class="sr-only" for="video-status-filter">Status</label><select id="video-status-filter" name="status"><option value="">Any status</option>${selectStringOption('0', 'Active', input.status)}${selectStringOption('1', 'Failed', input.status)}${selectStringOption('2', 'Checking', input.status)}</select>
       ${input.isAdmin ? `<label class="sr-only" for="video-dmca-filter">DMCA</label><select id="video-dmca-filter" name="dmca"><option value="">Any DMCA state</option>${selectStringOption('0', 'Available', input.dmca)}${selectStringOption('1', 'Takedown', input.dmca)}</select>` : ''}
       <button type="submit">Filter</button>
+    </form>
+  </section>
+  <section class="video-transfer-grid" aria-label="Video import and export">
+    <form class="video-transfer-card" action="${escapeHtml(input.adminBase)}/videos/import/" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.transferCsrfToken)}">
+      <div><p class="panel-kicker">Import CSV</p><h2>Add a video list</h2><p>Legacy-compatible repeated video and subtitle columns. Maximum ${input.importFileSizeKiB.toLocaleString('en-US')} KiB.</p></div>
+      <div class="field"><label for="video-import-file">Comma-separated file</label><input id="video-import-file" name="importVideos" type="file" accept=".csv,text/csv" required></div>
+      <button class="admin-back-link" type="submit">Import videos</button>
+    </form>
+    <form id="video-export-form" class="video-transfer-card" action="${escapeHtml(input.adminBase)}/videos/export/" method="post">
+      <input type="hidden" name="csrf" value="${escapeHtml(input.transferCsrfToken)}">
+      <div><p class="panel-kicker">Export CSV</p><h2>Download selected videos</h2><p>Select rows below. Main sources, ordered alternatives, and attached subtitle labels are preserved.</p></div>
+      <button class="admin-back-link" type="submit">Export selection</button>
     </form>
   </section>
   <section class="session-table-shell video-table-shell" aria-labelledby="videos-table-title">

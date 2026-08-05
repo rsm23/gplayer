@@ -9,6 +9,7 @@ import { Security } from '../security/security.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import type { SubtitleAdminService } from '../subtitles/subtitle-admin-service.js'
 import { parseBulkSubtitleLines, type StoredVideoDetail, type VideoAccess, type VideoAdminService, type VideoFormSubmission, type VideoLinkSlugs, type VideoMutationResult } from '../videos/video-admin-service.js'
+import { VIDEO_EXPORT_FAIL, VIDEO_EXPORT_SUCCESS, VIDEO_IMPORT_FAIL, type VideoTransferService } from '../videos/video-transfer-service.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: http: https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const UNAUTHORIZED = 'You are not authorized to access this feature'
@@ -21,8 +22,10 @@ export async function registerVideoAdminRoutes(
   config: AppConfig,
   auth: AuthService,
   videos: VideoAdminService,
+  transfers: VideoTransferService,
   subtitles: SubtitleAdminService,
-  loadPlayerSettings?: PlayerSettingsLoader
+  loadPlayerSettings?: PlayerSettingsLoader,
+  loadImportFileSize?: () => Promise<number>
 ): Promise<void> {
   const security = new Security(config.secureSalt)
   const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
@@ -41,6 +44,11 @@ export async function registerVideoAdminRoutes(
   const posterRemoveUrl = `${adminBase}/videos/poster/remove/`
   const ajaxUrl = `${adminBase}/ajax/videos/`
   const listAjaxUrl = `${adminBase}/ajax/videos-list/`
+  const importUrl = `${adminBase}/videos/import/`
+  const exportUrl = `${adminBase}/videos/export/`
+  const exportDownloadUrl = `${adminBase}/videos/export/download/`
+  const importAjaxUrl = `${adminBase}/ajax/videos-import/`
+  const exportAjaxUrl = `${adminBase}/ajax/videos-export/`
 
   app.get(`${adminBase}/videos/list`, async (request, reply) => await redirectWithQuery(request, reply, listUrl))
   app.get(`${adminBase}/videos/new`, async (_request, reply) => await reply.redirect(newUrl, 308))
@@ -51,7 +59,7 @@ export async function registerVideoAdminRoutes(
     const user = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
     if (user === null || reply.sent) return
     try {
-      return reply.type('text/html; charset=utf-8').send(await videoListPage(config, request, user, videos, currentVideoSlugs, pageMessage(request)))
+      return reply.type('text/html; charset=utf-8').send(await videoListPage(config, request, user, videos, currentVideoSlugs, loadImportFileSize, pageMessage(request)))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The video database is temporarily unavailable.'))
     }
@@ -155,6 +163,45 @@ export async function registerVideoAdminRoutes(
   app.post(dmcaUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.dmca(body.id, body.takedown, access)))
   app.post(posterRemoveUrl, async (request, reply) => await formMutation(request, reply, async (body, access) => await videos.removePoster(body.id, access)))
 
+  app.post(importUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) return videoOriginError(reply, adminBase)
+    const user = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    try {
+      const data = await videoImportRequestData(request, await importMaximumBytes(loadImportFileSize))
+      if (!validCsrfToken(config, tokenFor(request), stringValue(data.fields.csrf), 'video-transfer')) return videoCsrfError(reply, adminBase)
+      const file = data.files.find((item) => item.fieldname === 'importVideos')
+      const result = file === undefined
+        ? { status: 'fail' as const, message: VIDEO_IMPORT_FAIL }
+        : await transfers.importCsv(file.content, accessFor(user), await currentVideoSlugs())
+      return await reply.redirect(`${listUrl}?imported=${result.status === 'ok' ? '1' : '0'}&message=${encodeURIComponent(result.message)}`, 303)
+    } catch {
+      return await reply.redirect(`${listUrl}?imported=0&message=${encodeURIComponent(VIDEO_IMPORT_FAIL)}`, 303)
+    }
+  })
+
+  app.post(exportUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    if (!hasSameOrigin(request, config)) return videoOriginError(reply, adminBase)
+    const user = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const body = objectValue(request.body)
+    if (!validCsrfToken(config, tokenFor(request), stringValue(body.csrf), 'video-transfer')) return videoCsrfError(reply, adminBase)
+    const result = await transfers.exportCsv(body.ids ?? body['ids[]'], accessFor(user))
+    if (result.status === 'fail') return await reply.redirect(`${listUrl}?exported=0&message=${encodeURIComponent(result.message)}`, 303)
+    return sendCsv(reply, result.csv)
+  })
+
+  app.get(exportDownloadUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    const user = await authenticatedUser(request, reply, adminBase, loginUrl, auth)
+    if (user === null || reply.sent) return
+    const result = await transfers.exportCsv(objectValue(request.query).ids, accessFor(user))
+    if (result.status === 'fail') return reply.code(404).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 404, result.message))
+    return sendCsv(reply, result.csv)
+  })
+
   const videoAjax = async (request: FastifyRequest, reply: FastifyReply, listOnly: boolean): Promise<unknown> => {
     applyAdminHeaders(reply, config)
     reply.type('application/json; charset=utf-8')
@@ -248,6 +295,36 @@ export async function registerVideoAdminRoutes(
 
   app.route({ method: ['GET', 'POST'], url: listAjaxUrl, handler: async (request, reply) => await videoAjax(request, reply, true) })
   app.route({ method: ['GET', 'POST'], url: ajaxUrl, handler: async (request, reply) => await videoAjax(request, reply, false) })
+
+  app.post(importAjaxUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    if (!hasSameOrigin(request, config)) return reply.code(403).send({ status: 'fail', message: VIDEO_IMPORT_FAIL, result: [] })
+    const user = await authenticatedUserJson(request, auth)
+    if (user === null) return reply.send({ status: 'fail', message: UNAUTHORIZED, result: [] })
+    try {
+      const data = await videoImportRequestData(request, await importMaximumBytes(loadImportFileSize))
+      const file = data.files.find((item) => item.fieldname === 'importVideos')
+      return reply.send(file === undefined
+        ? { status: 'fail', message: VIDEO_IMPORT_FAIL, result: [] }
+        : await transfers.importCsv(file.content, accessFor(user), await currentVideoSlugs()))
+    } catch {
+      return reply.send({ status: 'fail', message: VIDEO_IMPORT_FAIL, result: [] })
+    }
+  })
+
+  app.post(exportAjaxUrl, async (request, reply) => {
+    applyAdminHeaders(reply, config)
+    reply.type('application/json; charset=utf-8')
+    if (!hasSameOrigin(request, config)) return reply.code(403).send({ status: 'fail', message: VIDEO_EXPORT_FAIL, result: null })
+    const user = await authenticatedUserJson(request, auth)
+    if (user === null) return reply.send({ status: 'fail', message: UNAUTHORIZED, result: null })
+    const ids = stringValue(objectValue(request.body).ids)
+    const result = await transfers.exportCsv(ids, accessFor(user))
+    if (result.status === 'fail') return reply.send({ status: 'fail', message: result.message, result: null })
+    const query = new URLSearchParams({ ids }).toString()
+    return reply.send({ status: 'ok', message: VIDEO_EXPORT_SUCCESS, result: new URL(`${exportDownloadUrl}?${query}`, config.baseUrl).href })
+  })
 }
 
 async function videoListPage(
@@ -256,6 +333,7 @@ async function videoListPage(
   user: AuthUser,
   videos: VideoAdminService,
   loadSlugs: () => Promise<VideoLinkSlugs>,
+  loadImportFileSize?: () => Promise<number>,
   message?: AdminMessage
 ): Promise<string> {
   const query = objectValue(request.query)
@@ -281,6 +359,8 @@ async function videoListPage(
     dmca,
     isAdmin: user.role === 0,
     mutationCsrfToken: csrfToken(config, tokenFor(request), 'video-mutate'),
+    transferCsrfToken: csrfToken(config, tokenFor(request), 'video-transfer'),
+    importFileSizeKiB: await importFileSize(loadImportFileSize),
     ...(message === undefined ? {} : { message })
   })
 }
@@ -392,9 +472,65 @@ function serializedFields(value: unknown): Record<string, unknown> {
 
 function pageMessage(request: FastifyRequest): AdminMessage | undefined {
   const query = objectValue(request.query)
+  if (stringValue(query.imported) === '1') return { kind: 'success', text: boundedMessage(query.message, 'The new video list has been successfully imported') }
+  if (stringValue(query.imported) === '0') return { kind: 'error', text: boundedMessage(query.message, VIDEO_IMPORT_FAIL) }
+  if (stringValue(query.exported) === '0') return { kind: 'error', text: boundedMessage(query.message, VIDEO_EXPORT_FAIL) }
   if (stringValue(query.mutation) === 'ok') return { kind: 'success', text: boundedMessage(query.message, 'The video has been successfully updated') }
   if (stringValue(query.mutation) === 'fail') return { kind: 'error', text: boundedMessage(query.message, 'The video failed to update') }
   return undefined
+}
+
+async function videoImportRequestData(request: FastifyRequest, maximumBytes: number): Promise<VideoRequestData> {
+  if (!request.isMultipart()) throw new Error('CSV import must use multipart encoding')
+  const fields: Record<string, unknown> = {}
+  const files: UploadedPart[] = []
+  for await (const part of request.parts({ limits: { fieldNameSize: 100, fieldSize: 100_000, fields: 10, files: 1, parts: 11, fileSize: maximumBytes } })) {
+    if (part.type === 'field') {
+      addField(fields, part.fieldname, part.value)
+      continue
+    }
+    if (part.fieldname !== 'importVideos' || part.filename === '' || !part.filename.toLowerCase().endsWith('.csv')) {
+      part.file.resume()
+      continue
+    }
+    const content = await part.toBuffer()
+    if (part.file.truncated || content.length >= maximumBytes) throw new Error('CSV import exceeds its configured limit')
+    files.push(Object.freeze({ fieldname: part.fieldname, filename: part.filename, content }))
+  }
+  return Object.freeze({ fields, files: Object.freeze(files) })
+}
+
+async function importFileSize(loader?: () => Promise<number>): Promise<number> {
+  try {
+    const size = loader === undefined ? 1024 : await loader()
+    return Number.isSafeInteger(size) && size > 0 ? size : 1024
+  } catch {
+    return 1024
+  }
+}
+
+async function importMaximumBytes(loader?: () => Promise<number>): Promise<number> {
+  const kibibytes = await importFileSize(loader)
+  const bytes = kibibytes * 1024
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : 1024 * 1024
+}
+
+async function authenticatedUserJson(request: FastifyRequest, auth: AuthService): Promise<AuthUser | null> {
+  try {
+    const token = tokenFor(request) || stringValue(objectValue(request.body).token)
+    return await auth.authenticate(token, request.headers['user-agent'] ?? '')
+  } catch {
+    return null
+  }
+}
+
+function sendCsv(reply: FastifyReply, csv: string): FastifyReply {
+  const timestamp = new Date().toISOString().replaceAll(/[-:]/gu, '').replace(/\.\d{3}Z$/u, 'Z')
+  return reply
+    .header('content-disposition', `attachment; filename="gplayer-videos-${timestamp}.csv"`)
+    .header('x-content-type-options', 'nosniff')
+    .type('text/csv; charset=utf-8')
+    .send(csv)
 }
 
 function editPageMessage(request: FastifyRequest): AdminMessage | undefined {

@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.js'
 import { buildPlayerQuery, type PlayerMediaQuery } from '../src/core/player-query.js'
 import type { MediaResult } from '../src/core/source-resolver.js'
 import type { Database } from '../src/database/database.js'
+import type { ProviderHttpClient } from '../src/hosting/provider-http.js'
 import { MySqlVideoAdminStore } from '../src/videos/mysql-video-admin-store.js'
 import {
   VideoAdminService,
@@ -28,6 +29,13 @@ import {
   type VideoPosterAsset,
   type VideoPosterAssetManager
 } from '../src/videos/video-assets-service.js'
+import {
+  VIDEO_EXPORT_SUCCESS,
+  VIDEO_IMPORT_SUCCESS,
+  VideoTransferService,
+  parseVideoImportCsv,
+  serializeVideoExportCsv
+} from '../src/videos/video-transfer-service.js'
 import { Security } from '../src/security/security.js'
 import type { SubtitleAdminService } from '../src/subtitles/subtitle-admin-service.js'
 
@@ -252,6 +260,64 @@ describe('filesystem video poster assets', () => {
 })
 
 describe('video administration service', () => {
+  it('parses legacy duplicate CSV headers, quoted newlines, BOM, CRLF, and ragged rows', () => {
+    const csv = Buffer.from('\uFEFFtitle,slug,poster,subtitle_json,video_url,video_url,subtitle_url,subtitle_label\r\n"Line 1\nLine 2",movie,,https://metadata.example/subtitles.json,https://cdn.example/main.mp4,https://youtu.be/backup,https://captions.example/en.vtt,English\r\nShort,,,,https://cdn.example/short.mp4\r\n')
+    expect(parseVideoImportCsv(csv)).toEqual([
+      {
+        title: 'Line 1\nLine 2',
+        slug: 'movie',
+        poster: '',
+        subtitleJson: 'https://metadata.example/subtitles.json',
+        videos: ['https://cdn.example/main.mp4', 'https://youtu.be/backup'],
+        subtitles: [{ url: 'https://captions.example/en.vtt', language: 'English' }]
+      },
+      { title: 'Short', slug: '', poster: '', subtitleJson: '', videos: ['https://cdn.example/short.mp4'], subtitles: [] }
+    ])
+    expect(() => parseVideoImportCsv('title,slug\nMissing URL,missing')).toThrow('video_url')
+    expect(() => parseVideoImportCsv('title,video_url\n"unterminated,https://cdn.example/a.mp4')).toThrow('Unterminated')
+  })
+
+  it('round-trips the legacy export shape with ordered alternatives and subtitle labels', () => {
+    const csv = serializeVideoExportCsv([video(), video({ id: '2', alternatives: [], subtitles: [], hasAlternatives: false, hasSubtitles: false })])
+    expect(csv.split('\n')[0]).toBe('title,slug,poster,video_url,video_url,video_url,subtitle_url,subtitle_label')
+    expect(csv.split('\n')[1]).toMatch(/^"Database movie",/u)
+    const parsed = parseVideoImportCsv(csv)
+    expect(parsed[0]).toEqual(expect.objectContaining({
+      title: 'Database movie',
+      videos: ['https://cdn.example/movie.mp4', 'https://youtube.com/watch?v=fallback-one', 'https://vimeo.com/1234'],
+      subtitles: [{ url: 'https://captions.example/movie.en.vtt', language: 'English' }]
+    }))
+    expect(parsed[1]?.videos).toEqual(['https://cdn.example/movie.mp4'])
+  })
+
+  it('imports inactive videos with bounded remote subtitle JSON and ownership-scoped exports', async () => {
+    const store = new MemoryVideoStore()
+    const videos = service(store)
+    const http: ProviderHttpClient = {
+      async get() { return { url: new URL('https://metadata.example/subtitles.json'), status: 200, headers: new Headers(), body: JSON.stringify([{ label: 'French', file: 'https://captions.example/fr.vtt' }, { label: 'Bad', file: 'file:///private' }]) } },
+      async head() { throw new Error('not used') },
+      async post() { throw new Error('not used') }
+    }
+    const transfer = new VideoTransferService(videos, baseUrl, { http })
+    const imported = await transfer.importCsv('title,slug,poster,subtitle_json,video_url,video_url,subtitle_url,subtitle_label\nImported,imported,,https://metadata.example/subtitles.json,https://cdn.example/imported.mp4,https://youtu.be/imported-backup,https://captions.example/en.vtt,English\n', memberAccess)
+    expect(imported.status).toBe('ok')
+    expect(imported.message).toBe(VIDEO_IMPORT_SUCCESS)
+    expect(imported.result[0]).toEqual(expect.objectContaining({ id: '3', host: 'direct', has_alt: true, has_sub: true, status: 0 }))
+    expect(imported.result[0]?.actions.embed_code).toMatch(/^&lt;iframe/u)
+    expect(store.lastCreate).toEqual(expect.objectContaining({ userId: '2', slug: 'imported', status: 0 }))
+    expect(store.lastCreate?.subtitles.map((item) => item.language)).toEqual(['English', 'French'])
+
+    const duplicate = await transfer.importCsv('title,slug,poster,video_url\nDuplicate,imported,,https://cdn.example/duplicate.mp4\n', memberAccess)
+    expect(duplicate.status).toBe('ok')
+    expect(store.lastCreate?.slug).toBe('imported-gener')
+
+    const exported = await transfer.exportCsv(['1', '2', '3'], memberAccess)
+    expect(exported.status).toBe('ok')
+    expect(exported.message).toBe(VIDEO_EXPORT_SUCCESS)
+    expect(exported.count).toBe(2)
+    expect(parseVideoImportCsv(exported.csv).map((item) => item.title)).toEqual(['Member movie', 'Imported'])
+  })
+
   it('normalizes DataTables queries and preserves the legacy list contract with ownership', async () => {
     const store = new MemoryVideoStore()
     const videos = service(store)
@@ -452,6 +518,70 @@ describe('video administration and saved-video routes', () => {
     expect(context.store.lastCreate?.alternatives).toEqual([{ host: 'vimeo', hostId: '7788', order: 0 }])
     expect(context.store.lastCreate?.subtitles).toHaveLength(2)
     expect(context.subtitleUploads).toEqual([expect.objectContaining({ originalName: 'route.en.vtt' })])
+  })
+
+  it('imports and exports selected videos through signed forms and legacy transfer endpoints', async () => {
+    const context = await createApp(member)
+    const page = await context.app.inject({ method: 'GET', url: '/administrator/videos/list/', headers })
+    expect(page.body).toContain('Import CSV')
+    expect(page.body).toContain('name="ids[]"')
+    const importCsrf = csrfFor(page.body, '/administrator/videos/import/')
+    const exportCsrf = csrfFor(page.body, '/administrator/videos/export/')
+    const csv = Buffer.from('title,slug,poster,video_url,video_url,subtitle_url,subtitle_label\r\nRoute import,route-import,,https://cdn.example/route.mp4,https://youtu.be/route-backup,https://captions.example/route.vtt,English\r\n')
+    const multipart = multipartBody({ csrf: importCsrf }, [
+      { field: 'importVideos', filename: 'videos.csv', type: 'text/csv', content: csv }
+    ])
+    const imported = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/import/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': `multipart/form-data; boundary=${multipart.boundary}` },
+      payload: multipart.payload
+    })
+    expect(imported.statusCode).toBe(303)
+    expect(imported.headers.location).toContain('imported=1')
+    expect(context.store.lastCreate).toEqual(expect.objectContaining({ title: 'Route import', status: 0, userId: '2' }))
+
+    const exported = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/export/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf: exportCsrf, 'ids[]': '3' }).toString()
+    })
+    expect(exported.statusCode).toBe(200)
+    expect(exported.headers['content-type']).toContain('text/csv')
+    expect(exported.headers['content-disposition']).toMatch(/^attachment; filename="gplayer-videos-/u)
+    expect(parseVideoImportCsv(exported.body)[0]?.title).toBe('Route import')
+
+    const legacy = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/ajax/videos-export/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'ids=3'
+    })
+    expect(legacy.json()).toEqual({ status: 'ok', message: VIDEO_EXPORT_SUCCESS, result: 'https://player.example/administrator/videos/export/download/?ids=3' })
+    const downloaded = await context.app.inject({ method: 'GET', url: new URL(String(legacy.json().result)).pathname + new URL(String(legacy.json().result)).search, headers })
+    expect(downloaded.statusCode).toBe(200)
+    expect(parseVideoImportCsv(downloaded.body)[0]?.slug).toBe('route-import')
+
+    const crossOrigin = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/export/',
+      headers: { ...headers, origin: 'https://attacker.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ csrf: exportCsrf, 'ids[]': '3' }).toString()
+    })
+    expect(crossOrigin.statusCode).toBe(403)
+
+    const oversized = multipartBody({ csrf: importCsrf }, [
+      { field: 'importVideos', filename: 'too-large.csv', type: 'text/csv', content: Buffer.alloc(1024 * 1024, 0x61) }
+    ])
+    const rejected = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/import/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': `multipart/form-data; boundary=${oversized.boundary}` },
+      payload: oversized.payload
+    })
+    expect(rejected.statusCode).toBe(303)
+    expect(rejected.headers.location).toContain('imported=0')
   })
 
   it('preserves legacy list and mutation contracts while rejecting unauthorized and cross-origin writes', async () => {

@@ -6,6 +6,7 @@ export type ProviderHttpRequest = Readonly<{
   url: string | URL
   headers?: RequestInit['headers']
   preserveRedirectCookies?: boolean
+  signal?: AbortSignal
 }>
 
 export type ProviderHttpPostRequest = ProviderHttpRequest & Readonly<{
@@ -50,6 +51,7 @@ export class RemoteProviderHttpClient implements ProviderHttpClient {
       ...(request.headers === undefined ? {} : { headers: request.headers }),
       ...(method === 'POST' && request.body !== undefined ? { body: request.body } : {}),
       ...(request.preserveRedirectCookies === undefined ? {} : { preserveRedirectCookies: request.preserveRedirectCookies }),
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
       allowPrivateNetworks: this.allowPrivateNetworks,
       includeResponseHeaders: ['set-cookie']
     })

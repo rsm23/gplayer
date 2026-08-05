@@ -231,9 +231,17 @@ export class VideoAdminService {
   }
 
   public async create(input: VideoFormSubmission, access: VideoAccess): Promise<VideoMutationResult> {
-    const parsed = parseSubmission(input, access, this.now())
+    return await this.createWithStatus(input, access, 1, false)
+  }
+
+  public async createImported(input: VideoFormSubmission, access: VideoAccess): Promise<VideoMutationResult> {
+    return await this.createWithStatus(input, access, 0, true)
+  }
+
+  private async createWithStatus(input: VideoFormSubmission, access: VideoAccess, status: 0 | 1, resolveSlugConflict: boolean): Promise<VideoMutationResult> {
+    const parsed = parseSubmission(input, access, this.now(), status)
     if (parsed.status === 'fail') return parsed
-    const slug = await this.uniqueSlug(input.slug)
+    const slug = resolveSlugConflict ? await this.uniqueImportedSlug(input.slug) : await this.uniqueSlug(input.slug)
     if (slug === null) return fail('The custom slug is already in use')
 
     let uploadedPoster = ''
@@ -449,6 +457,18 @@ export class VideoAdminService {
     return null
   }
 
+  private async uniqueImportedSlug(input: unknown): Promise<string | null> {
+    const base = slugify(stringValue(input).trim()).slice(0, 50)
+    if (base === '') return await this.uniqueSlug('')
+    if (!await this.store.slugExists(base)) return base
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const suffix = slugify(this.randomSlug()).slice(0, 5)
+      const slug = `${base.slice(0, Math.max(1, 49 - suffix.length))}-${suffix}`.slice(0, 50)
+      if (suffix !== '' && !await this.store.slugExists(slug)) return slug
+    }
+    return null
+  }
+
   private adminRecord(record: StoredVideoRecord, slugs?: VideoLinkSlugs): VideoAdminRecord {
     const embedSlug = slugs?.embed ?? this.embedSlug
     const downloadSlug = slugs?.download ?? this.downloadSlug
@@ -465,7 +485,7 @@ export class VideoAdminService {
   }
 }
 
-function parseSubmission(input: VideoFormSubmission, access: VideoAccess, now: number): Readonly<{ status: 'fail'; message: string }> | Readonly<{
+function parseSubmission(input: VideoFormSubmission, access: VideoAccess, now: number, status: 0 | 1 = 1): Readonly<{ status: 'fail'; message: string }> | Readonly<{
   status: 'parsed'
   poster: string
   value: Omit<VideoCreateWrite, 'slug' | 'poster'>
@@ -515,7 +535,7 @@ function parseSubmission(input: VideoFormSubmission, access: VideoAccess, now: n
       host: main.getHost(),
       hostId: main.getID(),
       userId: access.userId,
-      status: 1,
+      status,
       dmca: 0,
       views: 0,
       created: now,
