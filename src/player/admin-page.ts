@@ -13,6 +13,7 @@ import type { DriveAccountAdminRecord } from '../drive/drive-account-admin-servi
 import type { DriveBackupRecord, DriveFileAdminRecord, DriveQueueRecord, DriveSharedDrive } from '../drive/drive-admin-service.js'
 import type { LoadBalancerAdminRecord } from '../load-balancers/load-balancer-admin-service.js'
 import type { PluginAdminRecord } from '../plugins/plugin-admin-service.js'
+import type { PluginConfigField } from '../plugins/plugin-archive.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -272,6 +273,7 @@ export function renderAdminVideos(input: Readonly<{
   <p class="eyebrow"><span></span>Saved playback</p>
   <div class="admin-dashboard-heading"><div><h1>Video Manager.</h1><p>Create stable player links backed by the legacy-compatible video, alternative, subtitle, and source-cache tables.</p></div><span class="admin-role">${input.recordsTotal} total</span></div>
   ${renderMessage(input.message)}
+  ${pluginSlot('backend.videos.list.top')}
   <section class="user-toolbar video-toolbar" aria-label="Video controls">
     <a class="hero-link-primary" href="${escapeHtml(input.adminBase)}/videos/new/">Add video <span aria-hidden="true">+</span></a>
     <form action="${escapeHtml(input.adminBase)}/videos/list/" method="get" role="search">
@@ -319,6 +321,7 @@ export function renderAdminVideos(input: Readonly<{
     <div class="session-table-scroll"><table class="session-table video-table"><thead><tr><th>ID</th><th>Title</th><th>Host</th><th>Status</th><th>Views</th><th>User</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="8">No videos found.</td></tr>'}</tbody></table></div>
     ${input.recordsTotal > input.videos.length ? `<p class="session-table-note">Showing ${input.videos.length} of ${input.recordsTotal} records. The legacy DataTables endpoint provides complete pagination.</p>` : ''}
   </section>
+  ${pluginSlot('backend.videos.list.bottom')}
 </main>`)
 }
 
@@ -333,6 +336,7 @@ export function renderAdminVideoForm(input: Readonly<{
   embedUrl?: string
   downloadUrl?: string
   embedCode?: string
+  pluginData?: unknown
   values?: Readonly<Record<string, unknown>>
   message?: AdminMessage
 }>): string {
@@ -368,6 +372,8 @@ export function renderAdminVideoForm(input: Readonly<{
   const posterPreview = !edit || input.posterUrl === undefined || input.posterUrl === '' ? '' : `<div class="video-poster-preview"><a href="${escapeHtml(input.posterUrl)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(input.posterUrl)}" alt="Current poster for ${escapeHtml(input.video?.title || 'video')}"></a></div>`
   const posterRemove = !edit || input.posterUrl === undefined || input.posterUrl === '' ? '' : `<form class="video-poster-remove" action="${escapeHtml(input.adminBase)}/videos/poster/remove/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(input.video?.id ?? '')}"><button class="session-revoke" type="submit">Remove current poster</button></form>`
   const generatedLinks = !edit ? '' : `<section class="settings-section video-generated-links" aria-labelledby="video-links-title"><div class="settings-section-heading"><p class="panel-kicker">Stable output</p><h2 id="video-links-title">Generated links</h2><p>The public slug resolves to the saved database record and its ordered media relationships.</p></div><div class="settings-grid"><div class="field"><label for="video-embed-url">Embed link</label><textarea id="video-embed-url" rows="3" readonly>${escapeHtml(input.embedUrl ?? '')}</textarea></div><div class="field"><label for="video-download-url">Download link</label><textarea id="video-download-url" rows="3" readonly>${escapeHtml(input.downloadUrl ?? '')}</textarea></div><div class="field settings-wide"><label for="video-embed-code">Embed code</label><textarea id="video-embed-code" rows="4" readonly>${escapeHtml(input.embedCode ?? '')}</textarea></div></div></section>`
+  const pluginData = input.pluginData !== null && typeof input.pluginData === 'object' && !Array.isArray(input.pluginData) ? input.pluginData as Record<string, unknown> : {}
+  const pluginHtml = typeof pluginData.html === 'string' && Buffer.byteLength(pluginData.html) <= 2 * 1_024 * 1_024 ? pluginData.html : ''
 
   return adminDocument(edit ? 'Edit Video' : 'New Video', `${adminHeader(input.adminBase, 'videos', input.isAdmin)}
 <main class="admin-dashboard admin-video-form-page">
@@ -380,10 +386,12 @@ export function renderAdminVideoForm(input: Readonly<{
     <section class="settings-section" aria-labelledby="video-alternatives-title"><div class="settings-section-heading"><p class="panel-kicker">Fallbacks</p><h2 id="video-alternatives-title">Alternative video URLs</h2><p>Invalid and duplicate URLs are ignored; up to 20 ordered alternatives are retained and tried if the main source has no playable media.</p></div><div><div class="video-repeat-list" data-video-alternative-list>${alternativeRows}</div><button class="admin-back-link video-add-row" type="button" data-add-video-alternative>Add another URL</button><div class="field video-bulk-alternatives"><label for="video-bulk-alternatives">Or paste URLs, one per line</label><textarea id="video-bulk-alternatives" name="multiAltUrls" rows="5" placeholder="https://video-host.example/watch/fallback-1&#10;https://video-host.example/watch/fallback-2">${escapeHtml(bulkAlternatives)}</textarea></div><template data-video-alternative-template>${videoAlternativeRow('', 'new')}</template></div></section>
     <section class="settings-section" aria-labelledby="video-subtitles-title"><div class="settings-section-heading"><p class="panel-kicker">Captions</p><h2 id="video-subtitles-title">Attached subtitles</h2><p>Keep, edit, or add URL captions; bulk lines support Language|URL and URL|Language. Uploaded files also enter your Subtitle Manager library.</p></div><div class="video-repeat-list">${existingSubtitles}${newSubtitles}</div><div class="settings-grid video-bulk-subtitles"><div class="field"><label for="video-bulk-subtitles">Bulk subtitle URLs</label><textarea id="video-bulk-subtitles" name="multiSubUrls" rows="6" placeholder="English|https://captions.example/movie.srt&#10;https://captions.example/movie.fr.vtt">${escapeHtml(bulkSubtitles)}</textarea></div><div class="field"><label for="video-subtitle-files">Upload subtitle files</label><input id="video-subtitle-files" name="multiSubFiles" type="file" accept=".srt,.vtt,.ass,.sub,.stl,.dfxp,.ttml,.sbv,.txt" multiple><p class="field-hint">Each file is limited to 2 MiB. Language is inferred from a two-letter filename segment when possible.</p></div></div></section>
     <section class="settings-section" aria-labelledby="video-poster-title"><div class="settings-section-heading"><p class="panel-kicker">Artwork</p><h2 id="video-poster-title">Poster</h2><p>Use a credential-free HTTP(S) URL or upload a validated JPG, PNG, WebP, or GIF up to 5 MiB.</p></div><div class="settings-grid"><div class="field"><label for="video-poster-url">Poster URL</label><input id="video-poster-url" name="poster-url" type="url" maxlength="2048" value="${escapeHtml(posterUrl)}" placeholder="https://images.example/poster.jpg"></div><div class="field"><label for="video-poster-file">Poster file</label><input id="video-poster-file" name="poster-file" type="file" accept=".jpg,.jpeg,.png,.webp,.gif"></div></div>${posterPreview}</section>
+    ${pluginHtml}${pluginSlot(edit ? 'backend.videos.edit.form_bottom' : 'backend.videos.new.form_bottom')}
     <button class="generate-button settings-save" type="submit"><span>${edit ? 'Update video' : 'Save video'}</span><span aria-hidden="true">↗</span></button>
   </form>
   ${posterRemove}
   ${generatedLinks}
+  ${pluginSlot(edit ? 'backend.videos.edit.bottom' : 'backend.videos.new.bottom')}
 </main>`)
 }
 
@@ -733,7 +741,7 @@ export function renderAdminPlugins(input: Readonly<{
     <td><strong>${escapeHtml(plugin.name)}</strong><span class="user-email-mobile">${escapeHtml(plugin.folder)}</span></td>
     <td><form action="${escapeHtml(input.adminBase)}/plugins/status/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(plugin.id)}"><input type="hidden" name="status" value="${plugin.status === 1 ? '0' : '1'}"><button class="user-state user-state-${plugin.status}" type="submit">${plugin.status === 1 ? 'Active' : 'Inactive'}</button></form></td>
     <td>${renderTimestamp(plugin.created, 'Not recorded')}</td><td>${renderTimestamp(plugin.updated, 'Not updated')}</td>
-    <td><form action="${escapeHtml(input.adminBase)}/plugins/uninstall/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(plugin.id)}"><button class="session-revoke" type="submit">Uninstall</button></form></td>
+    <td><span class="admin-table-actions"><a class="admin-back-link" href="${escapeHtml(input.adminBase)}/plugins/config/?id=${encodeURIComponent(plugin.id)}">Configure</a><form action="${escapeHtml(input.adminBase)}/plugins/uninstall/" method="post"><input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(plugin.id)}"><button class="session-revoke" type="submit">Uninstall</button></form></span></td>
   </tr>`).join('')
   return adminDocument('Plugins', `${adminHeader(input.adminBase, 'plugins')}
 <main class="admin-dashboard admin-users-page admin-plugins-page">
@@ -744,6 +752,53 @@ export function renderAdminPlugins(input: Readonly<{
   <section class="user-toolbar" aria-label="Plugin controls"><form action="${escapeHtml(input.adminBase)}/plugins/list/" method="get" role="search"><label class="sr-only" for="plugin-search">Search plugins</label><input id="plugin-search" name="q" type="search" value="${escapeHtml(input.search)}" placeholder="Search plugin name"><button type="submit">Search</button></form></section>
   <section class="session-table-shell user-table-shell" aria-labelledby="plugin-table-title"><div class="session-table-heading"><div><p class="panel-kicker">Installed packages</p><h2 id="plugin-table-title">Plugin list</h2></div><a href="${escapeHtml(input.adminBase)}/plugins/list/">Reload</a></div><div class="session-table-scroll"><table class="session-table user-table"><thead><tr><th>Name</th><th>Status</th><th>Created</th><th>Updated</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows || '<tr><td class="session-empty" colspan="5">No plugins installed.</td></tr>'}</tbody></table></div>${input.recordsTotal > input.plugins.length ? `<p class="session-table-note">Showing ${input.plugins.length} of ${input.recordsTotal} records.</p>` : ''}</section>
 </main>`)
+}
+
+export function renderAdminPluginConfiguration(input: Readonly<{
+  adminBase: string
+  plugin: PluginAdminRecord
+  fields: readonly PluginConfigField[]
+  csrfToken: string
+  values?: Readonly<Record<string, unknown>>
+  errors?: Readonly<Record<string, string>>
+  message?: AdminMessage
+}>): string {
+  const values = input.values ?? input.plugin.config
+  const controls = input.fields.map((field) => pluginConfigControl(field, values[field.name], input.errors?.[field.name])).join('')
+  return adminDocument(`Configure ${input.plugin.name}`, `${adminHeader(input.adminBase, 'plugins')}
+<main class="admin-dashboard admin-settings-page admin-plugin-config-page">
+  <p class="eyebrow"><span></span>Plugin configuration</p>
+  <div class="admin-dashboard-heading"><div><h1>${escapeHtml(input.plugin.name)}.</h1><p>Manage the allowlisted configuration fields declared by this Node plugin package.</p></div><a class="admin-back-link" href="${escapeHtml(input.adminBase)}/plugins/list/">Back to plugins</a></div>
+  ${renderMessage(input.message)}
+  <form class="admin-settings-form" action="${escapeHtml(input.adminBase)}/plugins/config/?id=${encodeURIComponent(input.plugin.id)}" method="post">
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}"><input type="hidden" name="id" value="${escapeHtml(input.plugin.id)}">
+    <section class="settings-section" aria-labelledby="plugin-config-title"><div class="settings-section-heading"><p class="panel-kicker">${input.plugin.status === 1 ? 'Active extension' : 'Inactive extension'}</p><h2 id="plugin-config-title">Configuration</h2><p>Secret fields remain unchanged when submitted blank. Undeclared package state is preserved.</p></div><div class="settings-grid">${controls || '<p class="settings-wide session-empty">This plugin does not declare configurable fields.</p>'}</div></section>
+    ${input.fields.length === 0 ? '' : '<div class="settings-actions"><button class="generate-button" type="submit"><span>Save configuration</span><span aria-hidden="true">↗</span></button><p>Values are validated against plugin.json before persistence.</p></div>'}
+  </form>
+</main>`)
+}
+
+export function pluginSlot(name: string): string {
+  return /^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(name) ? `<div class="plugin-slot" data-plugin-slot="${escapeHtml(name)}"></div>` : ''
+}
+
+function pluginConfigControl(field: PluginConfigField, current: unknown, error?: string): string {
+  const id = `plugin-config-${field.name.replaceAll('.', '-')}`
+  const description = [field.description, error].filter((item): item is string => item !== undefined && item !== '').map((item) => `<p class="field-hint${item === error ? ' field-error' : ''}">${escapeHtml(item)}</p>`).join('')
+  if (field.type === 'checkbox') {
+    const checked = current === true || current === 1 || current === '1' || current === 'true' || current === 'on'
+    return `<label class="settings-toggle settings-wide" for="${escapeHtml(id)}"><span><strong>${escapeHtml(field.label)}</strong><small>${escapeHtml(field.description)}</small></span><span class="settings-switch"><input type="hidden" name="${escapeHtml(field.name)}" value="0"><input id="${escapeHtml(id)}" name="${escapeHtml(field.name)}" type="checkbox" value="1"${checked ? ' checked' : ''}><i aria-hidden="true"></i></span>${error === undefined ? '' : `<small class="field-error">${escapeHtml(error)}</small>`}</label>`
+  }
+  const value = current === undefined || current === null || field.type === 'password' ? '' : String(current)
+  const common = `id="${escapeHtml(id)}" name="${escapeHtml(field.name)}"${field.required && field.type !== 'password' ? ' required' : ''}`
+  let control: string
+  if (field.type === 'textarea') control = `<textarea ${common} rows="7" maxlength="100000">${escapeHtml(value)}</textarea>`
+  else if (field.type === 'select') control = `<select ${common}><option value="">Select an option</option>${field.options.map((option) => `<option value="${escapeHtml(option.value)}"${value === option.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>`
+  else {
+    const bounds = field.type === 'number' ? `${field.minimum === undefined ? '' : ` min="${field.minimum}"`}${field.maximum === undefined ? '' : ` max="${field.maximum}"`}` : ' maxlength="100000"'
+    control = `<input ${common} type="${field.type}" value="${escapeHtml(value)}"${bounds}${field.type === 'password' ? ' autocomplete="new-password" placeholder="Leave blank to keep the current value"' : ''}>`
+  }
+  return `<div class="field${field.type === 'textarea' ? ' settings-wide' : ''}"><label for="${escapeHtml(id)}">${escapeHtml(field.label)}</label>${control}${description}</div>`
 }
 
 export function renderAdminGeneralSettings(input: Readonly<{

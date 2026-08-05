@@ -60,6 +60,8 @@ export class PluginAdminService {
     return normalized === null ? null : await this.store.getPlugin(normalized)
   }
 
+  public extensionStore(): Pick<PluginAdminStore, 'listPluginRecords' | 'getPlugin' | 'updatePlugin'> { return this.store }
+
   public async install(data: Buffer): Promise<PluginMutationResult> {
     let archive: PluginArchive
     try { archive = PluginArchive.fromBuffer(data) } catch (error) { return { status: 'invalid', message: safeArchiveError(error) } }

@@ -1061,6 +1061,27 @@ button.user-state:focus-visible {
   font-weight: 700;
 }
 
+.admin-table-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-table-actions form {
+  display: inline-flex;
+  margin: 0;
+}
+
+.field-error {
+  color: var(--danger) !important;
+}
+
+.plugin-slot:empty {
+  display: none;
+}
+
 .admin-user-form-shell {
   max-width: 940px;
   margin-top: 52px;

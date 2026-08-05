@@ -12,6 +12,7 @@ import { parseBulkSubtitleLines, type StoredVideoDetail, type VideoAccess, type 
 import { VIDEO_BULK_MAX_ITEMS, type VideoBulkService } from '../videos/video-bulk-service.js'
 import type { VideoCheckerService } from '../videos/video-checker-service.js'
 import { VIDEO_EXPORT_FAIL, VIDEO_EXPORT_SUCCESS, VIDEO_IMPORT_FAIL, type VideoTransferService } from '../videos/video-transfer-service.js'
+import type { PluginExtensionRuntime } from '../plugins/plugin-extension-runtime.js'
 
 const ADMIN_CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data: http: https:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 const UNAUTHORIZED = 'You are not authorized to access this feature'
@@ -29,7 +30,8 @@ export async function registerVideoAdminRoutes(
   bulk: VideoBulkService,
   checker: VideoCheckerService,
   loadPlayerSettings?: PlayerSettingsLoader,
-  loadImportFileSize?: () => Promise<number>
+  loadImportFileSize?: () => Promise<number>,
+  plugins?: Pick<PluginExtensionRuntime, 'executeHook'>
 ): Promise<void> {
   const security = new Security(config.secureSalt)
   const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
@@ -91,7 +93,7 @@ export async function registerVideoAdminRoutes(
       const video = await videos.get(objectValue(request.query).id, accessFor(user))
       if (video === null) return reply.code(404).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 404, 'The video was not found'))
       if (user.role !== 0 && video.dmca > 0) return reply.code(451).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 403, 'This video is unavailable because of a takedown.'))
-      return reply.type('text/html; charset=utf-8').send(await videoFormPage(config, request, user, videos, video, currentVideoSlugs, editPageMessage(request)))
+      return reply.type('text/html; charset=utf-8').send(await videoFormPage(config, request, user, videos, video, currentVideoSlugs, editPageMessage(request), plugins))
     } catch {
       return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, 'The video database is temporarily unavailable.'))
     }
@@ -130,6 +132,12 @@ export async function registerVideoAdminRoutes(
     }
     const result = edit ? await videos.update(id, submission, access) : await videos.create(submission, access)
     if (result.status === 'ok' && result.id !== undefined) {
+      await plugins?.executeHook('video.save', Object.freeze({
+        video_id: result.id,
+        [edit ? 'update_data' : 'insert_data']: submission,
+        post_data: Object.freeze({ ...data.fields }),
+        action: edit ? 'edit' : 'create'
+      }), Object.freeze({ user: Object.freeze({ id: user.id, role: user.role }) })).catch(() => undefined)
       return await reply.redirect(`${editUrl}?id=${encodeURIComponent(result.id)}&${edit ? 'updated' : 'created'}=1`, 303)
     }
 
@@ -438,13 +446,16 @@ async function videoFormPage(
   videos: VideoAdminService,
   video: StoredVideoDetail,
   loadSlugs: () => Promise<VideoLinkSlugs>,
-  message?: AdminMessage
+  message?: AdminMessage,
+  plugins?: Pick<PluginExtensionRuntime, 'executeHook'>
 ): Promise<string> {
+  const hookData = await plugins?.executeHook('video.edit.load', Object.freeze({ video_id: video.id, video_data: video }), Object.freeze({ user: Object.freeze({ id: user.id, role: user.role }) })).catch(() => undefined)
   return renderAdminVideoForm({
     adminBase: `/${config.adminDirectory}`,
     isAdmin: user.role === 0,
     csrfToken: csrfToken(config, tokenFor(request), 'video-write'),
     ...formPageData(config, videos, video, await loadSlugs()),
+    ...(hookData?.plugin_data !== undefined ? { pluginData: hookData.plugin_data } : {}),
     ...(message === undefined ? {} : { message })
   })
 }

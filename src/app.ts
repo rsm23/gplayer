@@ -30,6 +30,7 @@ import { registerSourceApiRoutes, type SourceApiRouteOptions } from './http/sour
 import { registerStreamingRoutes } from './http/streaming-routes.js'
 import { registerLoadBalancerAdminRoutes } from './http/load-balancer-admin-routes.js'
 import { registerPluginAdminRoutes } from './http/plugin-admin-routes.js'
+import { registerPluginExtensionRoutes } from './http/plugin-extension-routes.js'
 import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-routes.js'
 import { publicErrors, renderPublicError } from './player/public-page.js'
 import { createCountryCodeLookup, type CountryCodeLookup } from './security/geoip-country.js'
@@ -68,6 +69,7 @@ import { PluginSyncClient } from './plugins/plugin-sync-client.js'
 import { SystemActiveConnectionCounter } from './background/active-connections.js'
 import { LoadBalancerAdminService } from './load-balancers/load-balancer-admin-service.js'
 import { PluginAdminService } from './plugins/plugin-admin-service.js'
+import { PluginExtensionRuntime } from './plugins/plugin-extension-runtime.js'
 import { NodemailerAccountMailer, type AccountMailer } from './email/smtp-mailer.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -103,6 +105,7 @@ export type AppDependencies = Readonly<{
   clearRuntimeCache?: () => boolean | Promise<boolean>
   loadBalancers?: LoadBalancerAdminService
   plugins?: PluginAdminService
+  pluginExtensions?: PluginExtensionRuntime
 }>
 
 export async function buildApp(
@@ -166,6 +169,8 @@ export async function buildApp(
   const pluginsRoot = path.resolve(currentDirectory, '../plugins')
   const pluginBackgrounds = new PluginBackgroundManager(pluginsRoot)
   app.addHook('onClose', async () => await pluginBackgrounds.close())
+  const pluginAdminRuntime = dependencies.plugins ?? new PluginAdminService(authRuntime.pluginAdminStore, pluginsRoot, pluginBackgrounds)
+  const pluginExtensionRuntime = dependencies.pluginExtensions ?? new PluginExtensionRuntime(pluginAdminRuntime.extensionStore(), pluginsRoot)
   const pluginMaintenance = new PluginMaintenanceWorker(
     authRuntime.pluginMaintenanceStore,
     new PluginSyncClient(new RemoteStream(), config.adminDirectory, config.secureSalt),
@@ -276,6 +281,7 @@ export async function buildApp(
     const user = await authenticateRequest(request)
     return user !== null && user.status === 1 && user.role === 0
   }
+  await registerPluginExtensionRoutes(app, config, authService, pluginExtensionRuntime)
   await registerSystemRoutes(app, config, authService, clearRuntimeCache, {
     loadPublicSettings,
     isAuthenticated,
@@ -348,7 +354,6 @@ export async function buildApp(
     mainSite: async () => new URL(String((await settingsRuntime.general(config.baseUrl)).main_site))
   })
   await registerLoadBalancerAdminRoutes(app, config, authService, loadBalancerRuntime, miscHostOptions(supportedHosts))
-  const pluginAdminRuntime = dependencies.plugins ?? new PluginAdminService(authRuntime.pluginAdminStore, pluginsRoot, pluginBackgrounds)
   await registerPluginAdminRoutes(app, config, authService, pluginAdminRuntime)
   await registerVideoAdminRoutes(
     app,
@@ -360,7 +365,8 @@ export async function buildApp(
     videoBulkRuntime,
     videoCheckerRuntime,
     loadPlayerSettings,
-    loadImportFileSize
+    loadImportFileSize,
+    pluginExtensionRuntime
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const driveSharer = dependencies.driveSharer ?? new DriveSharerService(authRuntime.driveStore, driveHttp)
@@ -393,7 +399,11 @@ export async function buildApp(
     loadMiscSettings,
     countryCodeLookup,
     supportedHosts,
-    resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug)
+    resolveSavedVideo: async (idOrSlug) => await videosRuntime.savedQuery(idOrSlug),
+    filterResponse: async (response, query) => {
+      const base = sourceApiRuntime.filterResponse === undefined ? response : await sourceApiRuntime.filterResponse(response, query)
+      return await pluginExtensionRuntime.filterApiResponse(base, query).catch(() => base)
+    }
   })
   await registerDriveMediaRoutes(app, driveMediaRuntime)
   await registerMediaRoutes(app, config)

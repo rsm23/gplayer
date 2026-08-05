@@ -45,6 +45,7 @@ export type SourceApiRouteOptions = Readonly<{
   loadPlayerSettings?: PlayerSettingsLoader
   loadMiscSettings?: MiscSettingsLoader
   countryCodeLookup?: CountryCodeLookup
+  filterResponse?: (response: unknown, query: Readonly<Record<string, unknown>>) => Promise<unknown>
 }>
 
 type ApiRequestEnvelope = Readonly<{
@@ -82,10 +83,11 @@ export async function registerSourceApiRoutes(
     const output = isDownloadConfigRequest(request)
       ? createDownloadConfiguration(config, configuredMedia, ads)
       : createEmbedConfiguration(config, configuredMedia, request.headers['user-agent'] ?? '', ads, player)
+    const filtered = await filterResponse(options.filterResponse, output, Object.freeze({ route: 'api-config', media: configuredMedia }))
 
     return reply
       .type('text/plain; charset=utf-8')
-      .send(security.encryptResponse(JSON.stringify(output), password))
+      .send(security.encryptResponse(JSON.stringify(filtered), password))
   }
 
   const api = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
@@ -127,9 +129,10 @@ export async function registerSourceApiRoutes(
       result,
       player
     )
+    const filtered = await filterResponse(options.filterResponse, output, Object.freeze({ route: 'api', media: playableMedia }))
     return reply
       .type('text/plain; charset=utf-8')
-      .send(security.encryptResponse(JSON.stringify(output), envelope.password))
+      .send(security.encryptResponse(JSON.stringify(filtered), envelope.password))
   }
 
   app.get('/api-config', apiConfig)
@@ -137,6 +140,14 @@ export async function registerSourceApiRoutes(
   app.get('/api-config/*', apiConfig)
   app.route({ method: ['GET', 'POST'], url: '/api', handler: api })
   app.route({ method: ['GET', 'POST'], url: '/api/', handler: api })
+}
+
+async function filterResponse(filter: SourceApiRouteOptions['filterResponse'], response: unknown, query: Readonly<Record<string, unknown>>): Promise<unknown> {
+  if (filter === undefined) return response
+  try {
+    const filtered = await filter(response, query)
+    return JSON.stringify(filtered) === undefined ? response : filtered
+  } catch { return response }
 }
 
 async function resolveSavedMedia(

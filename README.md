@@ -2,7 +2,7 @@
 
 This repository is a from-scratch Node.js/TypeScript rewrite of the supplied GDPlayer 4.8.3 application. The acceptance criterion is behavioral parity: every route, hosting adapter, streaming mode, admin workflow, background job, plugin hook, theme surface, configuration option, and edge case in the supplied source must have a tested Node equivalent.
 
-The project is intentionally tracked against a generated source inventory rather than a hand-written feature shortlist. See [`docs/PARITY.md`](docs/PARITY.md) and [`docs/parity-manifest.json`](docs/parity-manifest.json).
+The project is intentionally tracked against a generated source inventory rather than a hand-written feature shortlist. See [`docs/PARITY.md`](docs/PARITY.md), [`docs/parity-manifest.json`](docs/parity-manifest.json), and the [`Node plugin API`](docs/PLUGIN_API.md).
 
 ## Development
 

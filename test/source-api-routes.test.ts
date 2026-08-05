@@ -57,6 +57,16 @@ describe('legacy player source API routes', () => {
     expect(resolve).not.toHaveBeenCalled()
   })
 
+  it('applies the bounded plugin response-filter pipeline before encryption', async () => {
+    await app.close()
+    const filterResponse = vi.fn(async (response: unknown, query: Readonly<Record<string, unknown>>) => ({ ...(response as Record<string, unknown>), plugin_filter: query.route }))
+    app = await buildApp(config, { sourceApi: { resolve, supportedHosts: new Set(['direct']), filterResponse } })
+    const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/master.m3u8' })
+    const response = await app.inject({ method: 'GET', url: `/api-config/${request.queryToken}?p=${request.passwordToken}` })
+    expect(decryptJson(response.body, request.password)).toMatchObject({ plugin_filter: 'api-config' })
+    expect(filterResponse).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ route: 'api-config' }))
+  })
+
   it('returns the smaller encrypted download-page configuration', async () => {
     const request = authenticatedRequest({ host: 'direct', id: 'https://cdn.example.test/video.mp4' })
     const response = await app.inject({

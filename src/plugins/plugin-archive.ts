@@ -18,6 +18,27 @@ export type NodePluginManifest = Readonly<{
   keepFiles: ReadonlySet<string>
   background: string | null
   config: Readonly<Record<string, unknown>>
+  priority: number
+  overrides: Readonly<{
+    frontend: Readonly<Record<string, string>>
+    backend: Readonly<Record<string, string>>
+  }>
+  hooks: Readonly<Record<string, readonly PluginExecutable[]>>
+  widgets: Readonly<Record<string, readonly PluginWidget[]>>
+  configFields: readonly PluginConfigField[]
+}>
+
+export type PluginExecutable = Readonly<{ file: string; priority: number }>
+export type PluginWidget = Readonly<{ file: string; priority: number; adminOnly: boolean }>
+export type PluginConfigField = Readonly<{
+  name: string
+  label: string
+  type: 'text' | 'textarea' | 'number' | 'url' | 'password' | 'checkbox' | 'select'
+  required: boolean
+  description: string
+  options: readonly Readonly<{ value: string; label: string }>[]
+  minimum?: number
+  maximum?: number
 }>
 
 type ArchiveEntry = Readonly<{
@@ -203,8 +224,101 @@ export function parsePluginManifest(content: Buffer): NodePluginManifest {
   const background = typeof backgroundValue === 'string' && backgroundValue.trim() !== ''
     ? safeEntryName(backgroundValue.trim()).replace(/\/$/, '')
     : null
-  return Object.freeze({ name, folder, version, useCli, iconUri, keepFiles, background, config: Object.freeze({ ...config }) })
+  const priority = boundedManifestInteger(value.priority, -1_000_000, 1_000_000)
+  const overrides = Object.freeze({
+    frontend: manifestPathMap(recordValue(recordValue(value.overrides).frontend)),
+    backend: manifestPathMap(recordValue(recordValue(value.overrides).backend))
+  })
+  const hooks = manifestExecutables(recordValue(value.hooks))
+  const widgets = manifestWidgets(recordValue(value.widgets))
+  const configFields = manifestConfigFields(value.config_fields ?? recordValue(value.configuration).fields)
+  return Object.freeze({ name, folder, version, useCli, iconUri, keepFiles, background, config: Object.freeze({ ...config }), priority, overrides, hooks, widgets, configFields })
 }
+
+function manifestPathMap(value: Record<string, unknown>): Readonly<Record<string, string>> {
+  const entries: [string, string][] = []
+  for (const [key, candidate] of Object.entries(value).slice(0, 200)) {
+    if (!/^[a-z0-9][a-z0-9._-]{0,99}$/i.test(key)) continue
+    const file = manifestRelativeFile(candidate)
+    if (file !== null) entries.push([key, file])
+  }
+  return Object.freeze(Object.fromEntries(entries))
+}
+
+function manifestExecutables(value: Record<string, unknown>): Readonly<Record<string, readonly PluginExecutable[]>> {
+  const entries: [string, readonly PluginExecutable[]][] = []
+  for (const [name, raw] of Object.entries(value).slice(0, 200)) {
+    if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(name)) continue
+    const candidates = Array.isArray(raw) ? raw : [raw]
+    const executables = candidates.slice(0, 100).flatMap((candidate): PluginExecutable[] => {
+      const record = recordValue(candidate)
+      const file = manifestRelativeFile(typeof candidate === 'string' ? candidate : record.file)
+      return file === null ? [] : [Object.freeze({ file, priority: boundedManifestInteger(record.priority, -1_000_000, 1_000_000) })]
+    })
+    if (executables.length > 0) entries.push([name, Object.freeze(executables)])
+  }
+  return Object.freeze(Object.fromEntries(entries))
+}
+
+function manifestWidgets(value: Record<string, unknown>): Readonly<Record<string, readonly PluginWidget[]>> {
+  const entries: [string, readonly PluginWidget[]][] = []
+  for (const [slot, raw] of Object.entries(value).slice(0, 200)) {
+    if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(slot)) continue
+    const candidates = Array.isArray(raw) ? raw : [raw]
+    const widgets = candidates.slice(0, 100).flatMap((candidate): PluginWidget[] => {
+      const record = recordValue(candidate)
+      const file = manifestRelativeFile(typeof candidate === 'string' ? candidate : record.template ?? record.file)
+      return file === null ? [] : [Object.freeze({
+        file,
+        priority: boundedManifestInteger(record.priority, -1_000_000, 1_000_000),
+        adminOnly: manifestBoolean(record.admin_only)
+      })]
+    })
+    if (widgets.length > 0) entries.push([slot, Object.freeze(widgets)])
+  }
+  return Object.freeze(Object.fromEntries(entries))
+}
+
+function manifestConfigFields(value: unknown): readonly PluginConfigField[] {
+  const candidates = Array.isArray(value) ? value : []
+  const fields = candidates.slice(0, 100).flatMap((candidate): PluginConfigField[] => {
+    const record = recordValue(candidate)
+    const name = typeof record.name === 'string' ? record.name.trim() : ''
+    if (!/^[a-z][a-z0-9_.-]{0,63}$/i.test(name)) return []
+    const allowedTypes = new Set<PluginConfigField['type']>(['text', 'textarea', 'number', 'url', 'password', 'checkbox', 'select'])
+    const type = allowedTypes.has(record.type as PluginConfigField['type']) ? record.type as PluginConfigField['type'] : 'text'
+    const options = (Array.isArray(record.options) ? record.options : []).slice(0, 100).flatMap((option): Readonly<{ value: string; label: string }>[] => {
+      const optionRecord = recordValue(option)
+      const optionValue = stringScalar(typeof option === 'object' ? optionRecord.value : option)
+      if (optionValue === null || optionValue.length > 1_024) return []
+      const label = stringScalar(optionRecord.label) ?? optionValue
+      return [Object.freeze({ value: optionValue, label: label.slice(0, 200) })]
+    })
+    const minimum = finiteNumber(record.minimum ?? record.min)
+    const maximum = finiteNumber(record.maximum ?? record.max)
+    return [Object.freeze({
+      name,
+      label: (stringScalar(record.label) ?? name).slice(0, 200),
+      type,
+      required: manifestBoolean(record.required),
+      description: (stringScalar(record.description ?? record.help) ?? '').slice(0, 2_000),
+      options: Object.freeze(options),
+      ...(minimum === null ? {} : { minimum }),
+      ...(maximum === null ? {} : { maximum })
+    })]
+  })
+  return Object.freeze(fields)
+}
+
+function manifestRelativeFile(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim() === '' || value.length > 1_024) return null
+  try { return safeEntryName(value.trim()).replace(/\/$/, '') } catch { return null }
+}
+
+function recordValue(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
+function boundedManifestInteger(value: unknown, minimum: number, maximum: number): number { const parsed = typeof value === 'number' ? value : Number.parseInt(typeof value === 'string' ? value : '', 10); return Number.isSafeInteger(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : 0 }
+function stringScalar(value: unknown): string | null { return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : null }
+function finiteNumber(value: unknown): number | null { const parsed = typeof value === 'number' ? value : Number.parseFloat(typeof value === 'string' ? value : ''); return Number.isFinite(parsed) ? parsed : null }
 
 function manifestBoolean(value: unknown): boolean { return value === true || value === 1 || value === '1' || value === 'true' }
 
