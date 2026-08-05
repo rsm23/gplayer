@@ -136,11 +136,11 @@ export function validSubtitleName(value: string): boolean {
   return subtitleExtension(value) !== null
 }
 
-export function subtitleExtension(value: string): string | null {
+export function subtitleExtension(value: string): typeof SUBTITLE_EXTENSIONS[number] | null {
   const index = value.lastIndexOf('.')
   if (index <= 0 || index === value.length - 1) return null
   const extension = value.slice(index + 1).toLowerCase()
-  return ALLOWED_EXTENSIONS.has(extension) ? extension : null
+  return ALLOWED_EXTENSIONS.has(extension) ? extension as typeof SUBTITLE_EXTENSIONS[number] : null
 }
 
 function safeGeneratedStem(originalName: string, extension: string): string {

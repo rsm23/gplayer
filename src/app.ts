@@ -40,6 +40,7 @@ import type { HostingSettingsLoader } from './settings/hosting-runtime.js'
 import { legacyHostingHosts } from './settings/hosting-settings.js'
 import { SubtitleAdminService } from './subtitles/subtitle-admin-service.js'
 import { FileSystemSubtitleAssetManager } from './subtitles/subtitle-assets-service.js'
+import { SubsceneSubtitleImporter, type SubtitleUrlImporter } from './subtitles/subscene-ingest-service.js'
 import { VideoAdminService } from './videos/video-admin-service.js'
 import { FileSystemVideoPosterAssetManager } from './videos/video-assets-service.js'
 import { VideoCheckerService } from './videos/video-checker-service.js'
@@ -95,6 +96,7 @@ export type AppDependencies = Readonly<{
   siteAssets?: SiteAssetManager
   vastAssets?: VastAssetManager
   subtitles?: SubtitleAdminService
+  subtitleUrlImporter?: SubtitleUrlImporter
   videos?: VideoAdminService
   videoBulk?: VideoBulkService
   videoChecker?: VideoCheckerService
@@ -145,11 +147,13 @@ export async function buildApp(
   const publicRoot = path.resolve(currentDirectory, '../public')
   const landingHtml = await readFile(path.join(publicRoot, 'index.html'), 'utf8')
   const cacheRoot = path.resolve(currentDirectory, '../cache')
+  const subtitleAssets = new FileSystemSubtitleAssetManager(path.join(publicRoot, 'uploads/subtitles'), config.baseUrl)
   const subtitlesRuntime = dependencies.subtitles ?? new SubtitleAdminService(
     authRuntime.subtitleStore,
-    new FileSystemSubtitleAssetManager(path.join(publicRoot, 'uploads/subtitles'), config.baseUrl),
+    subtitleAssets,
     config.baseUrl
   )
+  const subtitleUrlImporter = dependencies.subtitleUrlImporter ?? new SubsceneSubtitleImporter(subtitleAssets)
   const videosRuntime = dependencies.videos ?? new VideoAdminService(
     authRuntime.videoStore,
     new FileSystemVideoPosterAssetManager(path.join(publicRoot, 'uploads/images'), config.baseUrl),
@@ -413,7 +417,8 @@ export async function buildApp(
     videoCheckerRuntime,
     loadPlayerSettings,
     loadImportFileSize,
-    pluginExtensionRuntime
+    pluginExtensionRuntime,
+    subtitleUrlImporter
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const driveSharer = dependencies.driveSharer ?? new DriveSharerService(authRuntime.driveStore, driveHttp)

@@ -54,6 +54,8 @@ export type RemoteStreamRequest = Readonly<{
   signal?: AbortSignal
   allowPrivateNetworks?: boolean
   maximumRedirects?: number
+  /** Optional caller policy evaluated before any redirect target is requested. */
+  allowRedirect?: (from: URL, to: URL) => boolean
   /** Internal provider flows may retain response cookies only across same-origin redirects. */
   preserveRedirectCookies?: boolean
   /** Internal-only response metadata. Public proxy routes must not forward these headers. */
@@ -190,6 +192,9 @@ export class RemoteStream {
       const location = response.headers.get('location')
       await response.body?.cancel()
       const redirectedTarget = new URL(location ?? '', target)
+      if (request.allowRedirect?.(new URL(target), new URL(redirectedTarget)) === false) {
+        throw new Error(`Stream redirect target is not allowed: ${redirectedTarget.hostname}`)
+      }
       if (redirectedTarget.origin !== target.origin) {
         if (method === 'POST') throw new Error('Cross-origin POST redirects are not allowed')
         if (method === 'PUT' || method === 'DELETE') throw new Error('Cross-origin mutation redirects are not allowed')

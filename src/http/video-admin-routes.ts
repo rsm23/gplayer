@@ -8,6 +8,7 @@ import { renderAdminError, renderAdminVideoForm, renderAdminVideos, type AdminMe
 import { Security } from '../security/security.js'
 import { loadRuntimePlayerSettings, type PlayerSettingsLoader } from '../settings/player-runtime.js'
 import type { SubtitleAdminService } from '../subtitles/subtitle-admin-service.js'
+import type { SubtitleUrlImporter } from '../subtitles/subscene-ingest-service.js'
 import { parseBulkSubtitleLines, type StoredVideoDetail, type VideoAccess, type VideoAdminService, type VideoFormSubmission, type VideoLinkSlugs, type VideoMutationResult } from '../videos/video-admin-service.js'
 import { VIDEO_BULK_MAX_ITEMS, type VideoBulkService } from '../videos/video-bulk-service.js'
 import type { VideoCheckerService } from '../videos/video-checker-service.js'
@@ -31,7 +32,8 @@ export async function registerVideoAdminRoutes(
   checker: VideoCheckerService,
   loadPlayerSettings?: PlayerSettingsLoader,
   loadImportFileSize?: () => Promise<number>,
-  plugins?: Pick<PluginExtensionRuntime, 'executeHook'>
+  plugins?: Pick<PluginExtensionRuntime, 'executeHook'>,
+  subtitleUrlImporter?: SubtitleUrlImporter
 ): Promise<void> {
   const security = new Security(config.secureSalt)
   const playerDefaults = { ...config.slugs, adminDirectory: config.adminDirectory }
@@ -115,7 +117,7 @@ export async function registerVideoAdminRoutes(
     const access = accessFor(user)
     let submission: VideoFormSubmission
     try {
-      submission = await formSubmission(data, subtitles, access)
+      submission = await formSubmission(data, subtitles, access, subtitleUrlImporter)
     } catch (error) {
       const current = edit ? await videos.get(id, access).catch(() => null) : undefined
       return reply.code(400).type('text/html; charset=utf-8').send(renderAdminVideoForm({
@@ -482,10 +484,21 @@ function formPageData(config: AppConfig, videos: VideoAdminService, video: Store
   })
 }
 
-async function formSubmission(data: VideoRequestData, subtitles: SubtitleAdminService, access: VideoAccess): Promise<VideoFormSubmission> {
-  const urls = fieldArray(data.fields, 'sub-url[]', 'sub-url')
-  const languages = fieldArray(data.fields, 'lang-url[]', 'lang-url')
-  const attached = urls.map((url, index) => Object.freeze({ url, language: languages[index] ?? 'Unknown CC' }))
+async function formSubmission(
+  data: VideoRequestData,
+  subtitles: SubtitleAdminService,
+  access: VideoAccess,
+  subtitleUrlImporter?: SubtitleUrlImporter
+): Promise<VideoFormSubmission> {
+  const urls = fieldArray(data.fields, 'sub-url[]', 'sub-url').map(stringValue)
+  const languages = fieldArray(data.fields, 'lang-url[]', 'lang-url').map(stringValue)
+  const attached: Array<Readonly<{ url: string; language: string }>> = []
+  for (const [index, url] of urls.entries()) {
+    const imported = subtitleUrlImporter?.supports(url) === true
+      ? await subtitleUrlImporter.importUrl(url)
+      : null
+    attached.push(Object.freeze({ url: imported ?? url, language: languages[index] ?? 'Unknown CC' }))
+  }
   attached.push(...parseBulkSubtitleLines(data.fields.multiSubUrls))
 
   for (const file of data.files.filter((item) => ['multiSubFiles', 'sub-file'].includes(item.fieldname.replace(/\[\]$/u, '')))) {

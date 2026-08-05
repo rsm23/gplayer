@@ -40,6 +40,7 @@ import {
 } from '../src/videos/video-transfer-service.js'
 import { Security } from '../src/security/security.js'
 import type { SubtitleAdminService } from '../src/subtitles/subtitle-admin-service.js'
+import type { SubtitleUrlImporter } from '../src/subtitles/subscene-ingest-service.js'
 
 const baseUrl = new URL('https://player.example/')
 const secureSalt = '1234567890123456'
@@ -616,7 +617,12 @@ describe('video administration and saved-video routes', () => {
     app = undefined
   })
 
-  async function createApp(user: AuthUser, store = new MemoryVideoStore(), posters = new MemoryPosters()) {
+  async function createApp(
+    user: AuthUser,
+    store = new MemoryVideoStore(),
+    posters = new MemoryPosters(),
+    subtitleUrlImporter?: SubtitleUrlImporter
+  ) {
     const videos = service(store, posters)
     const subtitleUploads: Array<{ originalName: string; content: Buffer }> = []
     const subtitles = {
@@ -641,6 +647,7 @@ describe('video administration and saved-video routes', () => {
       auth: new AuthService(new RouteAuthStore(user)),
       videos,
       subtitles,
+      ...(subtitleUrlImporter === undefined ? {} : { subtitleUrlImporter }),
       sourceApi: { resolve: resolver, supportedHosts: new Set(['direct', 'youtube', 'vimeo']) }
     })
     app = built
@@ -800,6 +807,50 @@ describe('video administration and saved-video routes', () => {
     expect(context.store.lastCreate?.alternatives).toEqual([{ host: 'vimeo', hostId: '7788', order: 0 }])
     expect(context.store.lastCreate?.subtitles).toHaveLength(2)
     expect(context.subtitleUploads).toEqual([expect.objectContaining({ originalName: 'route.en.vtt' })])
+  })
+
+  it('imports explicit Subscene rows in order, preserves failed URLs, and leaves bulk rows untouched', async () => {
+    const importedUrl = 'https://player.example/uploads/subtitles/imported-english.srt'
+    const subtitleUrlImporter: SubtitleUrlImporter = {
+      supports: vi.fn((value: string) => value.startsWith('https://sub-scene.com/')),
+      importUrl: vi.fn()
+        .mockResolvedValueOnce(importedUrl)
+        .mockResolvedValueOnce(null)
+    }
+    const context = await createApp(member, new MemoryVideoStore(), new MemoryPosters(), subtitleUrlImporter)
+    const page = await context.app.inject({ method: 'GET', url: '/administrator/videos/new/', headers })
+    const csrf = csrfFor(page.body, '/administrator/videos/new/')
+    const first = 'https://sub-scene.com/subtitles/movie/english'
+    const second = 'https://sub-scene.com/subtitles/movie/french'
+    const bulk = 'https://sub-scene.com/subtitles/movie/spanish'
+    const form = new URLSearchParams({
+      csrf,
+      title: 'Subscene route movie',
+      host_id: 'https://cdn.example/subscene-route.mp4',
+      slug: 'subscene-route',
+      multiSubUrls: `Spanish|${bulk}`
+    })
+    form.append('sub-url[]', first)
+    form.append('lang-url[]', 'English')
+    form.append('sub-url[]', second)
+    form.append('lang-url[]', 'French')
+
+    const response = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/videos/new/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: form.toString()
+    })
+
+    expect(response.statusCode).toBe(303)
+    expect(context.store.lastCreate?.subtitles).toEqual([
+      expect.objectContaining({ link: importedUrl, language: 'English', order: 0 }),
+      expect.objectContaining({ link: second, language: 'French', order: 1 }),
+      expect.objectContaining({ link: bulk, language: 'Spanish', order: 2 })
+    ])
+    expect(subtitleUrlImporter.importUrl).toHaveBeenCalledTimes(2)
+    expect(subtitleUrlImporter.importUrl).toHaveBeenNthCalledWith(1, first)
+    expect(subtitleUrlImporter.importUrl).toHaveBeenNthCalledWith(2, second)
   })
 
   it('imports and exports selected videos through signed forms and legacy transfer endpoints', async () => {

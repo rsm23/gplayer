@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPrivateAddress, RemoteStream } from '../src/stream/remote-stream.js'
 
 const media = Buffer.from('0123456789abcdefghijklmnopqrstuvwxyz')
@@ -211,6 +211,19 @@ describe('RemoteStream', () => {
     })
     expect(response.url.pathname).toBe('/media')
     expect(await body(response)).toEqual(media)
+  })
+
+  it('lets an internal caller reject a redirect before requesting its target', async () => {
+    const allowRedirect = vi.fn(() => false)
+    await expect(new RemoteStream().open({
+      url: new URL('/redirect', upstreamUrl),
+      allowPrivateNetworks: true,
+      allowRedirect
+    })).rejects.toThrow(/redirect target is not allowed/)
+    expect(allowRedirect).toHaveBeenCalledWith(
+      new URL('/redirect', upstreamUrl),
+      new URL('/media', upstreamUrl)
+    )
   })
 
   it('optionally preserves response cookies across same-origin provider redirects', async () => {
