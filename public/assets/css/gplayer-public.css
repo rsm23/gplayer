@@ -898,6 +898,163 @@
   accent-color: var(--brand);
 }
 
+.hosting-settings-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+  align-items: end;
+  gap: 28px;
+  padding: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.hosting-settings-toolbar h2 {
+  margin-top: 6px;
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.hosting-settings-toolbar > div > p:last-child {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hosting-provider-list {
+  display: grid;
+  gap: 12px;
+}
+
+.hosting-provider-card {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.hosting-provider-card[hidden] {
+  display: none;
+}
+
+.hosting-provider-card summary {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto 22px;
+  align-items: center;
+  gap: 14px;
+  min-height: 74px;
+  padding: 15px 20px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hosting-provider-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.hosting-provider-card summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -3px;
+}
+
+.hosting-provider-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand), transparent 56%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand), transparent 88%);
+  color: var(--brand-soft);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hosting-provider-card summary > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hosting-provider-card summary strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.hosting-provider-card summary small {
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hosting-provider-chevron {
+  color: var(--faint);
+  font-size: 18px;
+  transition: transform 160ms ease;
+}
+
+.hosting-provider-chevron::before {
+  content: "⌄";
+}
+
+.hosting-provider-card[open] .hosting-provider-chevron {
+  transform: rotate(180deg);
+}
+
+.hosting-provider-fields {
+  padding: 24px 20px 26px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-raised), transparent 38%);
+}
+
+.hosting-cookie-field > input,
+.hosting-name-control input {
+  width: 100%;
+}
+
+.hosting-cookie-field .settings-clear-secret input {
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.hosting-name-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.hosting-name-control button {
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--brand-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.hosting-name-control button:hover,
+.hosting-name-control button:focus-visible {
+  border-color: var(--brand);
+  outline: 0;
+  background: color-mix(in srgb, var(--brand), transparent 90%);
+}
+
+.hosting-search-empty {
+  margin: 0;
+  padding: 28px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .settings-custom-header-list {
   display: grid;
   gap: 18px;
@@ -1347,11 +1504,16 @@
   }
 
   .settings-subnav a {
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 58px;
     padding: 8px 7px;
     font-size: 10px;
     text-align: center;
+  }
+
+  .settings-subnav::after {
+    content: "";
+    flex: 0 0 calc(100% - 62px);
   }
 
   .settings-section {
@@ -1366,6 +1528,39 @@
 
   .settings-secret-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hosting-settings-toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    padding: 20px 18px;
+  }
+
+  .hosting-provider-card summary {
+    grid-template-columns: 34px minmax(0, 1fr) 18px;
+    gap: 11px;
+    padding: 14px;
+  }
+
+  .hosting-provider-card summary > .settings-secret-status {
+    display: none;
+  }
+
+  .hosting-provider-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .hosting-provider-fields {
+    padding: 20px 14px 22px;
+  }
+
+  .hosting-name-control {
+    grid-template-columns: 1fr;
+  }
+
+  .hosting-name-control button {
+    min-height: 40px;
   }
 
   .settings-vast-row {

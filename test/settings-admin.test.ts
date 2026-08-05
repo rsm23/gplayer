@@ -1007,6 +1007,61 @@ describe('general settings administration routes', () => {
     expect(updated.body).toContain('The Player Settings have been successfully updated')
   })
 
+  it('renders and updates all dynamic Hosting Settings without exposing provider cookies', async () => {
+    const store = new MemorySettingsStore({
+      'custom-hostnames': JSON.stringify({ youtube: ['video.private.example'] }),
+      'download-urls': JSON.stringify({ youtube: 'https://watch.example/%s' }),
+      custom_names: JSON.stringify({ youtube: 'Primary video' }),
+      cookie_youtube: 'SID=never-render-this-cookie'
+    })
+    app = await createApp(store)
+    const page = await app.inject({ method: 'GET', url: '/administrator/settings/hosting/', headers })
+    const csrf = page.body.match(/name="csrf" value="([^"]+)"/)?.[1] ?? ''
+    expect(page.statusCode).toBe(200)
+    expect(page.body).toContain('Hosting settings.')
+    expect(page.body).toContain('73 providers')
+    expect(page.body).toContain('name="cookie_youtube"')
+    expect(page.body).toContain('name="custom-hostnames[youtube]"')
+    expect(page.body).toContain('name="download-urls[youtube]"')
+    expect(page.body).toContain('name="custom_names[youtube]"')
+    expect(page.body).toContain('Cookie stored')
+    expect(page.body).toContain('video.private.example')
+    expect(page.body).toContain('value="https://watch.example/%s"')
+    expect(page.body).toContain('value="Primary video"')
+    expect(page.body).not.toContain('never-render-this-cookie')
+
+    const form = page.body.match(/<form class="admin-settings-form hosting-settings-editor"[\s\S]*?<\/form>/)?.[0] ?? ''
+    const names = [...form.matchAll(/name="([^"]+)"/g)].map((match) => match[1] ?? '')
+    expect(new Set(names.filter((name) => name.startsWith('cookie_'))).size).toBe(72)
+    expect(new Set(names.filter((name) => name.startsWith('custom-hostnames['))).size).toBe(72)
+    expect(new Set(names.filter((name) => name.startsWith('download-urls['))).size).toBe(73)
+    expect(new Set(names.filter((name) => name.startsWith('custom_names['))).size).toBe(73)
+
+    const payload = new URLSearchParams({
+      csrf,
+      'custom-hostnames[youtube]': 'media.private.example\nvideo.private.example',
+      'download-urls[youtube]': 'https://watch.example/player/%s',
+      'custom_names[youtube]': 'Video server 1',
+      cookie_youtube: 'SID=replacement; PREF=hd'
+    })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/administrator/settings/hosting/',
+      headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+      payload: payload.toString()
+    })
+    expect(response.statusCode).toBe(303)
+    expect(response.headers.location).toBe('/administrator/settings/hosting/?updated=1')
+    expect(JSON.parse(store.values['custom-hostnames'] ?? '')).toEqual({ youtube: ['media.private.example', 'video.private.example'] })
+    expect(JSON.parse(store.values['download-urls'] ?? '')).toEqual({ youtube: 'https://watch.example/player/%s' })
+    expect(JSON.parse(store.values.custom_names ?? '')).toEqual({ youtube: 'Video server 1' })
+    expect(store.values.cookie_youtube).toBe('SID=replacement; PREF=hd')
+
+    const updated = await app.inject({ method: 'GET', url: response.headers.location ?? '', headers })
+    expect(updated.body).toContain('The Hosting Settings have been successfully updated')
+    expect(updated.body).not.toContain('SID=replacement')
+  })
+
   it('renders and updates every Misc Settings field without exposing proxy credentials', async () => {
     const store = new MemorySettingsStore({
       bypass_host: '["gdrive"]',

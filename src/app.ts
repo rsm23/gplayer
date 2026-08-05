@@ -26,6 +26,8 @@ import { applyPublicPageHeaders, registerSystemRoutes } from './http/system-rout
 import { publicErrors, renderPublicError } from './player/public-page.js'
 import { createCountryCodeLookup, type CountryCodeLookup } from './security/geoip-country.js'
 import type { MiscSettingsLoader } from './settings/misc-runtime.js'
+import type { HostingSettingsLoader } from './settings/hosting-runtime.js'
+import { legacyHostingHosts } from './settings/hosting-settings.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -65,8 +67,11 @@ export async function buildApp(
   const authRuntime = createAuthRuntime(app, config)
   const settingsRuntime = dependencies.settings ?? authRuntime.settings
   const publicRoot = path.resolve(currentDirectory, '../public')
-  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config)
-  const supportedHosts = sourceApiRuntime.supportedHosts ?? new Set(new ExtractorFactory().supportedHosts())
+  let supportedHosts = new Set(new ExtractorFactory().supportedHosts()) as ReadonlySet<string>
+  const hostingHosts = legacyHostingHosts()
+  const loadHostingSettings: HostingSettingsLoader = async () => await settingsRuntime.runtimeHostingSettings(hostingHosts)
+  const sourceApiRuntime = dependencies.sourceApi ?? createSourceApiRuntime(app, config, { loadHostingSettings })
+  supportedHosts = sourceApiRuntime.supportedHosts ?? supportedHosts
   const loadMiscSettings: MiscSettingsLoader = async () => await settingsRuntime.miscSettings(supportedHosts)
   const countryCodeLookup = dependencies.countryCodeLookup ?? createCountryCodeLookup(
     path.resolve(currentDirectory, '../resources/data/geoip/GeoLite2-Country.mmdb')
@@ -88,11 +93,12 @@ export async function buildApp(
     dependencies.users ?? authRuntime.users,
     dependencies.siteAssets ?? new FileSystemSiteAssetManager(publicRoot, config.adminDirectory),
     dependencies.vastAssets ?? new FileSystemVastAssetManager(path.join(publicRoot, 'uploads'), config.baseUrl),
-    supportedHosts
+    supportedHosts,
+    hostingHosts
   )
   const loadAdsSettings = async () => await settingsRuntime.adsSettings()
   const loadPlayerSettings = async () => await settingsRuntime.playerSettings({ ...config.slugs, adminDirectory: config.adminDirectory })
-  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, countryCodeLookup, supportedHosts })
+  await registerPlayerRoutes(app, config, { loadAdsSettings, loadPlayerSettings, loadMiscSettings, loadHostingSettings, countryCodeLookup, supportedHosts })
   await registerSourceApiRoutes(app, config, {
     ...sourceApiRuntime,
     loadAdsSettings,

@@ -1,4 +1,5 @@
 import { Hosting } from '../core/hosting.js'
+import type { HostingData } from '../core/hosting-data.js'
 import type { PlayerMediaQuery, PlayerPublicOptions } from '../core/player-query.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 
@@ -20,6 +21,8 @@ export type EmbedAdsOptions = Readonly<{
 export type EmbedPlayerOptions = Readonly<{
   settings: PlayerSettings
   downloadUrl: string
+  hostingData?: HostingData
+  customNames?: Readonly<Record<string, string>>
 }>
 
 const DISABLED_EMBED_ADS: EmbedAdsOptions = Object.freeze({
@@ -38,7 +41,7 @@ export function renderEmbedPage(
   playerOptions?: EmbedPlayerOptions
 ): string {
   const settings = playerOptions?.settings
-  const source = resolveRenderedSource(media)
+  const source = resolveRenderedSource(media, playerOptions?.hostingData)
   const poster = safePlayerResource(media.poster ?? '', '/poster/')
   const tracks = renderTracks(
     [...(media.sub ?? []), ...(media.subs === undefined ? [] : [media.subs])],
@@ -52,7 +55,7 @@ export function renderEmbedPage(
   ].join('')
   const preload = settings?.preload ?? 'metadata'
   const stretching = settings?.stretching ?? 'uniform'
-  const title = playerTitle(media)
+  const title = playerTitle(media, playerOptions?.customNames)
 
   let player: string
   if (source.kind === 'provider') {
@@ -115,7 +118,7 @@ export function renderEmbedError(message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>Player unavailable</title><link rel="stylesheet" href="/assets/css/gplayer-embed.css"></head><body><main class="player-stage"><div class="player-notice player-error"><span>GDPlayer</span><h1>Player unavailable</h1><p>${escapeHtml(message)}</p></div></main></body></html>`
 }
 
-function resolveRenderedSource(media: PlayerMediaQuery): RenderedSource {
+function resolveRenderedSource(media: PlayerMediaQuery, hostingData?: HostingData): RenderedSource {
   if (media.host === undefined || media.id === undefined) {
     return { kind: 'unavailable', url: '', message: 'The player query does not contain a source.' }
   }
@@ -138,7 +141,7 @@ function resolveRenderedSource(media: PlayerMediaQuery): RenderedSource {
   const providerUrl = providerEmbedUrl(media.host, media.id)
   if (providerUrl !== null) return { kind: 'provider', url: providerUrl }
 
-  const sourcePage = new Hosting().setHost(media.host).setID(media.id).getDownloadLink()
+  const sourcePage = new Hosting('', hostingData).setHost(media.host).setID(media.id).getDownloadLink()
   return {
     kind: 'unavailable',
     url: '',
@@ -199,7 +202,7 @@ function renderPlayerToolbar(settings: PlayerSettings, downloadUrl: string): str
   return `<nav class="player-toolbar" aria-label="Player actions">${share}${download}</nav>`
 }
 
-function playerTitle(media: PlayerMediaQuery): string {
+function playerTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {
   if (media.host === 'direct' && media.id !== undefined) {
     const source = safeHttpUrl(media.id)
     if (source.length > 0) {
@@ -211,7 +214,10 @@ function playerTitle(media: PlayerMediaQuery): string {
       }
     }
   }
-  return `${(media.host ?? 'video').replaceAll(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} video`
+  const host = media.host ?? 'video'
+  const custom = customNames?.[host]?.trim() ?? ''
+  const label = custom !== '' ? custom : host.replaceAll(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+  return `${label} video`
 }
 
 function safeHttpUrl(value: string): string {

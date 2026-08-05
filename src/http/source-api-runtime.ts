@@ -4,6 +4,8 @@ import { emptyMediaResult, SourceResolver } from '../core/source-resolver.js'
 import { Database } from '../database/database.js'
 import { MySqlSourceCacheRepository } from '../database/source-cache-repository.js'
 import { ExtractorFactory } from '../hosting/extractor-factory.js'
+import { RemoteProviderHttpClient } from '../hosting/provider-http.js'
+import { ProviderCookieHttpClient, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 import type { SourceApiRouteOptions } from './source-api-routes.js'
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'
@@ -11,9 +13,17 @@ const DEFAULT_LANGUAGE = 'en;q=0.9'
 
 export function createSourceApiRuntime(
   app: FastifyInstance,
-  config: AppConfig
+  config: AppConfig,
+  options: Readonly<{ loadHostingSettings?: HostingSettingsLoader }> = {}
 ): SourceApiRouteOptions {
-  const extractors = new ExtractorFactory()
+  const providerHttpClient = new RemoteProviderHttpClient()
+  const extractors = new ExtractorFactory({
+    providerHttpClient,
+    ...(options.loadHostingSettings === undefined ? {} : {
+      providerHttpClientForHost: (host: string) => new ProviderCookieHttpClient(host, providerHttpClient, options.loadHostingSettings as HostingSettingsLoader),
+      youtubeCookie: async () => (await (options.loadHostingSettings as HostingSettingsLoader)()).cookies.youtube ?? ''
+    })
+  })
   const supportedHosts = new Set(extractors.supportedHosts())
   let database: Database | undefined
   let cache: MySqlSourceCacheRepository | undefined

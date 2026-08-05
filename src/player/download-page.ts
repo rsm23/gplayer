@@ -1,4 +1,5 @@
 import { Hosting } from '../core/hosting.js'
+import type { HostingData } from '../core/hosting-data.js'
 import type { PlayerMediaQuery } from '../core/player-query.js'
 
 export type DownloadPageOptions = Readonly<{
@@ -9,6 +10,8 @@ export type DownloadPageOptions = Readonly<{
   popupFrameUrl?: string
   downloadLabel?: string
   hideHostname?: boolean
+  hostingData?: HostingData
+  customNames?: Readonly<Record<string, string>>
 }>
 
 type DownloadItem = Readonly<{
@@ -19,7 +22,7 @@ type DownloadItem = Readonly<{
 }>
 
 export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPageOptions): string {
-  const title = mediaTitle(media)
+  const title = mediaTitle(media, options.customNames)
   const primary = mediaDownloadItem(media, title, options)
   const subtitles = subtitleDownloadItems(media)
   const availableItems = primary === null ? subtitles : [primary, ...subtitles]
@@ -51,7 +54,7 @@ export function renderDownloadPage(media: PlayerMediaQuery, options: DownloadPag
         ? '<div class="notice notice-error"><strong>No downloadable source is available.</strong><span>The link is valid, but this source cannot be opened safely.</span></div>'
         : `<ul class="download-list">${availableItems.map(renderDownloadItem).join('')}</ul>`}
       ${adapterPending
-        ? `<div class="notice"><strong>${escapeHtml(providerName(media.host ?? 'provider'))} source recognized</strong><span>The source page is available now. Direct-file extraction will be enabled when this provider adapter reaches parity.</span></div>`
+        ? `<div class="notice"><strong>${escapeHtml(providerName(media.host ?? 'provider', options.customNames))} source recognized</strong><span>The source page is available now. Direct-file extraction will be enabled when this provider adapter reaches parity.</span></div>`
         : ''}
       ${renderAdFrame(options.bannerBottomFrameUrl, 'Advertisement below download options', 'banner')}
     </section>
@@ -70,7 +73,7 @@ function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: Down
 
   const href = media.host === 'direct'
     ? safeHttpUrl(media.id)
-    : safeHttpUrl(new Hosting().setHost(media.host).setID(media.id).getDownloadLink())
+    : safeHttpUrl(new Hosting('', options.hostingData).setHost(media.host).setID(media.id).getDownloadLink())
   if (href.length === 0) return null
 
   if (media.host === 'direct') {
@@ -85,7 +88,7 @@ function mediaDownloadItem(media: PlayerMediaQuery, title: string, options: Down
   return {
     href,
     label: 'Open source page',
-    detail: options.hideHostname === true ? 'Video source' : providerName(media.host),
+    detail: options.hideHostname === true ? 'Video source' : providerName(media.host, options.customNames),
     kind: 'source'
   }
 }
@@ -122,7 +125,7 @@ function renderAdFrame(url: string | undefined, title: string, kind: 'banner' | 
   return `<iframe class="ad-frame ad-frame-${kind}" src="${escapeHtmlAttribute(url)}" title="${escapeHtmlAttribute(title)}" referrerpolicy="no-referrer" sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"></iframe>`
 }
 
-function mediaTitle(media: PlayerMediaQuery): string {
+function mediaTitle(media: PlayerMediaQuery, customNames?: Readonly<Record<string, string>>): string {
   if (media.host === 'direct' && media.id !== undefined) {
     const href = safeHttpUrl(media.id)
     if (href.length > 0) {
@@ -134,10 +137,12 @@ function mediaTitle(media: PlayerMediaQuery): string {
       }
     }
   }
-  return `${providerName(media.host ?? 'video')} video`
+  return `${providerName(media.host ?? 'video', customNames)} video`
 }
 
-function providerName(host: string): string {
+function providerName(host: string, customNames?: Readonly<Record<string, string>>): string {
+  const custom = customNames?.[host]?.trim() ?? ''
+  if (custom !== '') return custom
   const names: Readonly<Record<string, string>> = {
     dailymotion: 'Dailymotion',
     gdrive: 'Google Drive',

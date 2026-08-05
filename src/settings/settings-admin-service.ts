@@ -2,6 +2,7 @@ import { customHeadersForUrl, decodeCustomHeaderRules, defaultCustomHeaderRules,
 import { isSafeVastAssetName } from './vast-assets-service.js'
 import { parsePlayerSettingsSubmission, playerSettings, type PlayerSettings, type PlayerSettingsDefaults } from './player-settings.js'
 import { miscSettings, parseMiscSettingsSubmission, type MiscSettings } from './misc-settings.js'
+import { hostingSettings, parseHostingSettingsSubmission, runtimeHostingSettings, type HostingSettings, type RuntimeHostingSettings } from './hosting-settings.js'
 
 const BOOLEAN_KEYS = [
   'production_mode',
@@ -483,6 +484,25 @@ export class SettingsAdminService {
     if (result.status === 'invalid') return result
     await this.store.upsertMany(result.entries)
     return Object.freeze({ status: 'ok', message: 'The Misc Settings have been successfully updated' })
+  }
+
+  public async hostingSettings(supportedHosts: ReadonlySet<string>): Promise<HostingSettings> {
+    return hostingSettings(await this.store.getAll(), supportedHosts)
+  }
+
+  public async runtimeHostingSettings(supportedHosts: ReadonlySet<string>): Promise<RuntimeHostingSettings> {
+    return runtimeHostingSettings(await this.store.getAll(), supportedHosts)
+  }
+
+  public async saveHosting(
+    input: Record<string, unknown>,
+    supportedHosts: ReadonlySet<string>
+  ): Promise<SettingsMutationResult> {
+    const raw = await this.store.getAll()
+    const result = parseHostingSettingsSubmission(input, raw, supportedHosts)
+    if (result.status === 'invalid') return result
+    await this.store.upsertMany(result.entries)
+    return Object.freeze({ status: 'ok', message: 'The Hosting Settings have been successfully updated' })
   }
 
   public async saveAds(input: Record<string, unknown>): Promise<SettingsMutationResult> {

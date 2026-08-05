@@ -3,6 +3,7 @@ import type { AdminSession } from '../auth/session-admin-service.js'
 import { userRoleLabel, type AdminUserRecord, type UserOption } from '../auth/user-admin-service.js'
 import type { CustomHeaderRule } from '../settings/custom-headers.js'
 import { MISC_COUNTRY_OPTIONS, MISC_RESOLUTION_OPTIONS, miscHostOptions, type MiscSettings } from '../settings/misc-settings.js'
+import type { HostingSettings } from '../settings/hosting-settings.js'
 import { PLAYER_CHOICES, PLAYER_EDGE_STYLES, PLAYER_FONTS, PLAYER_LANGUAGE_OPTIONS, PLAYER_LOADERS, PLAYER_LOGO_POSITIONS, PLAYER_PRELOAD, PLAYER_RESOLUTIONS, PLAYER_SKINS, PLAYER_STRETCHING, type PlayerSettings } from '../settings/player-settings.js'
 import { shortenerProviderList, timezoneList, type AdsSettings, type GeneralSettingKey, type GeneralSettings, type PublicSettings, type ShortlinkSettings, type SiteSettings, type SmtpSettings } from '../settings/settings-admin-service.js'
 import type { VastAsset } from '../settings/vast-assets-service.js'
@@ -655,6 +656,54 @@ export function renderAdminMiscSettings(input: Readonly<{
 </main>`)
 }
 
+export function renderAdminHostingSettings(input: Readonly<{
+  adminBase: string
+  values: HostingSettings
+  csrfToken: string
+  message?: AdminMessage
+}>): string {
+  const cards = input.values.providers.map((provider, index) => {
+    const id = provider.host
+    const initial = provider.label.trim().slice(0, 1).toUpperCase() || '•'
+    const cookieStatus = provider.host === 'direct'
+      ? '<span class="settings-secret-status">Direct</span>'
+      : `<span class="settings-secret-status${provider.cookieConfigured ? ' is-configured' : ''}">${provider.cookieConfigured ? 'Cookie stored' : 'No cookie'}</span>`
+    const credentials = provider.host === 'direct' ? '' : `<div class="field hosting-cookie-field">
+      <div class="settings-secret-heading"><label for="cookie-${id}">Replacement cookies</label>${cookieStatus}</div>
+      <input id="cookie-${id}" name="cookie_${id}" type="password" value="" maxlength="32768" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="session=value; preference=value">
+      <p class="field-hint">${provider.cookieConfigured ? 'Leave blank to preserve the server-side cookie. Its value is never returned to this page.' : 'Optional Cookie header pairs used only for this provider.'}</p>
+      ${provider.cookieConfigured ? `<label class="settings-clear-secret"><input name="clear_cookie_${id}" type="checkbox" value="true"><span>Remove stored cookie</span></label>` : ''}
+    </div>
+    <div class="field"><label for="hostnames-${id}">Custom domains</label><textarea id="hostnames-${id}" name="custom-hostnames[${id}]" rows="6" maxlength="1000000" spellcheck="false" placeholder="media.example.com">${escapeHtml(provider.customHostnames)}</textarea><p class="field-hint">One provider hostname or matching domain fragment per line; schemes and paths are not accepted.</p></div>`
+    return `<details class="hosting-provider-card" data-hosting-provider data-hosting-search="${escapeHtml(`${provider.label} ${provider.host}`.toLowerCase())}"${index === 0 ? ' open' : ''}>
+      <summary><span class="hosting-provider-mark" aria-hidden="true">${escapeHtml(initial)}</span><span><strong>${escapeHtml(provider.label)}</strong><small>${escapeHtml(provider.host)}</small></span>${cookieStatus}<span class="hosting-provider-chevron" aria-hidden="true"></span></summary>
+      <div class="hosting-provider-fields settings-grid">
+        ${credentials}
+        <div class="field"><label for="download-url-${id}">Download URL</label><input id="download-url-${id}" name="download-urls[${id}]" type="text" value="${escapeHtml(provider.downloadUrl)}" maxlength="4096" required spellcheck="false"><p class="field-hint">Include exactly one %s placeholder for the original provider ID.</p></div>
+        <div class="field"><label for="custom-name-${id}">Custom name</label><div class="hosting-name-control"><input id="custom-name-${id}" name="custom_names[${id}]" type="text" value="${escapeHtml(provider.customName)}" maxlength="100" required><button type="button" data-reset-hosting-name data-target="custom-name-${id}" data-value="${escapeHtml(provider.label)}">Original</button></div><p class="field-hint">Shown on source and download surfaces instead of the provider key.</p></div>
+      </div>
+    </details>`
+  }).join('')
+
+  return adminDocument('Hosting settings', `${adminHeader(input.adminBase, 'settings')}
+<main class="admin-dashboard admin-settings-page">
+  <p class="eyebrow"><span></span>Provider registry</p>
+  <div class="admin-dashboard-heading"><div><h1>Hosting settings.</h1><p>Manage the complete dynamic provider contract: private cookies, recognized domains, outbound source-page patterns, and interface names.</p></div><span class="admin-role">${input.values.providers.length} providers</span></div>
+  ${renderMessage(input.message)}
+  ${settingsSubnav(input.adminBase, 'hosting')}
+  <form class="admin-settings-form hosting-settings-editor" action="${escapeHtml(input.adminBase)}/settings/hosting/" method="post" data-hosting-settings>
+    <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
+    <section class="hosting-settings-toolbar" aria-labelledby="hosting-search-title">
+      <div><p class="panel-kicker">Provider index</p><h2 id="hosting-search-title">Find a source</h2><p>${input.values.configuredCookies} private ${input.values.configuredCookies === 1 ? 'cookie is' : 'cookies are'} configured. Secrets remain write-only.</p></div>
+      <div class="field"><label for="hosting-provider-search">Search providers</label><input id="hosting-provider-search" type="search" placeholder="YouTube, Drive, direct…" autocomplete="off" data-hosting-search></div>
+    </section>
+    <div class="hosting-provider-list" data-hosting-list>${cards}</div>
+    <p class="hosting-search-empty" data-hosting-empty hidden>No providers match this search.</p>
+    <div class="settings-actions"><button class="generate-button" type="submit"><span>Update hosting settings</span><span aria-hidden="true">↗</span></button><p>Configured domains affect generator detection, URL templates and names affect download surfaces, and cookies remain server-side for provider extraction only.</p></div>
+  </form>
+</main>`)
+}
+
 export function renderAdminAdsSettings(input: Readonly<{
   adminBase: string
   values: AdsSettings
@@ -824,8 +873,8 @@ function settingsColorInput(name: string, label: string, value: string): string 
   return `<div class="field settings-color-field"><label for="${name}">${escapeHtml(label)}</label><input id="${name}" name="${name}" type="color" value="#${escapeHtml(value)}" required><code>#${escapeHtml(value)}</code></div>`
 }
 
-function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'misc' | 'ads'): string {
-  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'misc' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/misc/">Misc</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
+function settingsSubnav(adminBase: string, current: 'general' | 'public' | 'smtp' | 'site' | 'shortlink' | 'custom-headers' | 'player' | 'hosting' | 'misc' | 'ads'): string {
+  return `<nav class="settings-subnav" aria-label="Settings categories"><a${current === 'general' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/general/">General</a><a${current === 'public' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/public/">Public</a><a${current === 'site' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/site/">Site</a><a${current === 'smtp' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/smtp/">SMTP</a><a${current === 'shortlink' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/shortlink/">Links</a><a${current === 'custom-headers' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/custom-headers/">HTTP</a><a${current === 'player' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/player/">Player</a><a${current === 'hosting' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/hosting/">Hosting</a><a${current === 'misc' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/misc/">Misc</a><a${current === 'ads' ? ' aria-current="page"' : ''} href="${escapeHtml(adminBase)}/settings/ads/">Ads</a></nav>`
 }
 
 function playerSettingLabel(value: string): string {

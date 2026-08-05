@@ -15,6 +15,7 @@ import { PlayerLinkGenerator } from '../player/link-generator.js'
 import { Security } from '../security/security.js'
 import type { CountryCodeLookup } from '../security/geoip-country.js'
 import { accessPolicyFromMisc, accessPolicyRejects, loadRuntimeMiscSettings, type MiscSettingsLoader } from '../settings/misc-runtime.js'
+import { loadRuntimeHostingSettings, type HostingSettingsLoader } from '../settings/hosting-runtime.js'
 
 const inputSchema = z.object({
   action: z.string().optional(),
@@ -36,6 +37,7 @@ export type PlayerRouteOptions = Readonly<{
   loadAdsSettings?: AdsSettingsLoader
   loadPlayerSettings?: PlayerSettingsLoader
   loadMiscSettings?: MiscSettingsLoader
+  loadHostingSettings?: HostingSettingsLoader
   countryCodeLookup?: CountryCodeLookup
   supportedHosts?: ReadonlySet<string>
 }>
@@ -56,9 +58,10 @@ export async function registerPlayerRoutes(
     }
 
     try {
-      const [player, misc, countryCode] = await Promise.all([
+      const [player, misc, hosting, countryCode] = await Promise.all([
         loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
         loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+        loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
         countryCodeForRequest(request, options.countryCodeLookup)
       ])
       if (networkAccessRejected(request, misc, countryCode, false)) throw new Error('Access denied')
@@ -67,7 +70,8 @@ export async function registerPlayerRoutes(
         embedSlug: player.slug_embed,
         downloadSlug: player.slug_download,
         requestSlug: player.slug_request,
-        iframeCode: player.iframe_code
+        iframeCode: player.iframe_code,
+        hostingData: hosting.data
       })
       const sub = toArray(parsed.data['sub[]'] ?? parsed.data.sub)
       const lang = toArray(parsed.data['lang[]'] ?? parsed.data.lang)
@@ -153,10 +157,11 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.request}/`, redirectPlaintextRequest)
 
   const showEmbed = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player, misc, countryCode] = await Promise.all([
+    const [ads, player, misc, hosting, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
@@ -182,7 +187,9 @@ export async function registerPlayerRoutes(
     const media = proxyPlayerMedia(withDefaultPoster(parsed.media, player), security)
     return renderEmbedPage(media, parsed.publicOptions, embedAdsOptions(ads), {
       settings: player,
-      downloadUrl: routePath(player.slug_download, parsed.token)
+      downloadUrl: routePath(player.slug_download, parsed.token),
+      hostingData: hosting.data,
+      customNames: hosting.customNames
     })
   }
 
@@ -190,10 +197,11 @@ export async function registerPlayerRoutes(
   app.get(`/${config.slugs.embed}/`, showEmbed)
 
   const showDownload = async (request: FastifyRequest, reply: Parameters<FastifyRequest['routeOptions']['handler']>[1]) => {
-    const [ads, player, misc, countryCode] = await Promise.all([
+    const [ads, player, misc, hosting, countryCode] = await Promise.all([
       loadRuntimeAdsSettings(options.loadAdsSettings),
       loadRuntimePlayerSettings(options.loadPlayerSettings, playerDefaults),
       loadRuntimeMiscSettings(options.loadMiscSettings, options.supportedHosts ?? new Set()),
+      loadRuntimeHostingSettings(options.loadHostingSettings, options.supportedHosts ?? new Set()),
       countryCodeForRequest(request, options.countryCodeLookup)
     ])
     const parsed = parsePlayerQuery(rawQueryFromUrl(request.url), security, {
@@ -218,6 +226,8 @@ export async function registerPlayerRoutes(
       ...(alternativeUrl === undefined ? {} : { alternativeUrl }),
       downloadLabel: player.text_download,
       hideHostname: player.hide_hostname,
+      hostingData: hosting.data,
+      customNames: hosting.customNames,
       ...downloadAdFrames(ads)
     })
   }

@@ -1,4 +1,5 @@
 import { Hosting } from '../core/hosting.js'
+import type { HostingData } from '../core/hosting-data.js'
 import { buildPlayerQuery, type PlayerMediaQuery } from '../core/player-query.js'
 import type { Security } from '../security/security.js'
 
@@ -8,6 +9,7 @@ export type PlayerLinkGeneratorOptions = Readonly<{
   downloadSlug: string
   requestSlug: string
   iframeCode?: string
+  hostingData?: HostingData
 }>
 
 export type CreatePlayerInput = Readonly<{
@@ -38,7 +40,7 @@ export class PlayerLinkGenerator {
 
   public generate(input: CreatePlayerInput): GeneratedPlayerLinks {
     const mainUrl = requiredHttpUrl(input.id, 'Main video URL')
-    const main = new Hosting(mainUrl)
+    const main = new Hosting(mainUrl, this.options.hostingData)
     const query: {
       host: string
       id: string
@@ -55,7 +57,7 @@ export class PlayerLinkGenerator {
     }
 
     if (input.aid !== undefined && input.aid.trim().length > 0) {
-      const alternative = new Hosting(requiredHttpUrl(input.aid, 'Alternative video URL'))
+      const alternative = new Hosting(requiredHttpUrl(input.aid, 'Alternative video URL'), this.options.hostingData)
       query.ahost = alternative.getHost()
       query.aid = alternative.getID()
     }

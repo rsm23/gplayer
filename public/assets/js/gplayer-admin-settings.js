@@ -97,7 +97,7 @@
     if (!(navigation instanceof HTMLElement) || !(active instanceof HTMLElement)) return
     const activeRight = active.offsetLeft + active.offsetWidth
     const visibleRight = navigation.scrollLeft + navigation.clientWidth
-    if (activeRight > visibleRight) navigation.scrollLeft = activeRight - navigation.clientWidth + 4
+    if (activeRight > visibleRight) navigation.scrollLeft = active.offsetLeft
     else if (active.offsetLeft < navigation.scrollLeft) navigation.scrollLeft = Math.max(0, active.offsetLeft - 4)
   }
 
@@ -136,8 +136,43 @@
     })
   }
 
+  const setupHostingSettings = () => {
+    const editor = document.querySelector('[data-hosting-settings]')
+    const search = editor?.querySelector('[data-hosting-search]')
+    const list = editor?.querySelector('[data-hosting-list]')
+    const empty = editor?.querySelector('[data-hosting-empty]')
+    if (!(editor instanceof HTMLFormElement) || !(search instanceof HTMLInputElement) || !(list instanceof HTMLElement) || !(empty instanceof HTMLElement)) return
+
+    const cards = [...list.querySelectorAll('[data-hosting-provider]')]
+    const filter = () => {
+      const query = search.value.trim().toLocaleLowerCase('en-US')
+      let visible = 0
+      cards.forEach((card) => {
+        if (!(card instanceof HTMLDetailsElement)) return
+        const match = query === '' || (card.dataset.hostingSearch ?? '').includes(query)
+        card.hidden = !match
+        if (match) visible += 1
+      })
+      empty.hidden = visible !== 0
+    }
+
+    search.addEventListener('input', filter)
+    editor.addEventListener('click', (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const reset = target.closest('[data-reset-hosting-name]')
+      if (!(reset instanceof HTMLButtonElement)) return
+      const field = document.getElementById(reset.dataset.target ?? '')
+      if (!(field instanceof HTMLInputElement)) return
+      field.value = reset.dataset.value ?? ''
+      field.focus()
+    })
+    filter()
+  }
+
   setupCustomHeaders()
   setupVastSchedule()
   setupPlayerSettings()
+  setupHostingSettings()
   revealActiveSettingsTab()
 })()

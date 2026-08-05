@@ -42,6 +42,9 @@ Platform.shim.eval = evaluateYoutubePlayerScript
 
 export class YoutubeInnertubeClient implements YoutubeClient {
   #session: Promise<Innertube> | undefined
+  #sessionCookie = ''
+
+  public constructor(private readonly loadCookie?: () => Promise<string>) {}
 
   public async getVideo(id: string): Promise<YoutubeVideo> {
     const session = await this.session()
@@ -89,7 +92,11 @@ export class YoutubeInnertubeClient implements YoutubeClient {
   }
 
   private async session(): Promise<Innertube> {
-    this.#session ??= Innertube.create({ retrieve_player: true })
+    const cookie = await this.configuredCookie()
+    if (this.#session === undefined || cookie !== this.#sessionCookie) {
+      this.#sessionCookie = cookie
+      this.#session = Innertube.create({ retrieve_player: true, ...(cookie === '' ? {} : { cookie }) })
+    }
     try {
       return await this.#session
     } catch (error) {
@@ -97,6 +104,15 @@ export class YoutubeInnertubeClient implements YoutubeClient {
       // factory singleton for every later request.
       this.#session = undefined
       throw error
+    }
+  }
+
+  private async configuredCookie(): Promise<string> {
+    if (this.loadCookie === undefined) return ''
+    try {
+      return await this.loadCookie()
+    } catch {
+      return ''
     }
   }
 }

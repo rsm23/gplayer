@@ -44,6 +44,36 @@ describe('player HTTP routes', () => {
     })
   })
 
+  it('consumes custom provider domains, source-page templates, and display names', async () => {
+    const values = {
+      'custom-hostnames': JSON.stringify({ youtube: ['video.private.example'] }),
+      'download-urls': JSON.stringify({ youtube: 'https://watch.example/source/%s' }),
+      custom_names: JSON.stringify({ youtube: 'Video server 1' })
+    }
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: secureSalt }), {
+      settings: new SettingsAdminService({ getAll: async () => values, upsertMany: async () => {} })
+    })
+    const generated = await app.inject({
+      method: 'POST',
+      url: '/ajax/public/',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'action=createPlayer&id=https%3A%2F%2Fvideo.private.example%2Fwatch%3Fv%3Dcustom-id'
+    })
+    expect(generated.statusCode).toBe(200)
+    const result = generated.json().result
+    const token = new URL(result.embed_url).search.slice(1)
+    expect(parsePlayerQuery(token, new Security(secureSalt), { secureSalt }).media).toEqual({
+      host: 'youtube',
+      id: 'custom-id',
+      poster: ''
+    })
+
+    const download = await app.inject({ method: 'GET', url: `/d/?${token}` })
+    expect(download.statusCode).toBe(200)
+    expect(download.body).toContain('href="https://watch.example/source/custom-id"')
+    expect(download.body).toContain('Video server 1 source recognized')
+  })
+
   it('converts the plaintext request URL into an authenticated embed redirect', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const response = await app.inject({
