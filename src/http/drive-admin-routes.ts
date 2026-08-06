@@ -33,6 +33,8 @@ export async function registerDriveAdminRoutes(
   const queueActionUrl = `${adminBase}/gdrive/backup-queue/action/`
 
   app.get(`${adminBase}/gdrive`, async (_request, reply) => await reply.redirect(listUrl, 308))
+  app.get(`${adminBase}/gdrive/list`, async (request, reply) => await redirectWithQuery(request, reply, listUrl))
+  app.get(`${adminBase}/gdrive/list/`, async (request, reply) => await redirectWithQuery(request, reply, listUrl))
   app.get(`${adminBase}/gdrive/new`, async (_request, reply) => await reply.redirect(newUrl, 308))
   app.get(`${adminBase}/gdrive/edit`, async (request, reply) => {
     const id = stringValue(objectValue(request.query).id)
@@ -541,6 +543,11 @@ function objectValue(value: unknown): Record<string, unknown> {
 function stringValue(value: unknown): string {
   const scalar = Array.isArray(value) ? value.at(-1) : value
   return typeof scalar === 'string' || typeof scalar === 'number' ? String(scalar).trim().slice(0, 1_024) : ''
+}
+
+async function redirectWithQuery(request: FastifyRequest, reply: FastifyReply, target: string): Promise<FastifyReply> {
+  const query = request.url.split('?', 2)[1]
+  return await reply.redirect(`${target}${query === undefined ? '' : `?${query}`}`, 308)
 }
 
 function booleanValue(value: unknown): boolean {

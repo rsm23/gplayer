@@ -874,6 +874,18 @@ describe('video administration and saved-video routes', () => {
     expect(imported.headers.location).toContain('imported=1')
     expect(context.store.lastCreate).toEqual(expect.objectContaining({ title: 'Route import', status: 0, userId: '2' }))
 
+    const legacyCsv = Buffer.from('title,slug,poster,video_url\r\nLegacy import,legacy-import,,https://cdn.example/legacy-import.mp4\r\n')
+    const legacyMultipart = multipartBody({}, [
+      { field: 'importVideos', filename: 'legacy.csv', type: 'text/csv', content: legacyCsv }
+    ])
+    const legacyImported = await context.app.inject({
+      method: 'POST',
+      url: '/administrator/ajax/videos-import/',
+      headers: { ...headers, origin: baseUrl.origin, 'content-type': `multipart/form-data; boundary=${legacyMultipart.boundary}` },
+      payload: legacyMultipart.payload
+    })
+    expect(legacyImported.json()).toEqual({ status: 'ok', message: VIDEO_IMPORT_SUCCESS, result: [expect.objectContaining({ title: 'Legacy import', host: 'direct', link: 'https://cdn.example/legacy-import.mp4' })] })
+
     const exported = await context.app.inject({
       method: 'POST',
       url: '/administrator/videos/export/',

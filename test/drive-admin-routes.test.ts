@@ -111,6 +111,9 @@ describe('Google Drive file, backup, and queue administration routes', () => {
   it('renders the authenticated file, backup, and queue pages without credentials or auth tokens', async () => {
     const drive = new FixtureDriveAdmin()
     app = await createApp(drive)
+    const legacyList = await app.inject({ method: 'GET', url: '/administrator/gdrive/list/?q=drive', headers })
+    expect(legacyList.statusCode).toBe(308)
+    expect(legacyList.headers.location).toBe('/administrator/gdrive/?q=drive')
     const [files, backups, queue] = await Promise.all([
       app.inject({ method: 'GET', url: '/administrator/gdrive/files/?email=drive%40example.test&token=remote-page-2', headers }),
       app.inject({ method: 'GET', url: '/administrator/gdrive/backup-files/', headers }),

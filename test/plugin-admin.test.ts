@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { createHmac } from 'node:crypto'
 import { deflateRawSync } from 'node:zlib'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
@@ -184,6 +184,27 @@ describe('plugin administration routes', () => {
     expect(legacyInstalled.json()).toEqual({ status: 'ok', message: 'Plugin installed successfully.', name: 'Second', icon_uri: '/plugins/second/icon.svg' })
     const list = await app.inject({ method: 'GET', url: '/administrator/plugins/list/?draw=2', headers })
     expect(list.json()).toEqual(expect.objectContaining({ draw: 2, recordsTotal: 2 }))
+    expect((await app.inject({ method: 'GET', url: '/administrator/plugins/sync/?id=1&secure=wrong&action=ping' })).body).toBe('Invalid request')
+    expect((await app.inject({ method: 'GET', url: `/administrator/plugins/sync/?id=1&secure=${secureSalt}&action=other` })).body).toBe('Invalid action')
+    expect((await app.inject({ method: 'GET', url: `/administrator/plugins/sync/?id=999&secure=${secureSalt}&action=ping` })).body).toBe('Not found')
+    await rm(path.join(root, 'tmp', 'sample.zip'))
+    const syncBase = `/administrator/plugins/sync?id=1&secure=${secureSalt}`
+    await mkdir(path.join(root, 'sample', 'runtime-cache'))
+    await symlink(path.join(root, 'sample', 'plugin.json'), path.join(root, 'sample', 'unsafe-link'))
+    expect((await app.inject({ method: 'GET', url: `${syncBase}&action=ping` })).body).toBe('Invalid')
+    await rm(path.join(root, 'sample', 'unsafe-link'))
+    const ping = await app.inject({ method: 'GET', url: `${syncBase}&action=ping` })
+    expect(ping.statusCode).toBe(200)
+    expect(ping.body).toBe('ok')
+    expect(ping.headers['cache-control']).toBe('no-store')
+    const download = await app.inject({ method: 'GET', url: `${syncBase}&action=download` })
+    expect(download.statusCode).toBe(200)
+    expect(download.headers['content-type']).toBe('application/octet-stream')
+    expect(download.headers['content-disposition']).toBe('attachment; filename="sample.zip"')
+    expect(PluginArchive.fromBuffer(download.rawPayload).manifest).toEqual(expect.objectContaining({ name: 'Sample', folder: 'sample', version: '1.0.0' }))
+    await PluginArchive.fromBuffer(download.rawPayload).extract(path.join(root, 'unpacked'), false, root)
+    expect((await lstat(path.join(root, 'unpacked', 'runtime-cache'))).isDirectory()).toBe(true)
+    expect(await readFile(path.join(root, 'tmp', 'sample.zip'))).toEqual(download.rawPayload)
     const legacyStatus = await app.inject({ method: 'POST', url: '/administrator/plugins/status/', headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' }, payload: 'id=1&status=1' })
     expect(legacyStatus.statusCode).toBe(200)
     expect(legacyStatus.json()).toEqual({ status: 'ok', message: 'Plugin status updated successfully.' })

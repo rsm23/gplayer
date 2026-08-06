@@ -16,6 +16,7 @@ export async function registerPluginAdminRoutes(app: FastifyInstance, config: Ap
   const installUrl = `${adminBase}/plugins/install/`
   const statusUrl = `${adminBase}/plugins/status/`
   const uninstallUrl = `${adminBase}/plugins/uninstall/`
+  const syncUrl = `${adminBase}/plugins/sync/`
   const scope = 'plugin-mutate'
 
   app.get(`${adminBase}/plugins`, async (_request, reply) => await reply.redirect(listUrl, 308))
@@ -34,6 +35,30 @@ export async function registerPluginAdminRoutes(app: FastifyInstance, config: Ap
       return reply.type('text/html; charset=utf-8').send(renderAdminPlugins({ adminBase, plugins: page.data, recordsTotal: page.recordsTotal, search, csrfToken: csrfToken(config, tokenFor(request), scope), ...(message === undefined ? {} : { message }) }))
     } catch { return databaseError(reply, adminBase) }
   })
+
+  const synchronize = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    reply.headers({
+      'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+      'x-robots-tag': 'noindex, nofollow'
+    })
+    const query = objectValue(request.query)
+    const action = stringValue(query.action)
+    if (!validSyncSecret(config.secureSalt, stringValue(query.secure)) || stringValue(query.id) === '') return reply.type('text/plain; charset=utf-8').send('Invalid request')
+    if (action !== 'ping' && action !== 'download') return reply.type('text/plain; charset=utf-8').send('Invalid action')
+    const result = await plugins.syncArchive(query.id).catch(() => ({ status: 'invalid' as const }))
+    if (result.status === 'not-found') return reply.type('text/plain; charset=utf-8').send('Not found')
+    if (result.status === 'invalid') return reply.type('text/plain; charset=utf-8').send('Invalid')
+    if (action === 'ping') return reply.type('text/plain; charset=utf-8').send('ok')
+    const fallback = result.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
+    return reply
+      .header('content-disposition', `attachment; filename="${fallback}"`)
+      .type('application/octet-stream')
+      .send(result.archive)
+  }
+  app.get(syncUrl.slice(0, -1), synchronize)
+  app.get(syncUrl, synchronize)
 
   app.post(installUrl, async (request, reply) => {
     applyAdminHeaders(reply, config)
@@ -99,6 +124,7 @@ async function authenticatedAdmin(request: FastifyRequest, reply: FastifyReply, 
 function tokenFor(request: FastifyRequest): string { return authTokenFromRequest({ authorization: request.headers.authorization, cookie: request.cookies[AUTH_COOKIE_NAME] }) }
 function csrfToken(config: AppConfig, token: string, scope: string): string { return token === '' ? '' : createHmac('sha256', config.secureSalt).update(`${scope}\0${token}`).digest('base64url') }
 function validCsrfToken(config: AppConfig, token: string, candidate: string, scope: string): boolean { const expected = csrfToken(config, token, scope); return expected !== '' && candidate.length === expected.length && timingSafeEqual(Buffer.from(candidate), Buffer.from(expected)) }
+function validSyncSecret(expected: string, candidate: string): boolean { return candidate.length === expected.length && timingSafeEqual(Buffer.from(expected), Buffer.from(candidate)) }
 function hasSameOrigin(request: FastifyRequest, config: AppConfig): boolean { const source = request.headers.origin ?? request.headers.referer; if (source === undefined) return true; try { return new URL(source).origin === config.baseUrl.origin } catch { return false } }
 function databaseError(reply: FastifyReply, adminBase: string): FastifyReply { return reply.code(503).type('text/html; charset=utf-8').send(renderAdminError(adminBase, 503, DATABASE_UNAVAILABLE)) }
 function objectValue(value: unknown): Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {} }

@@ -55,6 +55,8 @@ export async function registerAdminRoutes(
   app.get(`${adminBase}/login`, async (_request, reply) => await reply.redirect(loginUrl, 308))
   app.get(`${adminBase}/dashboard`, async (_request, reply) => await reply.redirect(dashboardUrl, 308))
   app.get(`${adminBase}/users`, async (_request, reply) => await reply.redirect(usersUrl, 308))
+  app.get(`${adminBase}/users/list`, async (request, reply) => await redirectWithQuery(request, reply, usersUrl))
+  app.get(`${adminBase}/users/list/`, async (request, reply) => await redirectWithQuery(request, reply, usersUrl))
   app.get(`${adminBase}/users/new`, async (_request, reply) => await reply.redirect(userNewUrl, 308))
   app.get(`${adminBase}/users/edit`, async (request, reply) => {
     const id = stringValue(objectValue(request.query).id)
@@ -774,4 +776,9 @@ function hasSameOrigin(request: FastifyRequest, config: AppConfig): boolean {
   } catch {
     return false
   }
+}
+
+async function redirectWithQuery(request: FastifyRequest, reply: FastifyReply, target: string): Promise<FastifyReply> {
+  const query = request.url.split('?', 2)[1]
+  return await reply.redirect(`${target}${query === undefined ? '' : `?${query}`}`, 308)
 }

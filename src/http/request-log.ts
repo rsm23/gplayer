@@ -6,6 +6,7 @@ const SENSITIVE_QUERY_KEYS = new Set([
   'authorization',
   'password',
   'secret',
+  'secure',
   'token'
 ])
 

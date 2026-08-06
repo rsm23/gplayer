@@ -1,9 +1,11 @@
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { cp, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { cp, lstat, mkdir, open, readFile, rename, rm, writeFile, type FileHandle } from 'node:fs/promises'
 import { PluginArchive, parsePluginManifest } from './plugin-archive.js'
 import { safePluginDirectory, type PluginBackgroundManager } from './plugin-background-manager.js'
 import type { PluginRecord } from './plugin-maintenance-worker.js'
+import { createPluginSyncArchive, MAX_PLUGIN_SYNC_BYTES } from './plugin-sync-archive.js'
 
 const LIST_COLUMNS = ['name', 'status', 'created', 'updated', 'id'] as const
 export type PluginOrderColumn = typeof LIST_COLUMNS[number]
@@ -35,6 +37,11 @@ export interface PluginAdminStore {
 export type PluginMutationResult =
   | Readonly<{ status: 'ok'; id: string; message: string; name?: string; iconUri?: string }>
   | Readonly<{ status: 'invalid'; message: string }>
+
+export type PluginSyncArchiveResult =
+  | Readonly<{ status: 'ok'; archive: Buffer; filename: string }>
+  | Readonly<{ status: 'not-found' }>
+  | Readonly<{ status: 'invalid' }>
 
 export class PluginAdminService {
   private readonly now: () => number
@@ -170,6 +177,38 @@ export class PluginAdminService {
     return { status: 'ok', id: normalized, message: 'Plugin uninstalled successfully.' }
   }
 
+  public async syncArchive(id: unknown): Promise<PluginSyncArchiveResult> {
+    const normalized = pluginId(id)
+    if (normalized === null) return { status: 'not-found' }
+    const plugin = await this.store.getPlugin(normalized)
+    if (plugin === null) return { status: 'not-found' }
+    let destination: string
+    try { destination = safePluginDirectory(this.root, plugin.folder) } catch { return { status: 'invalid' } }
+    const destinationStatus = await lstat(destination).catch(() => null)
+    if (destinationStatus === null || !destinationStatus.isDirectory() || destinationStatus.isSymbolicLink()) return { status: 'invalid' }
+    const installedManifest = await readInstalledManifest(destination)
+    if (installedManifest === null) return { status: 'invalid' }
+    const filename = `${path.basename(destination)}.zip`
+    const cached = path.join(this.root, 'tmp', filename)
+    const cachedStatus = await lstat(cached).catch(() => null)
+    if (cachedStatus?.isFile() === true && !cachedStatus.isSymbolicLink() && cachedStatus.size <= MAX_PLUGIN_SYNC_BYTES) {
+      try {
+        const archive = await readSyncArchive(cached)
+        const manifest = PluginArchive.fromBuffer(archive).manifest
+        if (manifest.name === installedManifest.name && manifest.folder === installedManifest.folder && manifest.version === installedManifest.version && manifest.useCli === installedManifest.useCli) return { status: 'ok', archive, filename }
+      } catch {}
+    }
+    try {
+      const archive = await createPluginSyncArchive(destination)
+      PluginArchive.fromBuffer(archive)
+      await mkdir(path.join(this.root, 'tmp'), { recursive: true, mode: 0o755 })
+      await saveArchive(this.root, path.basename(destination), archive).catch(() => undefined)
+      return { status: 'ok', archive, filename }
+    } catch {
+      return { status: 'invalid' }
+    }
+  }
+
   private async availableFolder(base: string, useCli: boolean): Promise<string> {
     for (let attempts = 0; attempts < 100; attempts += 1) {
       const candidate = `${base}_${randomUUID().replaceAll('-', '').slice(0, 8)}`
@@ -201,6 +240,29 @@ async function saveArchive(root: string, folder: string, data: Buffer): Promise<
   const temporary = path.join(temporaryRoot, `.${folder}.${randomUUID()}.tmp`)
   await writeFile(temporary, data, { flag: 'wx', mode: 0o600 })
   try { await rename(temporary, target) } finally { await rm(temporary, { force: true }).catch(() => undefined) }
+}
+async function readSyncArchive(file: string): Promise<Buffer> {
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const status = await handle.stat()
+    if (!status.isFile() || status.size > MAX_PLUGIN_SYNC_BYTES) throw new Error('Stored plugin archive is invalid')
+    return await readBoundedSyncArchive(handle)
+  } finally {
+    await handle.close()
+  }
+}
+async function readBoundedSyncArchive(handle: FileHandle): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let size = 0
+  while (true) {
+    const buffer = Buffer.allocUnsafe(Math.min(64 * 1_024, MAX_PLUGIN_SYNC_BYTES - size + 1))
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
+    if (bytesRead === 0) break
+    size += bytesRead
+    if (size > MAX_PLUGIN_SYNC_BYTES) throw new Error('Stored plugin archive is invalid')
+    chunks.push(buffer.subarray(0, bytesRead))
+  }
+  return Buffer.concat(chunks, size)
 }
 function mergeConfig(fresh: Readonly<Record<string, unknown>>, existing: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> { return Object.freeze(Object.fromEntries([...Object.entries(fresh), ...Object.entries(existing)])) }
 function safeArchiveError(error: unknown): string { const message = error instanceof Error ? error.message : ''; return message === '' || message.length > 300 ? 'Invalid plugin archive.' : message }
