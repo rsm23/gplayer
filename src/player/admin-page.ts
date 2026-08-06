@@ -1658,16 +1658,15 @@ export function renderAdminError(adminBase: string, status: 403 | 404 | 503, des
 
 function adminDocument(title: string, body: string): string {
   return withShadcnUi(`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="theme-color" content="#0b0e0c">
+  <meta name="theme-color" content="#0a0a12">
   <title>${escapeHtml(title)} | GPlayer administration</title>
   <link rel="icon" href="/assets/img/logo/rr.ico">
-  <link rel="stylesheet" href="/assets/css/gplayer-landing.css">
-  <link rel="stylesheet" href="/assets/css/gplayer-public.css">
+  <link rel="stylesheet" href="/assets/css/gplayer-admin.css">
   <script src="/assets/js/gplayer-admin-settings.js" defer></script>
 </head>
 <body class="admin-body">${body}</body>
