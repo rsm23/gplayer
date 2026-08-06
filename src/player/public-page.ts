@@ -164,6 +164,8 @@ export function renderPublicThemeCss(input: SiteSettings = DEFAULT_SITE_SETTINGS
   const site = publicSiteSettings(input)
   const primary = safeHex(site.custom_color, DEFAULT_SITE_SETTINGS.custom_color)
   const secondary = safeHex(site.custom_color2, DEFAULT_SITE_SETTINGS.custom_color2)
+  // Default colors already ship per-theme in the static stylesheets; only emit an override when customized.
+  if (primary === DEFAULT_SITE_SETTINGS.custom_color && secondary === DEFAULT_SITE_SETTINGS.custom_color2) return '/* default site theme */\n'
   return `:root,\n:root[data-theme] {\n  --brand: #${primary};\n  --brand-soft: #${secondary};\n  --success: #${primary};\n  --focus: #${secondary};\n}\n`
 }
 

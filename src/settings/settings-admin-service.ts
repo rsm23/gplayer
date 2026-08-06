@@ -176,11 +176,11 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = Object.freeze({
   site_name: 'GPlayer',
   site_slogan: 'One runtime. Every source.',
   site_description: 'Turn provider links, HLS, DASH, and direct video into secure, shareable embeds from one Node.js service.',
-  custom_color: 'c8df69',
-  custom_color2: 'e1ecae',
+  custom_color: '8b90ff',
+  custom_color2: 'c3c9f2',
   pwa_shortname: 'GPlayer',
-  pwa_themecolor: '0b0e0c',
-  pwa_backgroundcolor: '0b0e0c',
+  pwa_themecolor: '0a0a12',
+  pwa_backgroundcolor: '0a0a12',
   pwa_display: 'standalone'
 })
 
