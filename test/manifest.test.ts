@@ -364,4 +364,105 @@ describe('generated legacy parity manifest', () => {
       ...map.schemaRuntime.testFiles
     ])
   })
+
+  it('maps the complete supplied Google Drive inventory to tested Node workflows', async () => {
+    type LegacyClass = Readonly<{ file: string; className: string; publicMethods: readonly string[] }>
+    type ClassSurface = Readonly<{ runtime: string; legacyClasses: readonly LegacyClass[]; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    type RouteMap = Readonly<{ legacy: string; method: 'GET' | 'POST'; replacement: string; sourceFile: string; testFile: string }>
+    type AjaxMap = Readonly<{
+      legacy: string
+      methods: readonly ('GET' | 'POST')[]
+      registeredPath: string
+      actions: readonly string[]
+      sourceFile: string
+      testFile: string
+    }>
+    type PublicSurface = Readonly<{
+      legacy: string
+      methods: readonly ('GET' | 'HEAD' | 'POST')[]
+      registeredPath: string
+      replacementFiles: readonly string[]
+      testFiles: readonly string[]
+    }>
+    type TemplateSurface = Readonly<{ runtime: string; legacyTemplates: readonly string[]; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    const [manifest, map] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8').then((value) => JSON.parse(value)),
+      fs.readFile(path.join(projectRoot, 'docs/google-drive-parity-map.json'), 'utf8').then((value) => JSON.parse(value) as {
+        classSurfaces: ClassSurface[]
+        adminRoutes: RouteMap[]
+        ajaxControllers: AjaxMap[]
+        publicSurfaces: PublicSurface[]
+        templateSurfaces: TemplateSurface[]
+        tables: string[]
+        backgroundWorker: { legacy: string; sourceFile: string; testFile: string }
+        liveIntegration: { mode: string; automatedDefault: boolean; reason: string }
+      })
+    ])
+    const expectFiles = async (files: readonly string[]): Promise<void> => {
+      for (const file of files) await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+    }
+
+    const driveDeclarations = manifest.phpDeclarations.filter((entry: { file: string }) =>
+      /\/(?:GDrive[^/]*|GoogleDriveRestAPI|GoogleDriveHelper|Gdrive)\.php$/u.test(entry.file))
+    const mappedClasses = map.classSurfaces.flatMap((surface) => surface.legacyClasses)
+    expect(mappedClasses).toHaveLength(15)
+    expect(new Set(mappedClasses.map((entry) => entry.file)).size).toBe(mappedClasses.length)
+    expect(mappedClasses.map((entry) => entry.file).sort()).toEqual(driveDeclarations.map((entry: { file: string }) => entry.file).sort())
+    for (const surface of map.classSurfaces) {
+      expect(surface.runtime).not.toBe('')
+      for (const entry of surface.legacyClasses) {
+        const declaration = driveDeclarations.find((candidate: { file: string }) => candidate.file === entry.file)
+        expect(declaration?.className, entry.file).toBe(entry.className)
+        expect([...entry.publicMethods].sort()).toEqual([...(declaration?.publicMethods ?? [])].sort())
+      }
+      await expectFiles([...surface.replacementFiles, ...surface.testFiles])
+    }
+
+    const driveBackendRoutes = manifest.routes.backend.filter((route: string) => route.startsWith('gdrive/'))
+    expect(map.adminRoutes.map((entry) => entry.legacy).sort()).toEqual([...driveBackendRoutes].sort())
+    const driveAjaxControllers = manifest.routes.ajaxControllers.filter((controller: string) => controller.startsWith('GDrive'))
+    expect(map.ajaxControllers.map((entry) => entry.legacy).sort()).toEqual([...driveAjaxControllers].sort())
+    expect(Object.fromEntries(map.ajaxControllers.map((entry) => [entry.legacy, [...entry.actions].sort()]))).toEqual({
+      GDriveAccountAjax: ['delete', 'list', 'updateBypass', 'updateStatus'],
+      GDriveFileAjax: ['createNewFolder', 'delete', 'deleteMirror', 'gdriveImport', 'getSharedDrives', 'list', 'removeDuplicateFiles', 'renameFileFolder', 'updateStatus'],
+      GDriveMirrorAjax: ['delete', 'list'],
+      GDriveQueueAjax: ['copy', 'delete', 'list']
+    })
+    for (const entry of map.adminRoutes) await expectFiles([entry.sourceFile, entry.testFile])
+    for (const entry of map.ajaxControllers) await expectFiles([entry.sourceFile, entry.testFile])
+    for (const entry of map.publicSurfaces) await expectFiles([...entry.replacementFiles, ...entry.testFiles])
+
+    const driveTemplates = manifest.features.twigTemplates.filter((template: string) => /gdrive/iu.test(template))
+    const mappedTemplates = map.templateSurfaces.flatMap((surface) => surface.legacyTemplates)
+    expect(mappedTemplates).toHaveLength(9)
+    expect(new Set(mappedTemplates).size).toBe(mappedTemplates.length)
+    expect([...mappedTemplates].sort()).toEqual([...driveTemplates].sort())
+    for (const surface of map.templateSurfaces) {
+      expect(surface.runtime).not.toBe('')
+      await expectFiles([...surface.replacementFiles, ...surface.testFiles])
+    }
+    expect([...map.tables].sort()).toEqual(Object.keys(manifest.database.tables).filter((table) => table.startsWith('tb_gdrive_')).sort())
+    expect(map.backgroundWorker.legacy).toBe('bg_gdrive')
+    expect(manifest.features.backgroundWorkers).toContain(map.backgroundWorker.legacy)
+    await expectFiles([map.backgroundWorker.sourceFile, map.backgroundWorker.testFile])
+    expect(map.liveIntegration.automatedDefault).toBe(false)
+    expect(map.liveIntegration.mode).toContain('explicit opt-in')
+    expect(map.liveIntegration.reason).not.toBe('')
+
+    const app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }))
+    try {
+      await app.ready()
+      for (const entry of map.adminRoutes) {
+        expect(app.hasRoute({ method: entry.method, url: entry.replacement }), `${entry.method} ${entry.replacement}`).toBe(true)
+      }
+      for (const entry of map.ajaxControllers) {
+        for (const method of entry.methods) expect(app.hasRoute({ method, url: entry.registeredPath }), `${method} ${entry.registeredPath}`).toBe(true)
+      }
+      for (const entry of map.publicSurfaces) {
+        for (const method of entry.methods) expect(app.hasRoute({ method, url: entry.registeredPath }), `${method} ${entry.registeredPath}`).toBe(true)
+      }
+    } finally {
+      await app.close()
+    }
+  })
 })

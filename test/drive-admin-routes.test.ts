@@ -201,6 +201,35 @@ describe('Google Drive file, backup, and queue administration routes', () => {
     expect(copied.json()).toEqual({ status: 'ok', message: '', result: { link: 'https://drive.google.com/file/d/copiedFileXYZ/view', id: 'copiedFileXYZ' } })
   })
 
+  it('dispatches every legacy file, mirror, and queue mutation action', async () => {
+    const drive = new FixtureDriveAdmin()
+    app = await createApp(drive)
+    const cases = [
+      ['/administrator/ajax/gdrive-files/', 'action=createNewFolder&email=drive%40example.test&name=Editorial&parent_id=root', drive.createFolder],
+      ['/administrator/ajax/gdrive-files/', 'action=delete&email=drive%40example.test&id=sourceFileABC', drive.deleteFile],
+      ['/administrator/ajax/gdrive-files/', 'action=deleteMirror&id=3', drive.deleteMirrorRecord],
+      ['/administrator/ajax/gdrive-files/', 'action=gdriveImport&email=drive%40example.test&id=sourceFileABC', drive.importFile],
+      ['/administrator/ajax/gdrive-files/', 'action=removeDuplicateFiles&email=drive%40example.test', drive.removeDuplicates],
+      ['/administrator/ajax/gdrive-files/', 'action=renameFileFolder&email=drive%40example.test&id=sourceFileABC&name=Renamed.mp4', drive.rename],
+      ['/administrator/ajax/gdrive-files/', 'action=updateStatus&email=drive%40example.test&id=sourceFileABC&public=1', drive.setPublic],
+      ['/administrator/ajax/gdrive-backup-files/', 'action=delete&id=3', drive.deleteBackup],
+      ['/administrator/ajax/gdrive-backup-queue/', 'action=copy&id=4', drive.copyQueueFile],
+      ['/administrator/ajax/gdrive-backup-queue/', 'action=delete&id=4', drive.deleteQueue]
+    ] as const
+
+    for (const [url, payload, handler] of cases) {
+      const response = await app.inject({
+        method: 'POST',
+        url,
+        headers: { ...headers, origin: 'https://player.example', 'content-type': 'application/x-www-form-urlencoded' },
+        payload
+      })
+      expect(response.statusCode, payload).toBe(200)
+      expect(response.json(), payload).toMatchObject({ status: 'ok' })
+      expect(handler, payload).toHaveBeenCalledOnce()
+    }
+  })
+
   it('returns an empty legacy page to non-admin users', async () => {
     const drive = new FixtureDriveAdmin()
     app = await createApp(drive, new RouteAuthStore({ ...admin, role: 1 }))
