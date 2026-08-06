@@ -203,6 +203,35 @@ describe('schema migration planner', () => {
     expect(plan.removedLegacyArtifacts).toBe(0)
   })
 
+  it('converges older version markers from schema state instead of version-specific branches', () => {
+    const legacyShape = {
+      tables: new Map([['tb_settings', 'latin1_swedish_ci']]),
+      columns: Object.freeze([
+        column('tb_settings', 'id', 'int unsigned'),
+        column('tb_settings', 'key', 'varchar(100)', 'latin1_swedish_ci')
+      ]),
+      indexes: Object.freeze([index('tb_settings', 'PRIMARY', 'id', { nonUnique: 0 })])
+    }
+    const plans = [0, 84, 100].map((version) => buildSchemaMigrationPlan(
+      schemaSql,
+      viewsSql,
+      snapshot({ ...legacyShape, version }),
+      101
+    ))
+
+    expect(plans.map((plan) => plan.previousVersion)).toEqual([0, 84, 100])
+    expect(plans[0]?.statements).toEqual(plans[1]?.statements)
+    expect(plans[1]?.statements).toEqual(plans[2]?.statements)
+    for (const plan of plans) {
+      expect(plan.targetVersion).toBe(101)
+      expect(plan.createdTables).toBe(19)
+      expect(plan.convertedTables).toBe(1)
+      expect(plan.addedColumns).toBe(1)
+      expect(plan.modifiedColumns).toBe(1)
+      expect(plan.statements.at(-1)).toContain("('updated', 101)")
+    }
+  })
+
   it('reconciles nullability, defaults, and auto-increment metadata when introspection provides it', () => {
     const plan = buildSchemaMigrationPlan(schemaSql, viewsSql, snapshot({
       tables: new Map([['tb_settings', 'utf8mb4_unicode_ci']]),

@@ -290,4 +290,78 @@ describe('generated legacy parity manifest', () => {
       await app.close()
     }
   })
+
+  it('maps the complete supplied database inventory to schema-driven Node persistence', async () => {
+    type LegacyClassMap = Readonly<{ legacyClass: string; publicMethods: readonly string[]; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    type MigrationModelMap = Readonly<{
+      legacyMigration: string
+      migrationMethods: readonly string[]
+      legacyModel: string
+      modelMethods: readonly string[]
+      table: string
+      replacementFiles: readonly string[]
+      testFiles: readonly string[]
+    }>
+    type ViewMap = Readonly<LegacyClassMap & { view: string }>
+    const [manifest, map] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8').then((value) => JSON.parse(value)),
+      fs.readFile(path.join(projectRoot, 'docs/database-parity-map.json'), 'utf8').then((value) => JSON.parse(value) as {
+        databaseInfrastructure: LegacyClassMap[]
+        migrationModels: MigrationModelMap[]
+        views: ViewMap[]
+        schemaRuntime: {
+          targetVersion: number
+          schemaFiles: string[]
+          implementationFiles: string[]
+          testFiles: string[]
+        }
+      })
+    ])
+    const declaration = (className: string, filePrefix: string): { publicMethods: string[] } | undefined =>
+      manifest.phpDeclarations.find((candidate: { className?: string; file?: string }) =>
+        candidate.className === className && candidate.file?.startsWith(filePrefix))
+    const expectMethods = (className: string, methods: readonly string[], filePrefix: string): void => {
+      expect(declaration(className, filePrefix), className).toBeDefined()
+      expect([...methods].sort()).toEqual([...(declaration(className, filePrefix)?.publicMethods ?? [])].sort())
+    }
+    const expectFiles = async (files: readonly string[]): Promise<void> => {
+      for (const file of files) await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+    }
+
+    expect(map.databaseInfrastructure.map((entry) => entry.legacyClass).sort()).toEqual([
+      'Conn', 'Migrate', 'MigrateHelper', 'MigrationQueriesCreator', 'Model', 'ModelHelper'
+    ])
+    for (const entry of map.databaseInfrastructure) {
+      expectMethods(entry.legacyClass, entry.publicMethods, 'includes/classes/Database/')
+      await expectFiles([...entry.replacementFiles, ...entry.testFiles])
+    }
+
+    expect(map.migrationModels).toHaveLength(20)
+    expect(new Set(map.migrationModels.map((entry) => entry.legacyMigration)).size).toBe(20)
+    expect(new Set(map.migrationModels.map((entry) => entry.legacyModel)).size).toBe(20)
+    expect(map.migrationModels.map((entry) => entry.legacyMigration).sort()).toEqual([...manifest.features.databaseMigrations].sort())
+    expect(map.migrationModels.map((entry) => entry.table).sort()).toEqual(Object.keys(manifest.database.tables).sort())
+    for (const entry of map.migrationModels) {
+      expectMethods(entry.legacyMigration, entry.migrationMethods, 'includes/classes/Database/MySQL/Migration/')
+      expectMethods(entry.legacyModel, entry.modelMethods, 'includes/classes/Model/')
+      await expectFiles([...entry.replacementFiles, ...entry.testFiles])
+    }
+
+    expect(map.views.map((entry) => entry.legacyClass).sort()).toEqual([
+      'ViewLoadBalancer', 'ViewSubtitleManager', 'ViewUser', 'ViewVideo'
+    ])
+    expect(map.views.map((entry) => entry.view).sort()).toEqual([...manifest.database.views].sort())
+    for (const entry of map.views) {
+      expectMethods(entry.legacyClass, entry.publicMethods, 'includes/classes/Model/')
+      await expectFiles([...entry.replacementFiles, ...entry.testFiles])
+    }
+
+    expect(map.schemaRuntime.targetVersion).toBe(manifest.database.version)
+    expect(map.schemaRuntime.schemaFiles.sort()).toEqual(['resources/mysql/mysql.sql', 'resources/mysql/views.sql'])
+    await expectFiles([
+      ...map.schemaRuntime.schemaFiles,
+      ...map.schemaRuntime.implementationFiles,
+      ...map.schemaRuntime.testFiles
+    ])
+  })
 })
