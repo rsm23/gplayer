@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta data-runtime-site-description content="Complete guide to GPlayer: the public home page, the player generator, and every administration page explained." name="description">
+  <meta data-runtime-site-theme-color content="#0b0e0c" name="theme-color">
+  <title data-runtime-site-title>GPlayer documentation | Every page explained</title>
+  <link rel="icon" href="./assets/img/logo/rr.ico">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./assets/img/film.png">
+  <script src="./assets/js/gplayer-theme.js"></script>
+  <link rel="stylesheet" href="./assets/css/gplayer-landing.css">
+  <!-- runtime-site-stylesheet -->
+  <script src="./assets/js/gplayer-landing.js" defer></script>
+  <link rel="stylesheet" href="./assets/css/gplayer-ui.css" data-shadcn-styles>
+</head>
+<body data-ui="shadcn">
+  <a class="skip-link" href="#docs-overview">Skip to documentation</a>
+
+  <header class="site-header">
+    <a class="wordmark" data-runtime-site-home-label href="./" aria-label="GPlayer home">
+      <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
+    </a>
+    <button type="button" tabindex="0" data-slot="button" aria-expanded="false" aria-controls="site-navigation" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-8 gap-1.5 px-2.5 menu-toggle">Menu</button>
+    <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
+      <a href="#docs-home">Home page</a>
+      <a href="#docs-player">Player &amp; embeds</a>
+      <a href="#docs-admin">Administration</a>
+      <details class="site-theme-nav"><summary><span data-theme-label>Theme</span></summary><div class="site-theme-menu">
+        <button type="button" tabindex="0" data-slot="button" data-theme-choice="light" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5">Light</button>
+        <button type="button" tabindex="0" data-slot="button" data-theme-choice="dark" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5">Dark</button>
+      </div></details>
+      <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">Source</a>
+      <a class="nav-cta group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/80 h-8 gap-1.5 px-2.5" href="./#generator" data-slot="button" data-variant="default" data-size="default">Build a player</a>
+    </nav>
+  </header>
+
+  <main class="docs-main">
+    <section id="docs-overview" class="docs-hero" aria-labelledby="docs-title">
+      <p class="eyebrow"><span></span> Documentation · Every page explained</p>
+      <h1 id="docs-title">The complete GPlayer guide.</h1>
+      <p class="docs-lede">GPlayer is a self-hosted Node.js media gateway. It turns provider links, HLS, DASH, and direct video files into secure, shareable embeds — and ships with a full administration console to manage videos, storage accounts, load balancers, plugins, and every setting of the platform. This page walks through the public home page and each administration screen.</p>
+      <nav class="docs-toc" aria-label="Documentation contents">
+        <a href="#docs-home"><span>01</span> The home page</a>
+        <a href="#docs-player"><span>02</span> Player &amp; embeds</a>
+        <a href="#docs-admin"><span>03</span> Administration access</a>
+        <a href="#docs-admin-core"><span>04</span> Dashboard &amp; core tools</a>
+        <a href="#docs-admin-settings"><span>05</span> Settings</a>
+        <a href="#docs-admin-videos"><span>06</span> Videos</a>
+        <a href="#docs-admin-gdrive"><span>07</span> Google Drive</a>
+        <a href="#docs-admin-lb"><span>08</span> Load balancers</a>
+        <a href="#docs-admin-plugins"><span>09</span> Plugins</a>
+      </nav>
+    </section>
+
+    <section id="docs-home" class="docs-section" aria-labelledby="docs-home-title">
+      <div class="docs-section-heading">
+        <p class="section-index">01 / Public surface</p>
+        <h2 id="docs-home-title">The home page</h2>
+        <p>The home page at <code>/</code> is the public face of your GPlayer instance. It is a single screen where anyone (or only authorized visitors, depending on your public settings) can turn a media link into a ready-to-share player.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Header &amp; navigation</h3>
+          <p>The sticky header carries the site name and slogan (both editable in <a href="#docs-admin-settings">Site settings</a>), anchor links to the page sections, a light/dark theme switcher remembered per visitor, and a link to the source repository.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Player generator</h3>
+          <p>The main form of the page. Paste a <strong>main video URL</strong> — a supported host link (Google Drive, YouTube, Vimeo, Streamtape…), an HLS/DASH manifest, or a direct file. Optional fields add an <strong>alternative fallback source</strong>, a <strong>poster</strong> (URL or upload), a <strong>JSON subtitle manifest</strong>, and up to ten <strong>subtitle tracks</strong> (WebVTT, SRT, ASS… by URL or file upload).</p>
+        </article>
+        <article class="docs-card">
+          <h3>Delivery package</h3>
+          <p>After generation the output panel returns four artifacts: the <strong>embed URL</strong> of the player page, the ready-to-paste <strong>iframe code</strong>, a <strong>download URL</strong> for the source file, and a <strong>request URL</strong> that reproduces the same configuration. A live preview iframe shows the exact player your visitors will get.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Signal path</h3>
+          <p>The workflow section illustrates what happens server-side: the input link is identified, normalized, and wrapped into an <strong>encrypted, authenticated player query</strong> — provider credentials and real file locations never reach the browser.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Supported hosts</h3>
+          <p>The host wall lists a sample of the <strong>69 registered adapters</strong>: cloud drives, video platforms, file hosts, plus generic HLS, MPEG-DASH, and direct video handling.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Footer, sharing &amp; PWA</h3>
+          <p>The footer repeats the navigation and an optional contact link. A share rail posts the page to social networks, and the site installs as a <strong>progressive web app</strong> with offline fallback when served over HTTPS.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-player" class="docs-section" aria-labelledby="docs-player-title">
+      <div class="docs-section-heading">
+        <p class="section-index">02 / Delivery</p>
+        <h2 id="docs-player-title">Player &amp; embeds</h2>
+        <p>Every generated link resolves to the player page, served under the configurable player path.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Embed page</h3>
+          <p class="docs-path"><code>/{player}/?data=…</code></p>
+          <p>The responsive player itself. It reads the encrypted query, resolves the source through the matching host adapter, and plays HLS, DASH, or MP4 with poster, fallback source, and subtitle tracks. Appearance and behavior follow the <a href="#docs-admin-settings">Player settings</a>.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Saved video slugs</h3>
+          <p class="docs-path"><code>/{player}/{slug}/</code></p>
+          <p>Videos saved in the administration get a permanent, human-readable slug so their URL survives source changes — edit the source in the admin and every embed keeps working.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Download &amp; shortlinks</h3>
+          <p>Each package includes a proxied download route, and the optional <strong>shortlink service</strong> produces compact share URLs when enabled in settings.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin" class="docs-section" aria-labelledby="docs-admin-title">
+      <div class="docs-section-heading">
+        <p class="section-index">03 / Control plane</p>
+        <h2 id="docs-admin-title">Administration access</h2>
+        <p>The administration console lives under <code>/administrator/</code> (the directory name is configurable). Every page below requires an authenticated session.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Login</h3>
+          <p class="docs-path"><code>/administrator/login/</code></p>
+          <p>The hardened sign-in boundary. Legacy-compatible bcrypt password checks, session cookies, and brute-force protection guard the whole console.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Registration</h3>
+          <p class="docs-path"><code>/administrator/register/</code></p>
+          <p>Self-service account creation, only when enabled in Public settings. New accounts confirm their email; <code>register/resend/</code> re-sends the confirmation message.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Password reset</h3>
+          <p class="docs-path"><code>/administrator/reset-password/</code></p>
+          <p>Email-based password recovery using the SMTP server configured in settings.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin-core" class="docs-section" aria-labelledby="docs-admin-core-title">
+      <div class="docs-section-heading">
+        <p class="section-index">04 / Daily operations</p>
+        <h2 id="docs-admin-core-title">Dashboard &amp; core tools</h2>
+        <p>The pages you use every day to monitor the instance and manage who can access it.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Dashboard</h3>
+          <p class="docs-path"><code>/administrator/dashboard/</code></p>
+          <p>The landing screen after login: system overview, server status, and shortcuts to the most-used sections, plus quick maintenance actions such as clearing the video cache.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Profile</h3>
+          <p class="docs-path"><code>/administrator/profile/</code></p>
+          <p>Edit your own account: display name, email address, and password.</p>
+        </article>
+        <article class="docs-card">
+          <h3>System logs</h3>
+          <p class="docs-path"><code>/administrator/log/</code></p>
+          <p>Browse system and request logs: filter by level or source, inspect individual entries, and purge old records.</p>
+        </article>
+        <article class="docs-card">
+          <h3>DMCA</h3>
+          <p class="docs-path"><code>/administrator/dmca/</code></p>
+          <p>Handle takedown requests: review reported media and block offending sources from being served again.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Users</h3>
+          <p class="docs-path"><code>/administrator/users/</code></p>
+          <p>The administrator account list. <code>users/new/</code> creates an account, <code>users/edit/</code> changes role, status, or credentials of an existing one.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Sessions</h3>
+          <p class="docs-path"><code>/administrator/users/sessions/</code></p>
+          <p>Every active admin session with device and last-activity details — revoke any session remotely.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin-settings" class="docs-section" aria-labelledby="docs-admin-settings-title">
+      <div class="docs-section-heading">
+        <p class="section-index">05 / Configuration</p>
+        <h2 id="docs-admin-settings-title">Settings</h2>
+        <p>Eleven dedicated pages configure the entire platform. All of them live under <code>/administrator/settings/</code>.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>General</h3>
+          <p class="docs-path"><code>settings/general/</code></p>
+          <p>Core application settings: public URL, timezone, and cache behavior.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Public</h3>
+          <p class="docs-path"><code>settings/public/</code></p>
+          <p>Toggles for the public surface: open or restrict the home-page generator, allow self-registration, enable comments, and other visitor-facing features.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Site</h3>
+          <p class="docs-path"><code>settings/site/</code></p>
+          <p>Branding of the public pages: site name, slogan, description, colors, and contact link — reflected live on the home page.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Player</h3>
+          <p class="docs-path"><code>settings/player/</code></p>
+          <p>Appearance and behavior of the video player: theme, logo, controls, autoplay, and default options applied to every embed.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Hosting</h3>
+          <p class="docs-path"><code>settings/hosting/</code></p>
+          <p>Per-provider configuration for the media host adapters: credentials, API keys, and provider-specific options.</p>
+        </article>
+        <article class="docs-card">
+          <h3>SMTP</h3>
+          <p class="docs-path"><code>settings/smtp/</code></p>
+          <p>Outgoing email server used for account confirmation and password-reset messages.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Shortlink</h3>
+          <p class="docs-path"><code>settings/shortlink/</code></p>
+          <p>Configuration of the URL shortener used for compact share links.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Custom headers</h3>
+          <p class="docs-path"><code>settings/custom-headers/</code></p>
+          <p>Extra HTTP headers attached to proxied upstream requests — useful behind CDNs or picky providers.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Misc</h3>
+          <p class="docs-path"><code>settings/misc/</code></p>
+          <p>Everything else: domain blacklist, content filters, and default resolution preferences.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Ads</h3>
+          <p class="docs-path"><code>settings/ads/</code></p>
+          <p>Monetization: banner slots and VAST tags injected into the player pages.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Reset &amp; maintenance</h3>
+          <p class="docs-path"><code>settings/reset/</code></p>
+          <p>Maintenance tools: clear caches, reset settings groups, and database housekeeping operations.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin-videos" class="docs-section" aria-labelledby="docs-admin-videos-title">
+      <div class="docs-section-heading">
+        <p class="section-index">06 / Library</p>
+        <h2 id="docs-admin-videos-title">Videos</h2>
+        <p>The saved-video library gives permanent slugs and central management to your media.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Video list</h3>
+          <p class="docs-path"><code>/administrator/videos/list/</code></p>
+          <p>Search, sort, and manage every saved video: open its player, edit it, or delete it.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Add a video</h3>
+          <p class="docs-path"><code>/administrator/videos/new/</code></p>
+          <p>Save a video with the same options as the public generator — source, fallback, poster, subtitles — plus a custom slug.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Edit a video</h3>
+          <p class="docs-path"><code>/administrator/videos/edit/?id=…</code></p>
+          <p>Change any property of a saved video. Existing embeds keep working because the slug stays stable.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Import</h3>
+          <p class="docs-path"><code>/administrator/videos/import/</code></p>
+          <p>Bulk-create videos from a CSV file — ideal for migrating an existing catalog.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Export</h3>
+          <p class="docs-path"><code>/administrator/videos/export/</code></p>
+          <p>Generate and download a CSV export of the whole library for backup or migration.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Subtitles</h3>
+          <p class="docs-path"><code>/administrator/videos/subtitles/</code></p>
+          <p>Manage uploaded subtitle files: list, preview, and delete tracks stored on the server.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin-gdrive" class="docs-section" aria-labelledby="docs-admin-gdrive-title">
+      <div class="docs-section-heading">
+        <p class="section-index">07 / Storage</p>
+        <h2 id="docs-admin-gdrive-title">Google Drive</h2>
+        <p>Connect Google Drive accounts to serve files directly and back up media automatically.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Accounts</h3>
+          <p class="docs-path"><code>/administrator/gdrive/</code></p>
+          <p>All connected Drive accounts with their status and quota. <code>gdrive/new/</code> connects an account through OAuth; <code>gdrive/edit/</code> updates its credentials and options.</p>
+        </article>
+        <article class="docs-card">
+          <h3>File browser</h3>
+          <p class="docs-path"><code>/administrator/gdrive/files/</code></p>
+          <p>Browse the files of a connected account and generate players straight from Drive content.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Backups</h3>
+          <p class="docs-path"><code>/administrator/gdrive/backup-files/</code></p>
+          <p>The list of media already backed up to Drive, with <code>gdrive/backup-queue/</code> showing pending and running backup jobs processed by the background worker.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin-lb" class="docs-section" aria-labelledby="docs-admin-lb-title">
+      <div class="docs-section-heading">
+        <p class="section-index">08 / Scale</p>
+        <h2 id="docs-admin-lb-title">Load balancers</h2>
+        <p>Distribute streaming traffic across several GPlayer nodes.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Balancer list</h3>
+          <p class="docs-path"><code>/administrator/load-balancers/list/</code></p>
+          <p>Every registered node with its health and weight; clear a node's cache remotely from here.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Add a balancer</h3>
+          <p class="docs-path"><code>/administrator/load-balancers/new/</code></p>
+          <p>Register a new node by URL and secret so the selector can route playback traffic to it.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Edit a balancer</h3>
+          <p class="docs-path"><code>/administrator/load-balancers/edit/?id=…</code></p>
+          <p>Update a node's endpoint, weight, or status, or remove it from rotation.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="docs-admin-plugins" class="docs-section" aria-labelledby="docs-admin-plugins-title">
+      <div class="docs-section-heading">
+        <p class="section-index">09 / Extensibility</p>
+        <h2 id="docs-admin-plugins-title">Plugins</h2>
+        <p>Extend GPlayer with installable plugins.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Installed plugins</h3>
+          <p class="docs-path"><code>/administrator/plugins/list/</code></p>
+          <p>Enable, disable, configure, or remove installed plugins. Installation happens from this page's install action.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Plugin configuration</h3>
+          <p class="docs-path"><code>/administrator/plugins/config/?plugin=…</code></p>
+          <p>The settings screen a plugin exposes — each plugin registers its own options here.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Sync</h3>
+          <p class="docs-path"><code>/administrator/plugins/sync/</code></p>
+          <p>Synchronize with the plugin repository to fetch updates and newly available plugins.</p>
+        </article>
+      </div>
+      <p class="docs-back"><a href="./">← Back to the home page</a></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div>
+      <a class="wordmark wordmark-footer" data-runtime-site-home-label href="./" aria-label="GPlayer home">
+        <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
+      </a>
+      <p><!-- runtime-site-slogan -->Node-native video delivery for the web.<!-- /runtime-site-slogan --></p>
+    </div>
+    <nav aria-label="Legal navigation">
+       <a href="./#workflow">How it works</a>
+       <a href="./#hosts">Supported hosts</a>
+       <a href="./docs.html">Docs</a>
+       <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">GitHub</a>
+       <!-- runtime-contact-link -->
+    </nav>
+    <p class="copyright">© <span id="copyright-year"></span> <!-- runtime-site-name -->GPlayer<!-- /runtime-site-name --></p>
+  </footer>
+
+  <button type="button" tabindex="0" data-slot="button" id="gotoTop" aria-label="Go to top" title="Go to top" hidden class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-8 goto-top"><span aria-hidden="true">↑</span></button>
+</body>
+</html>
