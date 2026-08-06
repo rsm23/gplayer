@@ -65,4 +65,41 @@ describe('generated legacy parity manifest', () => {
       await expect(fs.access(path.join(projectRoot, entry.testFile))).resolves.toBeUndefined()
     }
   })
+
+  it('maps every supplied default-theme file to a registered and tested Node surface', async () => {
+    type ThemeMap = Readonly<{
+      legacy: string
+      runtime: string
+      route?: string
+      replacementFiles: readonly string[]
+      testFile: string
+    }>
+    const [manifest, map] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8').then((value) => JSON.parse(value)),
+      fs.readFile(path.join(projectRoot, 'docs/theme-parity-map.json'), 'utf8').then((value) => JSON.parse(value) as {
+        bundledThemes: { backend: string[]; frontend: string[] }
+        legacyThemeFiles: ThemeMap[]
+      })
+    ])
+    expect(map.bundledThemes).toEqual({ backend: ['default'], frontend: ['default'] })
+    expect(map.legacyThemeFiles.map((entry) => entry.legacy).sort()).toEqual([...manifest.features.themes].sort())
+    for (const entry of map.legacyThemeFiles) {
+      expect(entry.runtime).not.toBe('')
+      expect(entry.replacementFiles.length).toBeGreaterThan(0)
+      for (const replacement of entry.replacementFiles) {
+        await expect(fs.access(path.join(projectRoot, replacement))).resolves.toBeUndefined()
+      }
+      await expect(fs.access(path.join(projectRoot, entry.testFile))).resolves.toBeUndefined()
+    }
+
+    const app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }))
+    try {
+      await app.ready()
+      for (const route of new Set(map.legacyThemeFiles.flatMap((entry) => entry.route === undefined ? [] : [entry.route]))) {
+        expect(app.hasRoute({ method: 'GET', url: route }), `GET ${route}`).toBe(true)
+      }
+    } finally {
+      await app.close()
+    }
+  })
 })
