@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
+import { LEGACY_BACKGROUND_WORKER_RUNTIME } from '../src/drive/drive-background-worker.js'
 import { hostingCases } from './fixtures/hosting-cases.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -47,6 +48,21 @@ describe('generated legacy parity manifest', () => {
       for (const entry of [...map.legacyRoutes, ...map.ajaxControllers]) expect(app.hasRoute({ method: entry.method, url: entry.replacement }), `${entry.method} ${entry.replacement}`).toBe(true)
     } finally {
       await app.close()
+    }
+  })
+
+  it('maps every supplied background entry point to a tested Node runtime', async () => {
+    type BackgroundMap = Readonly<{ legacy: string; coordinatorJob: string; runtime: string; sourceFile: string; testFile: string }>
+    const [manifest, map] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8').then((value) => JSON.parse(value)),
+      fs.readFile(path.join(projectRoot, 'docs/background-parity-map.json'), 'utf8').then((value) => JSON.parse(value) as { legacyWorkers: BackgroundMap[] })
+    ])
+    expect(map.legacyWorkers.map((entry) => entry.legacy).sort()).toEqual([...manifest.features.backgroundWorkers].sort())
+    expect(Object.fromEntries(map.legacyWorkers.map((entry) => [entry.legacy, entry.coordinatorJob]))).toEqual(LEGACY_BACKGROUND_WORKER_RUNTIME)
+    for (const entry of map.legacyWorkers) {
+      expect(entry.runtime).not.toBe('')
+      await expect(fs.access(path.join(projectRoot, entry.sourceFile))).resolves.toBeUndefined()
+      await expect(fs.access(path.join(projectRoot, entry.testFile))).resolves.toBeUndefined()
     }
   })
 })

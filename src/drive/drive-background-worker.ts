@@ -5,6 +5,15 @@ import type { GeneralWorker } from '../background/general-worker.js'
 import type { SourceRefreshWorker } from '../background/source-refresh-worker.js'
 import type { MediaDownloadWorker } from '../background/media-download-worker.js'
 
+export const LEGACY_BACKGROUND_WORKER_RUNTIME = Object.freeze({
+  bg_download: 'bg_download',
+  bg_download_aria2c: 'bg_download',
+  bg_gdrive: 'bg_gdrive',
+  bg_general: 'bg_general',
+  bg_get: 'bg_get',
+  bg_stats: 'bg_stats'
+} as const)
+
 export type DriveBackgroundResult = Readonly<{
   processed: number
   deleted: number
@@ -77,12 +86,12 @@ export class DriveBackgroundCoordinator {
 
   public trigger(): DriveBackgroundStatus {
     const jobs: Record<string, BackgroundJobStatus> = {
-      bg_gdrive: this.triggerJob('bg_gdrive', async () => await this.worker.runOnce((await this.loadSettings()).copyAll))
+      [LEGACY_BACKGROUND_WORKER_RUNTIME.bg_gdrive]: this.triggerJob(LEGACY_BACKGROUND_WORKER_RUNTIME.bg_gdrive, async () => await this.worker.runOnce((await this.loadSettings()).copyAll))
     }
-    if (this.workers.stats !== undefined) jobs.bg_stats = this.triggerJob('bg_stats', async () => await this.workers.stats?.runOnce())
-    if (this.workers.general !== undefined) jobs.bg_general = this.triggerJob('bg_general', async () => await this.workers.general?.runOnce())
-    if (this.workers.sourceRefresh !== undefined) jobs.bg_get = this.triggerJob('bg_get', async () => await this.workers.sourceRefresh?.runOnce())
-    if (this.workers.mediaDownload !== undefined) jobs.bg_download = this.triggerJob('bg_download', async () => await this.workers.mediaDownload?.runOnce())
+    if (this.workers.stats !== undefined) jobs[LEGACY_BACKGROUND_WORKER_RUNTIME.bg_stats] = this.triggerJob(LEGACY_BACKGROUND_WORKER_RUNTIME.bg_stats, async () => await this.workers.stats?.runOnce())
+    if (this.workers.general !== undefined) jobs[LEGACY_BACKGROUND_WORKER_RUNTIME.bg_general] = this.triggerJob(LEGACY_BACKGROUND_WORKER_RUNTIME.bg_general, async () => await this.workers.general?.runOnce())
+    if (this.workers.sourceRefresh !== undefined) jobs[LEGACY_BACKGROUND_WORKER_RUNTIME.bg_get] = this.triggerJob(LEGACY_BACKGROUND_WORKER_RUNTIME.bg_get, async () => await this.workers.sourceRefresh?.runOnce())
+    if (this.workers.mediaDownload !== undefined) jobs[LEGACY_BACKGROUND_WORKER_RUNTIME.bg_download] = this.triggerJob(LEGACY_BACKGROUND_WORKER_RUNTIME.bg_download, async () => await this.workers.mediaDownload?.runOnce())
     return Object.freeze({
       running: true,
       started: Object.values(jobs).some((job) => job.started),
@@ -91,7 +100,7 @@ export class DriveBackgroundCoordinator {
   }
 
   public async waitForIdle(): Promise<DriveBackgroundResult | null> {
-    const active = this.active.get('bg_gdrive')
+    const active = this.active.get(LEGACY_BACKGROUND_WORKER_RUNTIME.bg_gdrive)
     return active === undefined ? null : await active as DriveBackgroundResult | null
   }
 
