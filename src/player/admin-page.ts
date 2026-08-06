@@ -1039,7 +1039,7 @@ export function renderAdminGeneralSettings(input: Readonly<{
         ${settingsInput('recaptcha_site_key', 'reCAPTCHA site key', value('recaptcha_site_key'), 'text', 'Public site key')}
         ${settingsInput('recaptcha_secret_key', 'reCAPTCHA secret key', value('recaptcha_secret_key'), 'password', 'Server secret')}
         ${settingsInput('disqus_shortname', 'Disqus shortname', value('disqus_shortname'), 'text', 'Community shortname')}
-        <div class="field settings-wide"><label for="chat_widget">Chat widget code</label><textarea id="chat_widget" name="chat_widget" rows="7" maxlength="100000" placeholder="Optional HTML or script widget">${value('chat_widget')}</textarea><p class="field-hint">Stored for legacy compatibility. The supplied 4.8.3 runtime does not render this value.</p></div>
+        <div class="field settings-wide"><label for="chat_widget">Chat widget code</label><textarea id="chat_widget" name="chat_widget" rows="7" maxlength="100000" placeholder="Optional HTML or script widget">${value('chat_widget')}</textarea><p class="field-hint">Stored for compatibility. GPlayer does not currently render this value.</p></div>
       </div>
     </section>
     <div class="settings-actions"><button class="generate-button" type="submit"><span>Update general settings</span><span aria-hidden="true">↗</span></button><p>Only the allowlisted General Settings keys above are written.</p></div>
@@ -1422,11 +1422,11 @@ export function renderAdminMiscSettings(input: Readonly<{
   <form class="admin-settings-form misc-settings-editor" action="${escapeHtml(input.adminBase)}/settings/misc/" method="post">
     <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
     <section class="settings-section" aria-labelledby="misc-hosts-title">
-      <div class="settings-section-heading"><p class="panel-kicker">01 / Sources</p><h2 id="misc-hosts-title">Hosts and resolutions</h2><p>Bypassed hosts retain their legacy routing preference. Disabled hosts are rejected before extraction; quality filters use the supplied resolution buckets.</p></div>
+      <div class="settings-section-heading"><p class="panel-kicker">01 / Sources</p><h2 id="misc-hosts-title">Hosts and resolutions</h2><p>Bypassed hosts retain their configured routing preference. Disabled hosts are rejected before extraction; quality filters use the configured resolution buckets.</p></div>
       <div class="settings-grid">
         <div class="field"><label for="bypass_host">Bypassed hosts</label><input type="hidden" name="bypass_host[]" value=""><select class="settings-multi-select" id="bypass_host" name="bypass_host[]" multiple size="10">${hostOptions(bypassed)}</select><p class="field-hint">Selected providers are stored for VPS-bandwidth bypass routing.</p></div>
         <div class="field"><label for="disable_host">Disabled hosts</label><input type="hidden" name="disable_host[]" value=""><select class="settings-multi-select" id="disable_host" name="disable_host[]" multiple size="10">${hostOptions(disabled)}</select><p class="field-hint">Selected providers cannot resolve or play.</p></div>
-        <div class="field"><label for="disable_resolution">Disabled video resolutions</label><input type="hidden" name="disable_resolution[]" value=""><select class="settings-multi-select" id="disable_resolution" name="disable_resolution[]" multiple size="8">${resolutionOptions}</select><p class="field-hint">Matching is bucketed (for example, 1080p is in the 1000p+ bucket). As in the supplied runtime, a sole source is retained.</p></div>
+        <div class="field"><label for="disable_resolution">Disabled video resolutions</label><input type="hidden" name="disable_resolution[]" value=""><select class="settings-multi-select" id="disable_resolution" name="disable_resolution[]" multiple size="8">${resolutionOptions}</select><p class="field-hint">Matching is bucketed (for example, 1080p is in the 1000p+ bucket). A sole source is retained.</p></div>
       </div>
     </section>
     <section class="settings-section" aria-labelledby="misc-proxy-title">
@@ -1452,7 +1452,7 @@ export function renderAdminMiscSettings(input: Readonly<{
       <div class="settings-grid settings-toggle-grid">
         <div class="field"><label for="banned_countries">Banned countries</label><input type="hidden" name="banned_countries[]" value=""><select class="settings-multi-select" id="banned_countries" name="banned_countries[]" multiple size="12">${countryOptions}</select><p class="field-hint">Hold Command or Control to select multiple countries.</p></div>
         ${settingsToggle('block_vpn', 'Block proxy/VPN ranges', 'Reject client IPs matching the configured prefix or CIDR list.', checked(input.values.block_vpn))}
-        <div class="field settings-wide"><label for="block_vpn_list">IP prefixes or IPv4/IPv6 ranges</label><textarea id="block_vpn_list" name="block_vpn_list" rows="7" maxlength="1000000" spellcheck="false" placeholder="203.0.113.0/24&#10;2001:db8::/32">${escapeHtml(input.values.block_vpn_list)}</textarea><p class="field-hint">One full IP, dotted/IPv6 prefix, or CIDR range per line. When empty, the supplied default data-center prefixes apply.</p></div>
+        <div class="field settings-wide"><label for="block_vpn_list">IP prefixes or IPv4/IPv6 ranges</label><textarea id="block_vpn_list" name="block_vpn_list" rows="7" maxlength="1000000" spellcheck="false" placeholder="203.0.113.0/24&#10;2001:db8::/32">${escapeHtml(input.values.block_vpn_list)}</textarea><p class="field-hint">One full IP, dotted/IPv6 prefix, or CIDR range per line. When empty, the bundled default data-center prefixes apply.</p></div>
       </div>
     </section>
     <div class="settings-actions"><button class="generate-button" type="submit"><span>Update misc settings</span><span aria-hidden="true">↗</span></button><p>Host blocks, quality filters, embed policies, title rules, country bans, and VPN ranges are enforced by the Node runtime.</p></div>
@@ -1529,7 +1529,7 @@ export function renderAdminResetSettings(input: Readonly<{
   <form class="admin-settings-form reset-settings-form" action="${escapeHtml(input.adminBase)}/settings/reset/" method="post">
     <input type="hidden" name="csrf" value="${escapeHtml(input.csrfToken)}">
     <section class="settings-section reset-settings-warning" aria-labelledby="reset-settings-title">
-      <div class="settings-section-heading"><p class="panel-kicker">Permanent reset</p><h2 id="reset-settings-title">Are you serious?</h2><p>This reproduces the supplied reset contract: all non-empty keys in the legacy settings table are deleted and in-process settings caches are invalidated.</p></div>
+      <div class="settings-section-heading"><p class="panel-kicker">Permanent reset</p><h2 id="reset-settings-title">Are you serious?</h2><p>This deletes all non-empty keys in the settings table and invalidates the in-process settings caches.</p></div>
       <div class="reset-settings-controls">
         <div class="reset-settings-impact" role="note"><strong>What stays intact</strong><p>User accounts, sessions, video rows, generated VAST files, logos, subtitles, and other uploads are not removed by this action.</p></div>
         <div class="field"><label for="reset-confirmation">Type <code>RESET SETTINGS</code> to continue</label><input id="reset-confirmation" name="confirmation" type="text" value="" maxlength="14" pattern="RESET SETTINGS" autocomplete="off" autocapitalize="characters" spellcheck="false" required><p class="field-hint">The confirmation is case-sensitive.</p></div>
@@ -1639,7 +1639,7 @@ export function renderAdminAdsSettings(input: Readonly<{
         <div class="field settings-wide"><label for="vast-asset-media">MP4 media URL</label><input id="vast-asset-media" name="adMediaFile" type="url" maxlength="4096" placeholder="https://cdn.example/campaign.mp4" required></div>
         <div class="field"><label for="vast-asset-duration">Duration</label><input id="vast-asset-duration" name="adDuration" type="number" min="0" max="359999" step="1" placeholder="30" required><p class="field-hint">Whole seconds.</p></div>
         <div class="field"><label for="vast-asset-skip">Skip offset</label><input id="vast-asset-skip" name="adSkipOffset" type="number" min="0" max="359999" step="1" placeholder="5"><p class="field-hint">Optional whole seconds.</p></div>
-        <div class="settings-vast-create-action settings-wide"><button class="generate-button" type="submit"><span>Generate VAST XML</span><span aria-hidden="true">↗</span></button><p>Existing files with the same safe filename are replaced, matching the supplied application.</p></div>
+        <div class="settings-vast-create-action settings-wide"><button class="generate-button" type="submit"><span>Generate VAST XML</span><span aria-hidden="true">↗</span></button><p>Existing files with the same safe filename are replaced.</p></div>
       </form>
     </div>
   </section>

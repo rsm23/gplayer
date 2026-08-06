@@ -260,7 +260,7 @@ function resolveRenderedSource(media: PlayerMediaQuery, hostingData?: HostingDat
   return {
     kind: 'unavailable',
     url: '',
-    message: `The ${media.host} source was recognized. Its native extractor is still being ported from GDPlayer 4.8.3. Source page: ${sourcePage}`
+    message: `The ${media.host} source was recognized, but a native extractor is not currently available. Source page: ${sourcePage}`
   }
 }
 

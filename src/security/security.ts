@@ -55,7 +55,7 @@ export type SecurityOptions = Readonly<{
 }>
 
 /**
- * GDPlayer 4.8.3-compatible token codec.
+ * Versioned compatibility token codec.
  *
  * `decrypt` deliberately preserves the legacy fallback of returning an invalid
  * input unchanged. Route guards must use `decryptStrict` or `decryptURLStrict`

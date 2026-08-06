@@ -64,9 +64,8 @@ export const hostingCases = [
   ['youtube', 'https://www.youtube.com/watch?v=youtube-id', 'youtube-id', 'https://youtube.com/watch?v=youtube-id']
 ] as const
 
-// Enabled in the current public host catalog in addition to the supplied 4.8.3
-// extractor inventory. These are registered runtime adapters, not parser-only
-// compatibility records.
+// Enabled in the current public host catalog in addition to the core adapter
+// inventory. These are registered runtime adapters, not parser-only records.
 export const liveCatalogHostingCases = [
   ['dropload', 'https://dropload.pro/e/dropload-id', 'dropload-id', 'https://dropload.pro/dropload-id'],
   ['savefiles', 'https://savefiles.com/e/savefiles-id', 'savefiles-id', 'https://savefiles.com/savefiles-id'],

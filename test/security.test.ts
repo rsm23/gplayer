@@ -12,7 +12,7 @@ import {
   securitySalt
 } from './fixtures/security-cases.js'
 
-describe('Security GDPlayer 4.8.3 compatibility', () => {
+describe('security token compatibility', () => {
   const security = new Security(securitySalt)
 
   it.each(securityCases)('decrypts protected-runtime fixture: $plainText', (fixture) => {

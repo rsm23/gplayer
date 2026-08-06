@@ -584,7 +584,7 @@ describe('legacy-compatible system routes', () => {
     ['/terms/', 'Terms &amp; Conditions', 'Governing law'],
     ['/privacy/', 'Privacy Policy', 'Information we collect'],
     ['/dmca/', 'DMCA Takedown Policy', 'Counter-notification'],
-    ['/changelog/', 'Change Log', 'v4.8.3']
+    ['/changelog/', 'Change Log', 'Expanded public provider coverage']
   ])('serves public compatibility page %s', async (url, title, detail) => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
     const response = await app.inject({ method: 'GET', url })

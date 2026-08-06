@@ -1,69 +1,155 @@
-# GPlayer Node.js rewrite
+# GPlayer
 
-This repository is a from-scratch Node.js/TypeScript rewrite of the supplied GDPlayer 4.8.3 application. Behavioral parity is verified for the supplied archive: every inventoried route, hosting adapter, streaming mode, admin workflow, background job, plugin hook, theme surface, configuration option, and migration format maps to tested Node code. The verification boundary excludes third-party service uptime, future provider changes, arbitrary extension packages absent from the archive, and mutation of user-owned external accounts.
+GPlayer is a self-hosted media player and streaming gateway built with Node.js and TypeScript. It turns supported provider links, HLS and DASH manifests, and direct media URLs into secure player, embed, download, and request links from one responsive interface.
 
-The project is intentionally tracked against a generated source inventory rather than a hand-written feature shortlist. See [`docs/PARITY.md`](docs/PARITY.md), [`docs/parity-manifest.json`](docs/parity-manifest.json), the executable [`verification matrix`](docs/verification-matrix.json), the focused parity maps in [`docs/`](docs/), and the [`Node plugin API`](docs/PLUGIN_API.md).
+[View the public product page](https://rsm23.github.io/gplayer/)
 
-## Development
+## Features
 
-Use Node.js 24.7 or newer.
+- 69 registered media-host adapters, with a 66-host public catalog.
+- HLS, MPEG-DASH, MP4, live-stream, byte-range, and cached media delivery.
+- Encrypted and authenticated player queries, portable iframe embeds, download links, and request links.
+- Provider-aware extraction with canonical URL parsing, fallback sources, subtitles, posters, and filmstrips.
+- Server-side provider credentials, cookies, request headers, and referers.
+- Load balancing, source recovery, throttling, cache controls, and replica-database fallback.
+- Administration for users, videos, subtitles, settings, sessions, plugins, Google Drive accounts, and background jobs.
+- Google Drive sharing, mirroring, backup queues, and ranged delivery.
+- Plugin pages, hooks, filters, widgets, public assets, configuration forms, and isolated Node.js background modules.
+- Responsive, themeable shadcn UI with installable PWA metadata and an offline page.
+
+The current enabled-host catalog and its verification status are available in [`docs/live-host-support.json`](docs/live-host-support.json).
+
+## Requirements
+
+- Node.js 24 or newer
+- pnpm 11.10 or newer
+- MySQL or MariaDB
+
+## Quick start
 
 ```bash
+git clone https://github.com/rsm23/gplayer.git
+cd gplayer
 pnpm install
 cp .env.example .env
-pnpm dev
 ```
 
-Validation:
+Create an empty database, then update `.env` with its connection details. Set `BASE_URL` to the public application URL and replace `SECURE_SALT` with a long random value. For example:
 
 ```bash
-pnpm check
+openssl rand -hex 32
 ```
 
-### Application UI
-
-The landing, offline fallback, public pages, authentication, administrator, embedded player, download, and Drive Sharer surfaces use the repository-owned shadcn Base Nova component layer. The source components live in [`src/components/ui`](src/components/ui), the registry configuration is [`components.json`](components.json), and [`src/ui/shadcn-html.tsx`](src/ui/shadcn-html.tsx) composes the existing server-rendered forms and tables from those components without requiring client-side hydration. Native form names, routes, accessibility semantics, progressive enhancement, and established JavaScript hooks remain intact.
-
-Run `pnpm build:ui` after changing shadcn components or design tokens. It regenerates the static Pages landing/offline documents and the shared Tailwind stylesheet at `public/assets/css/gplayer-ui.css`; the normal `pnpm build` and `pnpm check` commands already include that step.
-
-Create or converge the configured MySQL/MariaDB schema to the manifest version, then audit it:
+Create the application schema and start the development server:
 
 ```bash
 pnpm db:migrate
-pnpm audit:schema
+pnpm dev
 ```
 
-The migrator uses an advisory database lock, adds or reconciles the 20 tables and four views without loading the dump's demo accounts, and retains unknown extension columns. Older databases also receive the recovered data upgrades before constraints are rebuilt: legacy slugs and raw statistics user agents are preserved, renamed hosting identifiers are normalized, duplicate keys are consolidated, and rows that cannot satisfy the supplied foreign-key relationships are removed. It is an explicit deployment command rather than an automatic server-start mutation. Back up an existing database before any schema migration. Local socket-authenticated installations can set `DB_MASTER_SOCKET` (for example, `/tmp/mysql.sock`) for these database utilities.
+Open `http://127.0.0.1:3000/`. The administrator area is available at `/administrator/` after an active administrator account exists in the database.
 
-The version-84 compatibility fixture can be exercised against a disposable local MySQL/MariaDB database with:
+## Using GPlayer
+
+1. Open the public generator.
+2. Paste a supported provider link or a direct media URL.
+3. Optionally add fallback sources, a poster, and subtitle tracks.
+4. Generate the player links.
+5. Copy the embed code, player URL, download URL, or request URL for your use case.
+
+The GitHub Pages site is a static product preview. Run the Node.js application to resolve sources and generate authenticated links.
+
+## Configuration
+
+The example environment file documents all available runtime and database values. The most important settings are:
+
+| Variable | Purpose |
+| --- | --- |
+| `HOST` / `PORT` | Address and port used by the Node.js server. |
+| `BASE_URL` | Canonical public URL, including the trailing slash. |
+| `ADMIN_DIR` | Administrator route segment. |
+| `SLUG_EMBED` | Public embed route segment. |
+| `SLUG_DOWNLOAD` | Public download route segment. |
+| `SLUG_REQUEST` | Public request route segment. |
+| `SECURE_SALT` | Secret used to protect authenticated player queries. |
+| `BUFFER_SIZE` | Main streaming buffer size in bytes. |
+| `SMALL_BUFFER_SIZE` | Smaller buffer used by eligible delivery paths. |
+| `MAX_DOWNLOAD_SPEED` | Optional download speed limit; `0` disables it. |
+| `TRUST_PROXY` | Trusted reverse-proxy IP address or CIDR list. |
+| `DB_MASTER_*` | Primary MySQL or MariaDB connection. |
+| `DB_REPLICA_*` | Optional read-replica connection. |
+
+Keep provider credentials and request context on the server. Do not expose them in public HTML, browser code, or generated links.
+
+When deploying behind a reverse proxy, set `TRUST_PROXY` to the proxy's explicit IP address or CIDR range. Its default is `false`; use `true` only when the application is isolated behind a fully trusted proxy topology.
+
+## Production
 
 ```bash
-GPLAYER_TEST_MYSQL_SOCKET=/tmp/mysql.sock pnpm vitest run test/schema-migrator-mysql.test.ts
+pnpm install --frozen-lockfile
+pnpm build
+pnpm db:migrate
+NODE_ENV=production pnpm start
 ```
 
-Migrate legacy subtitle and uploaded-image files into the Node public roots with:
+Use a process manager for restarts, serve the application behind TLS, back up the database before schema changes, and run migrations as an explicit deployment step.
+
+## UI development
+
+Application UI elements use the repository-owned shadcn Base Nova component layer:
+
+- components: [`src/components/ui`](src/components/ui)
+- registry configuration: [`components.json`](components.json)
+- server-rendered composition: [`src/ui/shadcn-html.tsx`](src/ui/shadcn-html.tsx)
+- design tokens: [`src/styles/globals.css`](src/styles/globals.css)
+
+After changing components or design tokens, run:
 
 ```bash
-pnpm assets:migrate -- /absolute/path/to/legacy-install
+pnpm build:ui
 ```
 
-This command recovers files from `subtitles`, `uploads/subtitles`, and `uploads/images`, flattens their nested layouts exactly as the legacy migration did, and publishes them under `public/uploads/subtitles` and `public/uploads/images`. Unlike the legacy copier, it never overwrites a different destination: byte-identical files are deduplicated, conflicts and unsafe executable/server-control files are reported, and a source file is removed only after the destination has passed a SHA-256 integrity check. Use `--copy-only` to retain every source file, or `--public-root=/absolute/path/to/public` to target a deployed public directory. Back up the legacy installation first.
+This regenerates the static product page, offline document, and shared UI stylesheet without adding a client-side hydration requirement.
 
-At playback time, the authenticated subtitle proxy converts every supplied SRT, VTT, ASS, SUB, STL, DFXP, TTML, SBV, and TXT family into WebVTT. Conversion is byte-safe for UTF-8, UTF-16, Windows-1252, and binary EBU STL/ISO-6937 input. As in the supplied content-detecting dependency, TXT URLs can also carry SAMI, Scenarist SCC/CEA-608, LRC, or timestamped CSV payloads. The route preserves cache-on-first-read behavior without loading PHP.
+## Useful commands
 
-Refresh the supplied-source inventory and non-PHP assets:
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Start the development server with file watching. |
+| `pnpm build` | Build the shadcn UI assets and compile TypeScript. |
+| `pnpm start` | Run the compiled production server. |
+| `pnpm test` | Run the Vitest suite. |
+| `pnpm typecheck` | Type-check the project without emitting files. |
+| `pnpm check` | Run type-checking, tests, UI generation, and the production build. |
+| `pnpm db:migrate` | Converge the configured database to the current schema. |
+| `pnpm audit:schema` | Audit the configured database schema. |
+| `pnpm build:ui` | Rebuild the shadcn-backed static and shared UI assets. |
 
-```bash
-pnpm inventory:legacy -- /absolute/path/to/gdplayer-483
-pnpm sync:legacy-assets -- /absolute/path/to/gdplayer-483
-```
+## Contributing
 
-Inspect one YAK Pro-obfuscated PHP method with decoded string literals:
+Contributions are welcome.
 
-```bash
-pnpm inspect:legacy-php -- /absolute/path/to/File.php methodName
-```
+1. Fork the repository and create a focused branch.
+2. Install dependencies with `pnpm install`.
+3. Make the change and add or update tests for affected behavior.
+4. Run `pnpm check`.
+5. Open a pull request that explains the change, its user impact, and how it was verified.
 
-The Node runtime never loads PHP. PHP files remain only in the external source snapshot used to derive behavior and parity fixtures.
+For provider work, include deterministic parser or protocol fixtures and update [`docs/live-host-support.json`](docs/live-host-support.json) when public catalog support changes. Keep network access bounded, validate redirects and DNS targets, and preserve the server-side credential boundary.
 
-When the server is deployed behind a reverse proxy, set `TRUST_PROXY` to that proxy's explicit IP address or CIDR range (comma-separated for multiple proxies). It defaults to `false`; setting it to `true` trusts arbitrary forwarding chains and should only be used in a fully isolated proxy topology.
+For UI work, compose the existing shadcn components and preserve native form names, routes, accessibility semantics, progressive enhancement, and established JavaScript hooks.
+
+## Documentation
+
+- [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md) — plugin manifests, pages, hooks, widgets, assets, and background modules.
+- [`docs/live-host-support.json`](docs/live-host-support.json) — registered and publicly enabled host support.
+- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — capability verification summary.
+- [`docs/verification-matrix.json`](docs/verification-matrix.json) — machine-readable verification evidence and boundaries.
+
+## Security and responsible use
+
+- Never commit secrets, provider credentials, cookies, tokens, or database passwords.
+- Use a strong unique `SECURE_SALT` in every deployment.
+- Restrict administration and database access to trusted networks and accounts.
+- Only process media you are authorized to access, stream, or redistribute.
+- Report security issues privately to the repository maintainers before public disclosure.

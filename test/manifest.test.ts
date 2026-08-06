@@ -11,8 +11,8 @@ import { hostingCases } from './fixtures/hosting-cases.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-describe('generated legacy parity manifest', () => {
-  it('captures the supplied 4.8.3 application surface', async () => {
+describe('generated application capability manifest', () => {
+  it('captures the GPlayer application surface', async () => {
     const manifest = JSON.parse(await fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8'))
 
     expect(manifest.source.version).toBe('4.8.3')
@@ -466,7 +466,7 @@ describe('generated legacy parity manifest', () => {
     }
   })
 
-  it('verifies every parity-ledger area against the supplied archive scope', async () => {
+  it('verifies every capability area against the documented application scope', async () => {
     type VerificationArea = Readonly<{
       area: string
       verification: string
@@ -474,7 +474,7 @@ describe('generated legacy parity manifest', () => {
       boundary: string
     }>
     const [ledger, matrix] = await Promise.all([
-      fs.readFile(path.join(projectRoot, 'docs/PARITY.md'), 'utf8'),
+      fs.readFile(path.join(projectRoot, 'docs/VERIFICATION.md'), 'utf8'),
       fs.readFile(path.join(projectRoot, 'docs/verification-matrix.json'), 'utf8').then((value) => JSON.parse(value) as {
         scope: { application: string; target: string; acceptedEvidence: string[]; excludedClaims: string[] }
         areas: VerificationArea[]
@@ -486,7 +486,7 @@ describe('generated legacy parity manifest', () => {
     expect(rows.every((row) => row.status === 'verified')).toBe(true)
     expect(matrix.areas.map((entry) => entry.area)).toEqual(rows.map((row) => row.area))
     expect(new Set(matrix.areas.map((entry) => entry.area)).size).toBe(matrix.areas.length)
-    expect(matrix.scope.application).toContain('4.8.3')
+    expect(matrix.scope.application).toContain('GPlayer')
     expect(matrix.scope.target).toContain('Node.js')
     expect(matrix.scope.acceptedEvidence).toHaveLength(4)
     expect(matrix.scope.excludedClaims).toHaveLength(3)
