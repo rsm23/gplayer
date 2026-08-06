@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta data-runtime-site-description content="Developer guide: how to build, package, install, and ship GPlayer plugins — manifest, pages, hooks, widgets, assets, config, and background workers." name="description">
+  <meta data-runtime-site-theme-color content="#0a0a12" name="theme-color">
+  <title data-runtime-site-title>GPlayer plugin development | Build your own plugin</title>
+  <link rel="icon" href="./assets/img/logo/rr.ico">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./assets/img/film.png">
+  <script src="./assets/js/gplayer-theme.js"></script>
+  <link rel="stylesheet" href="./assets/css/gplayer-landing.css">
+  <!-- runtime-site-stylesheet -->
+  <script src="./assets/js/gplayer-landing.js" defer></script>
+  <link rel="stylesheet" href="./assets/css/gplayer-ui.css" data-shadcn-styles>
+</head>
+<body data-ui="shadcn">
+  <a class="skip-link" href="#plugin-overview">Skip to plugin guide</a>
+
+  <header class="site-header">
+    <a class="wordmark" data-runtime-site-home-label href="./" aria-label="GPlayer home">
+      <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
+    </a>
+    <button type="button" tabindex="0" data-slot="button" aria-expanded="false" aria-controls="site-navigation" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-8 gap-1.5 px-2.5 menu-toggle">Menu</button>
+    <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
+      <a href="./docs.html">App guide</a>
+      <a href="#plugin-manifest">Manifest</a>
+      <a href="#plugin-extension-points">Extension points</a>
+      <a href="#plugin-example">Full example</a>
+      <details class="site-theme-nav"><summary><span data-theme-label>Theme</span></summary><div class="site-theme-menu">
+        <button type="button" tabindex="0" data-slot="button" data-theme-choice="light" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5">Light</button>
+        <button type="button" tabindex="0" data-slot="button" data-theme-choice="dark" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5">Dark</button>
+      </div></details>
+      <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">Source</a>
+      <a class="nav-cta group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/80 h-8 gap-1.5 px-2.5" href="./#generator" data-slot="button" data-variant="default" data-size="default">Build a player</a>
+    </nav>
+  </header>
+
+  <main class="docs-main">
+    <section id="plugin-overview" class="docs-hero" aria-labelledby="plugin-docs-title">
+      <p class="eyebrow"><span></span> Developer documentation · Plugins</p>
+      <h1 id="plugin-docs-title">Build a GPlayer plugin.</h1>
+      <p class="docs-lede">A plugin is a ZIP archive with a <code>plugin.json</code> manifest and a set of Node.js modules, HTML templates, and assets. Once installed from the administration, a plugin can serve its own public and admin pages, react to application events with hooks, inject widgets into admin screens, override built-in pages, run a background worker, and expose a configuration form — all executed in sandboxed worker threads with strict resource limits.</p>
+      <nav class="docs-toc" aria-label="Plugin guide contents">
+        <a href="#plugin-anatomy"><span>01</span> Anatomy</a>
+        <a href="#plugin-manifest"><span>02</span> The manifest</a>
+        <a href="#plugin-install"><span>03</span> Packaging &amp; install</a>
+        <a href="#plugin-extension-points"><span>04</span> Pages</a>
+        <a href="#plugin-hooks"><span>05</span> Hooks</a>
+        <a href="#plugin-widgets"><span>06</span> Widgets</a>
+        <a href="#plugin-assets"><span>07</span> Assets</a>
+        <a href="#plugin-config"><span>08</span> Configuration</a>
+        <a href="#plugin-background"><span>09</span> Background worker</a>
+        <a href="#plugin-security"><span>10</span> Security &amp; limits</a>
+        <a href="#plugin-example"><span>11</span> Full example</a>
+      </nav>
+    </section>
+
+    <section id="plugin-anatomy" class="docs-section" aria-labelledby="plugin-anatomy-title">
+      <div class="docs-section-heading">
+        <p class="section-index">01 / Structure</p>
+        <h2 id="plugin-anatomy-title">Plugin anatomy</h2>
+        <p>Everything a plugin does is declared in the manifest and implemented in plain files. A typical layout:</p>
+      </div>
+      <pre class="docs-pre"><code>my-plugin/
+  plugin.json              # manifest — required, at the ZIP root
+  background.mjs           # optional long-running worker
+  state.json               # runtime state, preserved on upgrade via keep_files
+  views/
+    frontend/
+      index.html           # public page at /p/my-plugin/
+      report.mjs           # public page at /p/my-plugin/report/
+    backend/
+      tools.mjs            # admin page at /administrator/p/my-plugin/tools/
+  hooks/
+    video-save.mjs         # handler for the video.save hook
+  widgets/
+    status.html            # widget injected into an admin slot
+  assets/
+    styles.css             # served at /plugins/my-plugin/assets/styles.css
+    icon.svg</code></pre>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Node.js modules</h3>
+          <p>Pages, hooks, and widgets can be <code>.mjs</code>, <code>.js</code>, or <code>.cjs</code> modules. They run in an isolated worker thread and must export a handler function. PHP files are rejected with a 501 response.</p>
+        </article>
+        <article class="docs-card">
+          <h3>HTML templates</h3>
+          <p>Pages and widgets can also be plain <code>.html</code> files. Placeholders such as <code>{{plugin_name}}</code> or <code>{{config.my_key}}</code> are interpolated server-side and HTML-escaped.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Static assets</h3>
+          <p>Files in <code>assets/</code> or <code>public/</code> are served read-only at <code>/plugins/&lt;folder&gt;/…</code> with a sandboxing CSP.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="plugin-manifest" class="docs-section" aria-labelledby="plugin-manifest-title">
+      <div class="docs-section-heading">
+        <p class="section-index">02 / Contract</p>
+        <h2 id="plugin-manifest-title">The manifest — plugin.json</h2>
+        <p>The manifest sits at the root of the ZIP and declares identity, capabilities, and configuration. JSON keys use <strong>snake_case</strong>.</p>
+      </div>
+      <div class="docs-table-wrap">
+        <table class="docs-table">
+          <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>yes</td><td>Display name, 1–50 characters, no control characters.</td></tr>
+            <tr><td><code>folder</code></td><td>string</td><td>yes</td><td>Install directory name, 1–50 chars, alphanumeric plus <code>. _ -</code>. Must not collide with protected directories.</td></tr>
+            <tr><td><code>version</code></td><td>string</td><td>yes</td><td>Version string, 1–100 chars. Re-installing the exact same version is rejected; a different version upgrades in place.</td></tr>
+            <tr><td><code>priority</code></td><td>number</td><td>no</td><td>Global ordering between plugins (default <code>0</code>).</td></tr>
+            <tr><td><code>icon_uri</code></td><td>string</td><td>no</td><td>Icon shown in the plugin list (max 2048 chars).</td></tr>
+            <tr><td><code>keep_files</code></td><td>string[]</td><td>no</td><td>Relative paths preserved during upgrades — use it for state files (max 1000 entries).</td></tr>
+            <tr><td><code>background</code></td><td>string</td><td>no</td><td>Path to a background worker module (<code>.js</code>/<code>.mjs</code>/<code>.cjs</code> only).</td></tr>
+            <tr><td><code>config</code></td><td>object</td><td>no</td><td>Default configuration values, merged with admin-saved values on upgrade.</td></tr>
+            <tr><td><code>config_fields</code></td><td>array</td><td>no</td><td>Schema of the admin configuration form (see <a href="#plugin-config">Configuration</a>).</td></tr>
+            <tr><td><code>overrides</code></td><td>object</td><td>no</td><td><code>frontend</code> and <code>backend</code> maps of page name → template file to replace built-in pages.</td></tr>
+            <tr><td><code>hooks</code></td><td>object</td><td>no</td><td>Hook name → array of <code>{ "file", "priority" }</code> handlers.</td></tr>
+            <tr><td><code>widgets</code></td><td>object</td><td>no</td><td>Slot name → array of <code>{ "file", "priority", "admin_only" }</code> widgets.</td></tr>
+            <tr><td><code>use_cli</code></td><td>boolean</td><td>no</td><td>Reserved flag; widens the list of protected folder names when true.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="docs-pre"><code>{
+  "name": "Hello Analytics",
+  "folder": "hello-analytics",
+  "version": "1.0.0",
+  "icon_uri": "/plugins/hello-analytics/assets/icon.svg",
+  "keep_files": ["state.json"],
+  "background": "background.mjs",
+  "config": { "endpoint": "https://analytics.example.com/collect", "enabled": true },
+  "hooks": {
+    "video.save": [{ "file": "hooks/video-save.mjs", "priority": 0 }]
+  },
+  "widgets": {
+    "backend.dashboard.bottom": [
+      { "file": "widgets/status.html", "priority": 0, "admin_only": true }
+    ]
+  },
+  "config_fields": [
+    { "name": "endpoint", "label": "Collect endpoint", "type": "url", "required": true,
+      "description": "HTTPS URL that receives events." },
+    { "name": "enabled", "label": "Enable tracking", "type": "checkbox", "required": false }
+  ]
+}</code></pre>
+    </section>
+
+    <section id="plugin-install" class="docs-section" aria-labelledby="plugin-install-title">
+      <div class="docs-section-heading">
+        <p class="section-index">03 / Shipping</p>
+        <h2 id="plugin-install-title">Packaging &amp; installation</h2>
+        <p>Zip the plugin folder contents (with <code>plugin.json</code> at the archive root) and upload it from <code>/administrator/plugins/list/</code>.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Archive rules</h3>
+          <p>Max <strong>100&nbsp;MB</strong> uncompressed, max <strong>10,000 entries</strong>. No ZIP64, multi-disk, or encrypted archives. Symbolic links, path traversal, and case-insensitive duplicate names are rejected; every entry's CRC32 is verified.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Install &amp; upgrade</h3>
+          <p>A new plugin installs <strong>disabled</strong> — enable it from the list. Uploading the same name with a new version upgrades in place: files in <code>keep_files</code> survive, saved configuration is merged with the new defaults, and the database record keeps its id.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Load balancers</h3>
+          <p>Secondary nodes synchronize plugins automatically from the main server through <code>plugins/sync/</code> — a copy of the ZIP is kept server-side for that purpose.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="plugin-extension-points" class="docs-section" aria-labelledby="plugin-pages-title">
+      <div class="docs-section-heading">
+        <p class="section-index">04 / Surface</p>
+        <h2 id="plugin-pages-title">Plugin pages &amp; overrides</h2>
+        <p>Plugins serve their own pages, and can also replace built-in ones.</p>
+      </div>
+      <div class="docs-grid docs-grid-2">
+        <article class="docs-card">
+          <h3>Custom pages</h3>
+          <p class="docs-path"><code>/p/&lt;folder&gt;/&lt;page&gt;/</code> · <code>/administrator/p/&lt;folder&gt;/&lt;page&gt;/</code></p>
+          <p>Files resolve from <code>views/frontend/</code> (public) or <code>views/backend/</code> (admin, authenticated) trying <code>&lt;page&gt;.mjs</code>, <code>.js</code>, <code>.cjs</code>, <code>.html</code>, <code>.htm</code> in that order. GET and POST are supported; admin POSTs require the <code>csrf</code> token provided in the page input.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Page overrides</h3>
+          <p class="docs-path"><code>"overrides": { "frontend": { "index": "views/frontend/home.html" } }</code></p>
+          <p>When an enabled plugin overrides a page name, the matching application URL serves the plugin template instead. Login, logout, register, password-reset, error pages, and player routes can never be overridden. The highest <code>priority</code> wins.</p>
+        </article>
+      </div>
+      <h3 class="docs-subtitle">Node.js page handler</h3>
+      <p class="docs-prose">Export <code>render</code>, <code>default</code>, or <code>run</code>. The handler receives one input object and returns a string or a response object:</p>
+      <pre class="docs-pre"><code>// views/backend/tools.mjs
+export function render ({ context, config, plugin }) {
+  if (context.method === 'POST') {
+    return { status: 303, body: '', headers: { location: `${context.baseUrl}${context.adminDirectory}/p/${plugin.folder}/tools/` } }
+  }
+  return {
+    status: 200,
+    contentType: 'text/html; charset=utf-8',       // or application/json, text/plain
+    body: `&lt;h1&gt;${plugin.name}&lt;/h1&gt;&lt;p&gt;Endpoint: ${config.endpoint}&lt;/p&gt;`,
+    headers: { 'cache-control': 'private' }        // only cache-control and location are honored
+  }
+}</code></pre>
+      <p class="docs-prose">The input object contains <code>context</code> (<code>method</code>, <code>path</code>, <code>page</code>, <code>query</code>, <code>body</code>, <code>user</code>, <code>baseUrl</code>, <code>adminDirectory</code>, <code>csrf</code>), <code>config</code> (saved plugin configuration), and <code>plugin</code> (<code>id</code>, <code>name</code>, <code>folder</code>, <code>version</code>).</p>
+      <h3 class="docs-subtitle">HTML template pages</h3>
+      <pre class="docs-pre"><code>&lt;!-- views/frontend/index.html --&gt;
+&lt;link rel="stylesheet" href="{{plugin_asset_base}}styles.css"&gt;
+&lt;h1&gt;{{plugin_name}} v{{plugin_version}}&lt;/h1&gt;
+&lt;p&gt;Endpoint: {{config.endpoint}}&lt;/p&gt;
+&lt;form method="post" action="{{base_url}}p/{{plugin_folder}}/save/"&gt;
+  &lt;input type="hidden" name="csrf" value="{{csrf}}"&gt;
+&lt;/form&gt;</code></pre>
+      <p class="docs-prose">Available placeholders: <code>{{csrf}}</code>, <code>{{base_url}}</code>, <code>{{admin_directory}}</code>, <code>{{plugin_name}}</code>, <code>{{plugin_folder}}</code>, <code>{{plugin_version}}</code>, <code>{{plugin_asset_base}}</code>, and <code>{{config.&lt;key&gt;}}</code>. All values are HTML-escaped.</p>
+    </section>
+
+    <section id="plugin-hooks" class="docs-section" aria-labelledby="plugin-hooks-title">
+      <div class="docs-section-heading">
+        <p class="section-index">05 / Events</p>
+        <h2 id="plugin-hooks-title">Hooks</h2>
+        <p>Hooks let a plugin react to application events. Handlers export <code>handle</code>, <code>default</code>, or <code>run</code>; the returned object is shallow-merged into the hook data and passed to the next handler (ordered by <code>priority</code>, then plugin rank). A failing handler is isolated and never blocks the request.</p>
+      </div>
+      <div class="docs-table-wrap">
+        <table class="docs-table">
+          <thead><tr><th>Hook</th><th>Fired when</th><th>Data</th></tr></thead>
+          <tbody>
+            <tr><td><code>video.save</code></td><td>A video is created or updated in the admin</td><td>The saved video record</td></tr>
+            <tr><td><code>video.edit.load</code></td><td>The video edit page loads</td><td><code>video_id</code>, <code>video_data</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="docs-pre"><code>// hooks/video-save.mjs
+export default async function ({ data, config, context, plugin }) {
+  await fetch(config.endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ event: 'video.save', video: data, by: context.user?.id })
+  })
+  return { tracked: true }   // merged into the hook data
+}</code></pre>
+      <p class="docs-prose">Each execution runs in its own worker thread with a <strong>2-second timeout</strong> and a <strong>2&nbsp;MB</strong> output limit.</p>
+    </section>
+
+    <section id="plugin-widgets" class="docs-section" aria-labelledby="plugin-widgets-title">
+      <div class="docs-section-heading">
+        <p class="section-index">06 / Injection</p>
+        <h2 id="plugin-widgets-title">Widgets</h2>
+        <p>Widgets inject HTML into named slots of the admin screens. A widget is either an HTML template (interpolated like pages) or a Node.js module exporting <code>render</code>/<code>default</code>/<code>run</code> that returns a string or <code>{ html }</code>. Set <code>"admin_only": true</code> to restrict a widget to administrator sessions.</p>
+      </div>
+      <pre class="docs-pre"><code>// widgets/status.mjs
+export function render ({ data, config }) {
+  return { html: `&lt;div class="plugin-widget"&gt;Slot ${data.slot} — endpoint ${config.endpoint}&lt;/div&gt;` }
+}</code></pre>
+      <h3 class="docs-subtitle">Available admin slots</h3>
+      <ul class="docs-slot-list">
+        <li><code>backend.dashboard.main_bottom</code></li>
+        <li><code>backend.dashboard.sidebar_bottom</code></li>
+        <li><code>backend.dashboard.bottom</code></li>
+        <li><code>backend.plugins.list.top</code> / <code>.bottom</code></li>
+        <li><code>backend.settings.form_bottom</code> / <code>backend.settings.bottom</code></li>
+        <li><code>backend.users.list.top</code> / <code>.bottom</code></li>
+        <li><code>backend.users.sessions.bottom</code></li>
+        <li><code>backend.users.new.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.users.edit.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.users.profile.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.videos.list.top</code> / <code>.bottom</code></li>
+        <li><code>backend.videos.new.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.videos.edit.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.videos.subtitles.bottom</code></li>
+        <li><code>backend.load_balancers.list.bottom</code></li>
+        <li><code>backend.load_balancers.new.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.load_balancers.edit.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.gdrive.list.bottom</code></li>
+        <li><code>backend.gdrive.new.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.gdrive.edit.form_bottom</code> / <code>.bottom</code></li>
+        <li><code>backend.gdrive.files.bottom</code></li>
+        <li><code>backend.gdrive.backup_files.bottom</code></li>
+        <li><code>backend.gdrive.backup_queue.bottom</code></li>
+        <li><code>backend.log.bottom</code></li>
+      </ul>
+    </section>
+
+    <section id="plugin-assets" class="docs-section" aria-labelledby="plugin-assets-title">
+      <div class="docs-section-heading">
+        <p class="section-index">07 / Files</p>
+        <h2 id="plugin-assets-title">Static assets</h2>
+        <p>Files placed in the plugin's <code>assets/</code> or <code>public/</code> directories are served at <code>/plugins/&lt;folder&gt;/assets/…</code> and <code>/plugins/&lt;folder&gt;/public/…</code> with <code>cache-control: public, max-age=300</code> and a sandboxing CSP. Supported types: <code>css js mjs json svg png jpg jpeg gif webp ico woff woff2 txt html</code>. Symlinks and path traversal are blocked.</p>
+      </div>
+    </section>
+
+    <section id="plugin-config" class="docs-section" aria-labelledby="plugin-config-title">
+      <div class="docs-section-heading">
+        <p class="section-index">08 / Settings</p>
+        <h2 id="plugin-config-title">Configuration</h2>
+        <p>Declare <code>config_fields</code> in the manifest and GPlayer renders a validated configuration form at <code>/administrator/plugins/config/?id=…</code>. Saved values are stored in the database and handed to every page, hook, widget, and template as <code>config</code>.</p>
+      </div>
+      <div class="docs-table-wrap">
+        <table class="docs-table">
+          <thead><tr><th>Field type</th><th>Validation</th></tr></thead>
+          <tbody>
+            <tr><td><code>text</code> / <code>textarea</code></td><td>String, max 100&nbsp;KB, required check.</td></tr>
+            <tr><td><code>url</code></td><td>HTTP or HTTPS only, credentials in the URL rejected.</td></tr>
+            <tr><td><code>number</code></td><td>Finite number, optional <code>minimum</code> / <code>maximum</code> bounds.</td></tr>
+            <tr><td><code>password</code></td><td>Stored as string; an empty submission keeps the previous secret.</td></tr>
+            <tr><td><code>checkbox</code></td><td>Stored as boolean.</td></tr>
+            <tr><td><code>select</code></td><td>Value must match one of the declared <code>options</code> (<code>{ "value", "label" }</code>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="docs-prose">Each field takes <code>name</code>, <code>label</code>, <code>type</code>, <code>required</code>, an optional <code>description</code>, and for selects an <code>options</code> array. Config keys not declared as fields are preserved untouched when the admin saves the form.</p>
+    </section>
+
+    <section id="plugin-background" class="docs-section" aria-labelledby="plugin-background-title">
+      <div class="docs-section-heading">
+        <p class="section-index">09 / Daemon</p>
+        <h2 id="plugin-background-title">Background worker</h2>
+        <p>Point <code>background</code> at a module exporting <code>default</code> or <code>run</code>. The worker starts when the plugin is enabled, restarts automatically when its file content changes, and stops on disable or uninstall.</p>
+      </div>
+      <pre class="docs-pre"><code>// background.mjs
+import { readFile, writeFile } from 'node:fs/promises'
+
+export default async function run ({ pluginDirectory }) {
+  const statePath = `${pluginDirectory}/state.json`   // listed in keep_files
+  let state = { ticks: 0 }
+  try { state = JSON.parse(await readFile(statePath, 'utf8')) } catch {}
+  for (;;) {
+    await new Promise((resolve) =&gt; setTimeout(resolve, 60_000))
+    state.ticks += 1
+    await writeFile(statePath, JSON.stringify(state))
+  }
+}</code></pre>
+      <p class="docs-prose">Workers run with capped resources (32&nbsp;MB old-generation heap, 16&nbsp;MB young generation, 4&nbsp;MB stack). Persist state under the plugin directory and list those files in <code>keep_files</code> so upgrades don't erase them.</p>
+    </section>
+
+    <section id="plugin-security" class="docs-section" aria-labelledby="plugin-security-title">
+      <div class="docs-section-heading">
+        <p class="section-index">10 / Guardrails</p>
+        <h2 id="plugin-security-title">Security model &amp; limits</h2>
+        <p>Plugin code never runs in the main process.</p>
+      </div>
+      <div class="docs-grid">
+        <article class="docs-card">
+          <h3>Sandboxed execution</h3>
+          <p>Every page, hook, and widget invocation runs in a fresh worker thread: <strong>2&nbsp;s timeout</strong>, <strong>2&nbsp;MB output</strong>, 32/16&nbsp;MB heap, 4&nbsp;MB stack. One failure never affects other plugins or the request.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Request protection</h3>
+          <p>Admin plugin pages require an authenticated session; POSTs require same-origin plus a per-plugin CSRF token. Public plugin pages still enforce same-origin on POST.</p>
+        </article>
+        <article class="docs-card">
+          <h3>Content security policy</h3>
+          <p>Plugin pages get a strict CSP (<code>default-src 'none'</code>, self-hosted scripts/styles only); assets are served with <code>sandbox</code> and same-origin resource policy. Ship your CSS/JS as plugin assets rather than inline.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="plugin-example" class="docs-section" aria-labelledby="plugin-example-title">
+      <div class="docs-section-heading">
+        <p class="section-index">11 / Recap</p>
+        <h2 id="plugin-example-title">Minimal working plugin</h2>
+        <p>Three files are enough for a public page with styling:</p>
+      </div>
+      <pre class="docs-pre"><code># plugin.json
+{
+  "name": "Hello World",
+  "folder": "hello-world",
+  "version": "1.0.0"
+}
+
+# views/frontend/index.html
+&lt;link rel="stylesheet" href="{{plugin_asset_base}}styles.css"&gt;
+&lt;h1&gt;Hello from {{plugin_name}}!&lt;/h1&gt;
+
+# assets/styles.css
+h1 { font-family: sans-serif; }</code></pre>
+      <ol class="docs-steps">
+        <li>Zip the three files with <code>plugin.json</code> at the archive root.</li>
+        <li>Upload the ZIP on <code>/administrator/plugins/list/</code>.</li>
+        <li>Enable the plugin from the list.</li>
+        <li>Open <code>/p/hello-world/</code> — your page is live.</li>
+      </ol>
+      <p class="docs-back"><a href="./docs.html">← Back to the application guide</a></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div>
+      <a class="wordmark wordmark-footer" data-runtime-site-home-label href="./" aria-label="GPlayer home">
+        <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
+      </a>
+      <p><!-- runtime-site-slogan -->Node-native video delivery for the web.<!-- /runtime-site-slogan --></p>
+    </div>
+    <nav aria-label="Legal navigation">
+       <a href="./docs.html">Docs</a>
+       <a href="./docs-plugins.html">Plugin development</a>
+       <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">GitHub</a>
+       <!-- runtime-contact-link -->
+    </nav>
+    <p class="copyright">© <span id="copyright-year"></span> <!-- runtime-site-name -->GPlayer<!-- /runtime-site-name --></p>
+  </footer>
+
+  <button type="button" tabindex="0" data-slot="button" id="gotoTop" aria-label="Go to top" title="Go to top" hidden class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-8 goto-top"><span aria-hidden="true">↑</span></button>
+</body>
+</html>
