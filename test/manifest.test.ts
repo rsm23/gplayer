@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { LEGACY_BACKGROUND_WORKER_RUNTIME } from '../src/drive/drive-background-worker.js'
+import { ExtractorFactory } from '../src/hosting/extractor-factory.js'
 import { hostingCases } from './fixtures/hosting-cases.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -101,5 +102,42 @@ describe('generated legacy parity manifest', () => {
     } finally {
       await app.close()
     }
+  })
+
+  it('maps every legacy browser and optional external workflow to tested Node code', async () => {
+    type BrowserlessMap = Readonly<{ legacyClass: string; host: string; replacementFile: string; testFile: string }>
+    type ExternalMap = Readonly<{ legacy: string; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    const map = JSON.parse(await fs.readFile(path.join(projectRoot, 'docs/external-service-parity-map.json'), 'utf8')) as {
+      browserlessAdapters: BrowserlessMap[]
+      optionalTools: ExternalMap[]
+      networkServices: ExternalMap[]
+    }
+    expect(map.browserlessAdapters.map((entry) => entry.legacyClass).sort()).toEqual([
+      'Blogger', 'Cloudmailru', 'Dood', 'Facebook', 'Filemoon', 'Filesfm', 'Hxfile', 'Mediafire', 'Mstream', 'Navertv', 'Rumble', 'Voe'
+    ])
+    const supportedHosts = new Set(new ExtractorFactory().supportedHosts())
+    for (const entry of map.browserlessAdapters) {
+      expect(supportedHosts.has(entry.host), entry.host).toBe(true)
+      await expect(fs.access(path.join(projectRoot, entry.replacementFile))).resolves.toBeUndefined()
+      await expect(fs.access(path.join(projectRoot, entry.testFile))).resolves.toBeUndefined()
+      const implementation = await fs.readFile(path.join(projectRoot, entry.replacementFile), 'utf8')
+      expect(implementation).not.toMatch(/puppeteer|playwright|selenium|HeadlessChrome/iu)
+    }
+    expect(map.optionalTools.map((entry) => entry.legacy).sort()).toEqual([
+      'HeadlessChrome', 'PowerShell system metrics', 'YtdlpBridge', 'aria2c', 'shell port and connection enumeration'
+    ])
+    expect(map.networkServices.map((entry) => entry.legacy).sort()).toEqual([
+      'Google reCAPTCHA verification', 'HTTP, HTTPS, SOCKS, and configured provider proxies', 'MaxMind GeoLite2 country and ASN lookup',
+      'SMTP account mail', 'Subscene subtitle archive ingestion'
+    ])
+    for (const entry of [...map.optionalTools, ...map.networkServices]) {
+      expect(entry.replacementFiles.length).toBeGreaterThan(0)
+      expect(entry.testFiles.length).toBeGreaterThan(0)
+      for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
+        await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+      }
+    }
+    const packageJson = await fs.readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    expect(packageJson).not.toMatch(/puppeteer|playwright|selenium|yt-dlp|youtube-dl|aria2c/iu)
   })
 })
