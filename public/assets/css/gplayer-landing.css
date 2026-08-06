@@ -254,7 +254,7 @@ a:focus-visible {
   padding: 10px 16px;
   border: 1px solid var(--brand);
   border-radius: 10px;
-  color: var(--ink);
+  color: var(--brand-ink);
   text-align: center;
 }
 
@@ -608,7 +608,7 @@ h1 {
 .remove-subtitle {
   min-height: 40px;
   padding: 0 4px;
-  color: var(--faint);
+  color: var(--danger);
 }
 
 .form-message {
@@ -638,9 +638,9 @@ h1 {
   line-height: 1.6;
 }
 
-.is-static-pages-site #player-form > .field-main,
-.is-static-pages-site #player-form > .advanced-options,
-.is-static-pages-site #player-form > .form-message {
+.is-static-pages-site #player-form > [data-slot="field-group"] > .field-main,
+.is-static-pages-site #player-form > [data-slot="field-group"] > .advanced-options,
+.is-static-pages-site #player-form > [data-slot="field-group"] > .form-message {
   display: none;
 }
 
@@ -1373,10 +1373,10 @@ img[src$="/direct.png"] {
   --panel-strong: #e4e9d9;
   --ink: #171b16;
   --muted: #5e675f;
-  --faint: #69736b;
+  --faint: #5e675f;
   --line: #d5dccf;
   --line-strong: #c1cbbd;
-  --brand: #71852d;
+  --brand: #66751f;
   --brand-soft: #53651d;
   --brand-ink: #ffffff;
   --success: #53651d;
@@ -1417,10 +1417,10 @@ img[src$="/direct.png"] {
     --panel-strong: #e4e9d9;
     --ink: #171b16;
     --muted: #5e675f;
-    --faint: #69736b;
+    --faint: #5e675f;
     --line: #d5dccf;
     --line-strong: #c1cbbd;
-    --brand: #71852d;
+    --brand: #66751f;
     --brand-soft: #53651d;
     --brand-ink: #ffffff;
     --success: #53651d;

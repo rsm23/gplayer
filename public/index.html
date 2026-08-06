@@ -20,8 +20,9 @@
   <link rel="stylesheet" href="./assets/css/gplayer-landing.css">
   <!-- runtime-site-stylesheet -->
   <script src="./assets/js/gplayer-landing.js" defer></script>
+  <link rel="stylesheet" href="/assets/css/gplayer-ui.css" data-shadcn-styles>
 </head>
-<body>
+<body data-ui="shadcn">
   <a class="skip-link" href="#generator">Skip to player generator</a>
 
   <header class="site-header">
@@ -29,18 +30,18 @@
       <span class="wordmark-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
       <span><!-- runtime-site-name -->G<span>PLAYER</span><small>NODE</small><!-- /runtime-site-name --></span>
     </a>
-    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation">Menu</button>
+    <button type="button" tabindex="0" data-slot="button" aria-expanded="false" aria-controls="site-navigation" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 menu-toggle">Menu</button>
     <nav id="site-navigation" class="site-navigation" aria-label="Primary navigation">
       <a href="#workflow">How it works</a>
       <a href="#hosts">Supported hosts</a>
       <a href="#product-demo">Product UI</a>
       <!-- runtime-public-navigation -->
       <details class="site-theme-nav"><summary><span data-theme-label>Theme</span></summary><div class="site-theme-menu">
-        <button type="button" data-theme-choice="light">Light</button>
-        <button type="button" data-theme-choice="dark">Dark</button>
+        <button type="button" tabindex="0" data-slot="button" data-theme-choice="light" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Light</button>
+        <button type="button" tabindex="0" data-slot="button" data-theme-choice="dark" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Dark</button>
       </div></details>
       <a href="https://github.com/rsm23/gplayer" target="_blank" rel="noopener">Source</a>
-      <a class="nav-cta" href="#generator">Build a player</a>
+      <a class="nav-cta group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-primary/80 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2" href="#generator" data-slot="button" data-variant="default" data-size="default">Build a player</a>
     </nav>
   </header>
 
@@ -52,8 +53,8 @@
         <p class="hero-lede"><!-- runtime-site-description -->Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.<!-- /runtime-site-description --></p>
         <p class="hero-proof"><span aria-hidden="true">●</span> Encrypted queries. DNS-pinned delivery. Portable embeds.</p>
         <div class="hero-actions">
-          <a class="hero-link-primary" href="#generator">Build a player <span aria-hidden="true">↘</span></a>
-          <a class="hero-link-secondary" href="#product-demo">See the real product UI ↓</a>
+          <a class="hero-link-primary group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-primary/80 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2" href="#generator" data-slot="button" data-variant="default" data-size="default">Build a player <span aria-hidden="true">↘</span></a>
+          <a class="hero-link-secondary group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2" href="#product-demo" data-slot="button" data-variant="secondary" data-size="default">See the real product UI ↓</a>
         </div>
       </div>
 
@@ -66,52 +67,52 @@
           <span class="secure-chip"><span aria-hidden="true"></span> Ready</span>
         </div>
 
-        <form id="player-form" method="post" enctype="multipart/form-data" novalidate>
+        <form id="player-form" novalidate data-slot="form" enctype="multipart/form-data" method="post"><div data-slot="field-group" class="group/field-group @container/field-group w-full flex-col gap-5 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 contents">
           <p id="static-generator-notice" class="static-generator-notice" hidden>This static GitHub Pages build shows the real interface below. Run the Node app to generate authenticated player links.</p>
-          <div class="field field-main">
-            <label for="video-url">Main video URL <span aria-hidden="true">*</span></label>
-            <input id="video-url" name="id" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/video" required>
-            <p class="field-hint">Paste a supported host link or a direct media URL.</p>
+          <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field field-main">
+            <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col" for="video-url">Main video URL <span aria-hidden="true">*</span></label>
+            <input id="video-url" type="url" data-slot="input" inputmode="url" autocomplete="url" placeholder="https://example.com/video" required class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40" name="id"/>
+            <p data-slot="field-description" class="text-left text-sm leading-normal font-normal text-muted-foreground group-has-data-horizontal/field:text-balance [[data-variant=legend]+&amp;]:-mt-1.5 last:mt-0 nth-last-2:-mt-1 [&amp;&gt;a]:underline [&amp;&gt;a]:underline-offset-4 [&amp;&gt;a:hover]:text-primary field-hint">Paste a supported host link or a direct media URL.</p>
           </div>
 
           <details class="advanced-options">
             <summary>Poster, fallback, and subtitles <span>Optional</span></summary>
             <div class="advanced-grid">
-              <div class="field">
-                <label for="alternative-url">Alternative source URL</label>
-                <input id="alternative-url" name="aid" type="url" inputmode="url" placeholder="https://backup.example.com/video">
+              <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field">
+                <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col" for="alternative-url">Alternative source URL</label>
+                <input id="alternative-url" type="url" data-slot="input" inputmode="url" placeholder="https://backup.example.com/video" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40" name="aid"/>
               </div>
-              <div class="field">
-                <label for="poster-url">Poster URL</label>
-                <input id="poster-url" name="poster" type="url" inputmode="url" placeholder="https://example.com/poster.jpg">
+              <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field">
+                <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col" for="poster-url">Poster URL</label>
+                <input id="poster-url" type="url" data-slot="input" inputmode="url" placeholder="https://example.com/poster.jpg" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40" name="poster"/>
               </div>
-              <div class="field">
-                <label for="poster-file">Upload poster</label>
-                <input id="poster-file" name="poster-file" type="file" accept="image/gif,image/jpeg,image/png,image/webp">
+              <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field">
+                <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col" for="poster-file">Upload poster</label>
+                <input id="poster-file" type="file" data-slot="input" accept="image/gif,image/jpeg,image/png,image/webp" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40" name="poster-file"/>
               </div>
-              <div class="field">
-                <label for="json-subtitles">JSON subtitle manifest URL</label>
-                <input id="json-subtitles" name="subs" type="url" inputmode="url" placeholder="https://example.com/subtitles.json">
+              <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field">
+                <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col" for="json-subtitles">JSON subtitle manifest URL</label>
+                <input id="json-subtitles" type="url" data-slot="input" inputmode="url" placeholder="https://example.com/subtitles.json" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40" name="subs"/>
               </div>
             </div>
 
             <div class="subtitle-heading">
               <div>
                 <p class="field-label">Subtitle tracks</p>
-                <p class="field-hint">Add WebVTT, SRT, or supported subtitle URLs.</p>
+                <p data-slot="field-description" class="text-left text-sm leading-normal font-normal text-muted-foreground group-has-data-horizontal/field:text-balance [[data-variant=legend]+&amp;]:-mt-1.5 last:mt-0 nth-last-2:-mt-1 [&amp;&gt;a]:underline [&amp;&gt;a]:underline-offset-4 [&amp;&gt;a:hover]:text-primary field-hint">Add WebVTT, SRT, or supported subtitle URLs.</p>
               </div>
-              <button id="add-subtitle" class="text-button" type="button">+ Add track</button>
+              <button type="button" tabindex="0" data-slot="button" id="add-subtitle" class="group/button inline-flex shrink-0 items-center justify-center border bg-clip-padding font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 text-button">+ Add track</button>
             </div>
             <div id="subtitle-list" class="subtitle-list"></div>
           </details>
 
           <!-- runtime-recaptcha -->
           <div id="form-message" class="form-message" role="status" aria-live="polite"></div>
-          <button id="generate-button" class="generate-button" type="submit">
+          <button type="submit" tabindex="0" data-slot="button" id="generate-button" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-primary/80 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 generate-button">
             <span class="button-label">Generate player</span>
             <span class="button-arrow" aria-hidden="true">↗</span>
           </button>
-        </form>
+        </div></form>
       </div>
     </section>
 
@@ -135,12 +136,12 @@
       <div class="product-demo-grid">
         <figure class="product-shot product-shot-wide reveal" data-reveal-delay="1">
           <div class="product-shot-bar"><span><i></i><i></i><i></i></span><strong>Public generator</strong><em>GPlayer Node</em></div>
-          <img src="./assets/img/product/gplayer-generator.png" alt="GPlayer public generator running from the Node application" loading="lazy">
+          <img src="./assets/img/product/gplayer-generator.png" alt="GPlayer public generator running from the Node application" loading="lazy"/>
           <figcaption><strong>Source to embed</strong><span>Provider detection, advanced tracks, and authenticated output from one surface.</span></figcaption>
         </figure>
         <figure class="product-shot reveal" data-reveal-delay="2">
           <div class="product-shot-bar"><span><i></i><i></i><i></i></span><strong>Administration</strong><em>Protected</em></div>
-          <img src="./assets/img/product/gplayer-admin.png" alt="GPlayer secure administration login running from the Node application" loading="lazy">
+          <img src="./assets/img/product/gplayer-admin.png" alt="GPlayer secure administration login running from the Node application" loading="lazy"/>
           <figcaption><strong>Node-native control plane</strong><span>Legacy-compatible bcrypt and sessions behind a hardened login boundary.</span></figcaption>
         </figure>
       </div>
@@ -165,32 +166,32 @@
         <div id="output-result" class="output-result" hidden>
           <div class="result-fields">
             <div class="result-field">
-              <label for="embed-url">Embed URL</label>
+              <label data-slot="label" class="flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50" for="embed-url">Embed URL</label>
               <div class="copy-control">
-                <input id="embed-url" type="text" readonly>
-                <button type="button" data-copy="embed-url">Copy</button>
+                <input id="embed-url" type="text" data-slot="input" readonly class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
+                <button type="button" tabindex="0" data-slot="button" data-copy="embed-url" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Copy</button>
               </div>
             </div>
             <div class="result-field">
-              <label for="embed-code">Iframe code</label>
+              <label data-slot="label" class="flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50" for="embed-code">Iframe code</label>
               <div class="copy-control">
-                <input id="embed-code" type="text" readonly>
-                <button type="button" data-copy="embed-code">Copy</button>
+                <input id="embed-code" type="text" data-slot="input" readonly class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
+                <button type="button" tabindex="0" data-slot="button" data-copy="embed-code" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Copy</button>
               </div>
             </div>
             <div class="result-field result-field-split">
               <div>
-                <label for="download-url">Download URL</label>
+                <label data-slot="label" class="flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50" for="download-url">Download URL</label>
                 <div class="copy-control">
-                  <input id="download-url" type="text" readonly>
-                  <button type="button" data-copy="download-url">Copy</button>
+                  <input id="download-url" type="text" data-slot="input" readonly class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
+                  <button type="button" tabindex="0" data-slot="button" data-copy="download-url" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Copy</button>
                 </div>
               </div>
               <div>
-                <label for="request-url">Request URL</label>
+                <label data-slot="label" class="flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50" for="request-url">Request URL</label>
                 <div class="copy-control">
-                  <input id="request-url" type="text" readonly>
-                  <button type="button" data-copy="request-url">Copy</button>
+                  <input id="request-url" type="text" data-slot="input" readonly class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
+                  <button type="button" tabindex="0" data-slot="button" data-copy="request-url" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Copy</button>
                 </div>
               </div>
             </div>
@@ -199,7 +200,7 @@
           <div class="preview-wrap">
             <div class="preview-bar">
               <span><i aria-hidden="true"></i> Live preview</span>
-              <a id="open-player" href="#" target="_blank" rel="noopener">Open player ↗</a>
+              <a id="open-player" href="#" target="_blank" rel="noopener" data-slot="button" data-variant="secondary" data-size="default" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2">Open player ↗</a>
             </div>
             <iframe id="player-preview" title="Generated player preview" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" loading="lazy"></iframe>
           </div>
@@ -219,17 +220,17 @@
         <div class="signal-source">
           <p class="signal-label">Input</p>
           <div class="source-token">
-            <img src="./assets/img/logo/gdrive.png" alt="">
+            <img src="./assets/img/logo/gdrive.png" alt=""/>
             <span>Host URL</span>
             <small>Identified</small>
           </div>
           <div class="source-token">
-            <img src="./assets/img/logo/m3u.png" alt="">
+            <img src="./assets/img/logo/m3u.png" alt=""/>
             <span>HLS stream</span>
             <small>Normalized</small>
           </div>
           <div class="source-token">
-            <img src="./assets/img/logo/mpd.png" alt="">
+            <img src="./assets/img/logo/mpd.png" alt=""/>
             <span>DASH stream</span>
             <small>Normalized</small>
           </div>
@@ -256,17 +257,17 @@
         <a href="#generator">Try your source ↗</a>
       </div>
       <div class="host-wall reveal" data-reveal-delay="1" role="group" aria-label="Example supported providers">
-        <div><img src="./assets/img/logo/gdrive.png" alt="Google Drive"><span>Google Drive</span></div>
-        <div><img src="./assets/img/logo/youtube.png" alt="YouTube"><span>YouTube</span></div>
-        <div><img src="./assets/img/logo/vimeo.png" alt="Vimeo"><span>Vimeo</span></div>
-        <div><img src="./assets/img/logo/dailymotion.png" alt="Dailymotion"><span>Dailymotion</span></div>
-        <div><img src="./assets/img/logo/facebook.png" alt="Facebook"><span>Facebook</span></div>
-        <div><img src="./assets/img/logo/dropbox.png" alt="Dropbox"><span>Dropbox</span></div>
-        <div><img src="./assets/img/logo/mediafire.png" alt="MediaFire"><span>MediaFire</span></div>
-        <div><img src="./assets/img/logo/streamtape.png" alt="Streamtape"><span>Streamtape</span></div>
-        <div><img src="./assets/img/logo/m3u.png" alt="HLS"><span>HLS</span></div>
-        <div><img src="./assets/img/logo/mpd.png" alt="MPEG DASH"><span>MPEG DASH</span></div>
-        <div><img src="./assets/img/logo/direct.png" alt="Direct video"><span>Direct video</span></div>
+        <div><img src="./assets/img/logo/gdrive.png" alt="Google Drive"/><span>Google Drive</span></div>
+        <div><img src="./assets/img/logo/youtube.png" alt="YouTube"/><span>YouTube</span></div>
+        <div><img src="./assets/img/logo/vimeo.png" alt="Vimeo"/><span>Vimeo</span></div>
+        <div><img src="./assets/img/logo/dailymotion.png" alt="Dailymotion"/><span>Dailymotion</span></div>
+        <div><img src="./assets/img/logo/facebook.png" alt="Facebook"/><span>Facebook</span></div>
+        <div><img src="./assets/img/logo/dropbox.png" alt="Dropbox"/><span>Dropbox</span></div>
+        <div><img src="./assets/img/logo/mediafire.png" alt="MediaFire"/><span>MediaFire</span></div>
+        <div><img src="./assets/img/logo/streamtape.png" alt="Streamtape"/><span>Streamtape</span></div>
+        <div><img src="./assets/img/logo/m3u.png" alt="HLS"/><span>HLS</span></div>
+        <div><img src="./assets/img/logo/mpd.png" alt="MPEG DASH"/><span>MPEG DASH</span></div>
+        <div><img src="./assets/img/logo/direct.png" alt="Direct video"/><span>Direct video</span></div>
         <div class="host-more"><span>63</span><strong>adapters total</strong></div>
       </div>
     </section>
@@ -300,30 +301,30 @@
   </footer>
 
   <aside class="public-share-rail" aria-label="Share this page">
-    <a href="#" data-share-network="facebook" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on Facebook"><span aria-hidden="true">f</span></a>
-    <a href="#" data-share-network="x" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on X"><span aria-hidden="true">X</span></a>
-    <a href="#" data-share-network="whatsapp" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on WhatsApp"><span aria-hidden="true">WA</span></a>
-    <a href="#" data-share-network="telegram" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on Telegram"><span aria-hidden="true">TG</span></a>
-    <button type="button" data-share-more aria-label="Share this page or copy its link"><span aria-hidden="true">↗</span></button>
+    <a href="#" data-share-network="facebook" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on Facebook" data-slot="button" data-variant="ghost" data-size="default" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2"><span aria-hidden="true">f</span></a>
+    <a href="#" data-share-network="x" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on X" data-slot="button" data-variant="ghost" data-size="default" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2"><span aria-hidden="true">X</span></a>
+    <a href="#" data-share-network="whatsapp" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on WhatsApp" data-slot="button" data-variant="ghost" data-size="default" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2"><span aria-hidden="true">WA</span></a>
+    <a href="#" data-share-network="telegram" target="_blank" rel="nofollow noopener noreferrer" aria-label="Share on Telegram" data-slot="button" data-variant="ghost" data-size="default" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2"><span aria-hidden="true">TG</span></a>
+    <button type="button" tabindex="0" data-slot="button" data-share-more aria-label="Share this page or copy its link" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-8"><span aria-hidden="true">↗</span></button>
     <span class="sr-only" data-share-status aria-live="polite"></span>
   </aside>
-  <button type="button" id="gotoTop" class="goto-top" aria-label="Go to top" title="Go to top" hidden><span aria-hidden="true">↑</span></button>
+  <button type="button" tabindex="0" data-slot="button" id="gotoTop" aria-label="Go to top" title="Go to top" hidden class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-8 goto-top"><span aria-hidden="true">↑</span></button>
 
   <template id="subtitle-template">
     <div class="subtitle-item">
-      <div class="field">
-        <label>Track label</label>
-        <input data-subtitle-label type="text" placeholder="English">
+      <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field">
+        <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col">Track label</label>
+        <input id="base-ui-_R_45e_" type="text" data-slot="input" data-subtitle-label placeholder="English" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
       </div>
-      <div class="field subtitle-url-field">
-        <label>Subtitle URL</label>
-        <input data-subtitle-url type="url" inputmode="url" placeholder="https://example.com/subtitles.vtt">
+      <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field subtitle-url-field">
+        <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col">Subtitle URL</label>
+        <input id="base-ui-_R_49e_" type="url" data-slot="input" data-subtitle-url inputmode="url" placeholder="https://example.com/subtitles.vtt" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
       </div>
-      <div class="field subtitle-file-field">
-        <label>Or upload a file</label>
-        <input data-subtitle-file type="file" accept=".srt,.vtt,.ass,.sub,.stl,.dfxp,.ttml,.sbv,.txt">
+      <div role="group" data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&amp;&gt;.sr-only]:w-auto field subtitle-file-field">
+        <label data-slot="field-label" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[&gt;[data-slot=field]]:rounded-lg has-[&gt;[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[&gt;[data-slot=field]]:w-full has-[&gt;[data-slot=field]]:flex-col">Or upload a file</label>
+        <input id="base-ui-_R_4de_" type="file" data-slot="input" data-subtitle-file accept=".srt,.vtt,.ass,.sub,.stl,.dfxp,.ttml,.sbv,.txt" class="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"/>
       </div>
-      <button class="remove-subtitle" type="button" aria-label="Remove subtitle track">Remove</button>
+      <button type="button" tabindex="0" data-slot="button" aria-label="Remove subtitle track" class="group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-3 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40 h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 remove-subtitle">Remove</button>
     </div>
   </template>
 </body>

@@ -114,7 +114,10 @@ async function resolveAllowedTarget(url: URL, allowPrivateNetworks: boolean, req
   if (addresses.length === 0 || (!allowPrivateNetworks && addresses.some(({ address }) => isPrivateAddress(address)))) {
     throw new Error(`Private or unresolved stream target is not allowed: ${url.hostname}`)
   }
-  const selected = requireIpv4 ? addresses.find(({ family }) => family === 4) : addresses[0]
+  // Prefer IPv4 when a dual-stack hostname offers both families. The request
+  // remains pinned to a validated address, while IPv4-only upstreams behind a
+  // dual-stack alias (including local development fixtures) stay reachable.
+  const selected = addresses.find(({ family }) => family === 4) ?? (requireIpv4 ? undefined : addresses[0])
   if (selected === undefined || (selected.family !== 4 && selected.family !== 6)) {
     throw new Error(`Stream target did not resolve to IPv4 or IPv6: ${url.hostname}`)
   }

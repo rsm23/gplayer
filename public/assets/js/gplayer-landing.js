@@ -133,11 +133,23 @@
 
   function addSubtitleRow() {
     if (!(subtitleTemplate instanceof HTMLTemplateElement) || !(subtitleList instanceof HTMLElement)) return
-    if (subtitleList.querySelectorAll('.subtitle-item').length >= 10) {
+    const rowNumber = subtitleList.querySelectorAll('.subtitle-item').length + 1
+    if (rowNumber > 10) {
       showMessage('You can add up to 10 subtitle tracks.')
       return
     }
     const row = subtitleTemplate.content.cloneNode(true)
+    const controls = [
+      ['[data-subtitle-label]', `subtitle-${rowNumber}-label`],
+      ['[data-subtitle-url]', `subtitle-${rowNumber}-url`],
+      ['[data-subtitle-file]', `subtitle-${rowNumber}-file`]
+    ]
+    controls.forEach(([selector, id]) => {
+      const control = row.querySelector(selector)
+      const label = control?.closest('.field')?.querySelector('label')
+      if (control instanceof HTMLInputElement) control.id = id
+      if (label instanceof HTMLLabelElement) label.htmlFor = id
+    })
     subtitleList.append(row)
     subtitleList.lastElementChild?.querySelector('input')?.focus()
   }

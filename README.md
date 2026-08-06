@@ -20,6 +20,12 @@ Validation:
 pnpm check
 ```
 
+### Application UI
+
+The landing, offline fallback, public pages, authentication, administrator, embedded player, download, and Drive Sharer surfaces use the repository-owned shadcn Base Nova component layer. The source components live in [`src/components/ui`](src/components/ui), the registry configuration is [`components.json`](components.json), and [`src/ui/shadcn-html.tsx`](src/ui/shadcn-html.tsx) composes the existing server-rendered forms and tables from those components without requiring client-side hydration. Native form names, routes, accessibility semantics, progressive enhancement, and established JavaScript hooks remain intact.
+
+Run `pnpm build:ui` after changing shadcn components or design tokens. It regenerates the static Pages landing/offline documents and the shared Tailwind stylesheet at `public/assets/css/gplayer-ui.css`; the normal `pnpm build` and `pnpm check` commands already include that step.
+
 Create or converge the configured MySQL/MariaDB schema to the manifest version, then audit it:
 
 ```bash

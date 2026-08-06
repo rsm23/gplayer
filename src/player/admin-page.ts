@@ -17,6 +17,7 @@ import type { PluginAdminRecord } from '../plugins/plugin-admin-service.js'
 import type { PluginConfigField } from '../plugins/plugin-archive.js'
 import type { DashboardNamedAggregate, DashboardSnapshot, DashboardVideo } from '../dashboard/dashboard-admin-service.js'
 import type { RuntimeServiceStatus, SystemStatusSnapshot } from '../system/system-inspector.js'
+import { withShadcnUi } from '../ui/shadcn-html.js'
 
 export type AdminMessage = Readonly<{
   kind: 'error' | 'success' | 'info'
@@ -1656,7 +1657,7 @@ export function renderAdminError(adminBase: string, status: 403 | 404 | 503, des
 }
 
 function adminDocument(title: string, body: string): string {
-  return `<!doctype html>
+  return withShadcnUi(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -1670,7 +1671,7 @@ function adminDocument(title: string, body: string): string {
   <script src="/assets/js/gplayer-admin-settings.js" defer></script>
 </head>
 <body class="admin-body">${body}</body>
-</html>`
+</html>`)
 }
 
 function renderMessage(message?: AdminMessage): string {

@@ -1,4 +1,5 @@
 import { DEFAULT_SITE_SETTINGS, type SiteSettings } from '../settings/settings-admin-service.js'
+import { withShadcnUi } from '../ui/shadcn-html.js'
 
 export type PublicPageOptions = Readonly<{
   title: string
@@ -43,7 +44,7 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
   const eyebrow = escapeHtml(options.eyebrow)
   const robots = options.robots ?? 'index, follow'
 
-  return `<!doctype html>
+  return withShadcnUi(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -74,7 +75,7 @@ export function renderPublicPage(options: PublicPageOptions, navigation: PublicN
   ${renderFooter(navigation, site)}
   ${renderPublicUtilities()}
 </body>
-</html>`
+</html>`)
 }
 
 export function renderPublicError(error: PublicError, navigation: PublicNavigationOptions = {}): string {

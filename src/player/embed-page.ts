@@ -5,6 +5,7 @@ import type { MediaSource, MediaTrack } from '../core/source-resolver.js'
 import type { RuntimeVastConfiguration } from '../settings/ads-runtime.js'
 import { languageEntry, type PlayerSettings } from '../settings/player-settings.js'
 import { renderAnalyticsHead, renderAnalyticsNoScript, type AnalyticsConfig } from './analytics.js'
+import { withShadcnUi } from '../ui/shadcn-html.js'
 
 type RenderedSource = Readonly<{
   kind: 'video' | 'hls' | 'dash' | 'provider' | 'unavailable'
@@ -144,7 +145,7 @@ export function renderEmbedPage(
   const filmstrip = renderFilmstripConfiguration(resolvedPlayback?.filmstrip ?? '')
   const servers = renderPlayerServers(playerOptions?.servers ?? [])
 
-  return `<!doctype html>
+  return withShadcnUi(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -168,7 +169,7 @@ export function renderEmbedPage(
   ${renderPlayerRuntimeScripts(settings, source.kind, p2pConfiguration)}
   <script src="/assets/js/gplayer-embed.js"></script>
 </body>
-</html>`
+</html>`)
 }
 
 function normalizeResolvedSource(source: MediaSource): readonly RenderedSource[] {
@@ -229,7 +230,7 @@ function renderPlayerServers(servers: readonly Readonly<{ label: string; url: st
 }
 
 export function renderEmbedError(message: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>Player unavailable</title><link rel="stylesheet" href="/assets/css/gplayer-embed.css"></head><body><main class="player-stage"><div class="player-notice player-error"><span>GDPlayer</span><h1>Player unavailable</h1><p>${escapeHtml(message)}</p></div></main></body></html>`
+  return withShadcnUi(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><title>Player unavailable</title><link rel="stylesheet" href="/assets/css/gplayer-embed.css"></head><body><main class="player-stage"><div class="player-notice player-error"><span>GDPlayer</span><h1>Player unavailable</h1><p>${escapeHtml(message)}</p></div></main></body></html>`)
 }
 
 function resolveRenderedSource(media: PlayerMediaQuery, hostingData?: HostingData): RenderedSource {
