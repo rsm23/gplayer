@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gplayer-node-public-v30'
+const CACHE_NAME = 'gplayer-node-public-v31'
 const scopedUrl = (path) => new URL(path, self.registration.scope).toString()
 const OFFLINE_URL = scopedUrl('offline.html')
 const PRECACHE = [
@@ -7,6 +7,7 @@ const PRECACHE = [
   'manifest.json',
   'assets/css/gplayer-landing.css',
   'assets/css/gplayer-public.css',
+  'assets/css/gplayer-ui.css',
   'assets/js/gplayer-landing.js',
   'assets/js/gplayer-theme.js',
   'assets/js/gplayer-sharer.js',

@@ -19,6 +19,7 @@ import { Textarea } from '../components/ui/textarea.js'
 import { cn } from '../lib/utils.js'
 
 export const SHADCN_STYLESHEET = '/assets/css/gplayer-ui.css'
+export const SHADCN_STATIC_STYLESHEET = './assets/css/gplayer-ui.css'
 
 type ButtonVariant = 'default' | 'secondary' | 'outline' | 'ghost' | 'destructive' | 'link'
 type ButtonSize = 'default' | 'xs' | 'sm' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg'
@@ -32,7 +33,7 @@ const badgePattern = /(?:^|\s)(?:admin-role|user-state(?:-[^\s]+)?|release-tag|s
 const emptyPattern = /(?:^|\s)(?:dashboard-empty|download-empty|public-empty)(?:\s|$)/u
 const cardPattern = /(?:^|\s)(?:admin-auth-panel|dashboard-panel|download-card|hosting-provider-card|settings-[^\s]+-card|sharer-card|video-(?:bulk-panel|checker-card|transfer-card))(?:\s|$)/u
 
-export function withShadcnUi(document: string): string {
+export function withShadcnUi(document: string, stylesheet = SHADCN_STYLESHEET): string {
   const bodyStart = document.search(/<body\b/iu)
   if (bodyStart < 0) return document
   const bodyOpenEnd = document.indexOf('>', bodyStart)
@@ -46,10 +47,13 @@ export function withShadcnUi(document: string): string {
   const enhancedBody = enhanceShadcnFragment(document.slice(bodyOpenEnd + 1, bodyClose))
   let result = `${document.slice(0, bodyStart)}${enhancedOpenTag}${enhancedBody}${document.slice(bodyClose)}`
 
-  if (!result.includes(`href="${SHADCN_STYLESHEET}"`)) {
+  const existingStylesheet = result.match(/<link\b(?=[^>]*\bdata-shadcn-styles(?:\s|=|>))[^>]*>/iu)?.[0]
+  if (existingStylesheet !== undefined) {
+    result = result.replace(existingStylesheet, existingStylesheet.replace(/\bhref="[^"]*"/iu, `href="${stylesheet}"`))
+  } else {
     const headClose = result.toLowerCase().lastIndexOf('</head>')
     if (headClose >= 0) {
-      result = `${result.slice(0, headClose)}  <link rel="stylesheet" href="${SHADCN_STYLESHEET}" data-shadcn-styles>\n${result.slice(headClose)}`
+      result = `${result.slice(0, headClose)}  <link rel="stylesheet" href="${stylesheet}" data-shadcn-styles>\n${result.slice(headClose)}`
     }
   }
   return result

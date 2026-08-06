@@ -6,7 +6,7 @@ import { renderAdminLoginPage } from '../src/player/admin-page.js'
 import { renderDownloadError } from '../src/player/download-page.js'
 import { renderEmbedError } from '../src/player/embed-page.js'
 import { publicErrors, renderPublicError } from '../src/player/public-page.js'
-import { SHADCN_STYLESHEET, withShadcnUi } from '../src/ui/shadcn-html.js'
+import { SHADCN_STATIC_STYLESHEET, SHADCN_STYLESHEET, withShadcnUi } from '../src/ui/shadcn-html.js'
 
 describe('application-wide shadcn UI', () => {
   it('uses the project-owned Base Nova registry configuration', () => {
@@ -64,8 +64,8 @@ describe('application-wide shadcn UI', () => {
     for (const relativePath of ['../public/index.html', '../public/offline.html']) {
       const html = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
       expect(html).toContain('data-ui="shadcn"')
-      expect(html).toContain(`href="${SHADCN_STYLESHEET}"`)
-      expect(withShadcnUi(html)).toBe(html)
+      expect(html).toContain(`href="${SHADCN_STATIC_STYLESHEET}"`)
+      expect(withShadcnUi(html, SHADCN_STATIC_STYLESHEET)).toBe(html)
     }
     const landing = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
     expect(landing).toContain('data-slot="field-group"')

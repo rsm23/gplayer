@@ -83,8 +83,9 @@ describe('legacy-compatible system routes', () => {
     expect(page.body).not.toMatch(/gdplayer\.(?:to|io)/i)
     expect(page.body).not.toMatch(/[–—]/)
 
-    const [style, script, themeScript] = await Promise.all([
+    const [style, uiStyle, script, themeScript] = await Promise.all([
       app.inject({ method: 'GET', url: '/assets/css/gplayer-landing.css' }),
+      app.inject({ method: 'GET', url: '/assets/css/gplayer-ui.css' }),
       app.inject({ method: 'GET', url: '/assets/js/gplayer-landing.js' }),
       app.inject({ method: 'GET', url: '/assets/js/gplayer-theme.js' })
     ])
@@ -92,6 +93,9 @@ describe('legacy-compatible system routes', () => {
     expect(style.headers['content-type']).toContain('text/css')
     expect(style.body).toContain('prefers-color-scheme: light')
     expect(style.body).toContain('prefers-reduced-motion: reduce')
+    expect(uiStyle.statusCode).toBe(200)
+    expect(uiStyle.headers['content-type']).toContain('text/css')
+    expect(uiStyle.body).toContain('data-slot')
     expect(script.statusCode).toBe(200)
     expect(script.headers['content-type']).toContain('javascript')
     expect(script.body).toContain("fetch(new URL('ajax/public/', document.baseURI)")
@@ -682,7 +686,8 @@ describe('legacy-compatible system routes', () => {
       ])
     }))
     expect(worker.statusCode).toBe(200)
-    expect(worker.body).toContain("gplayer-node-public-v30")
+    expect(worker.body).toContain("gplayer-node-public-v31")
+    expect(worker.body).toContain("'assets/css/gplayer-ui.css'")
     expect(worker.body).toContain("const OFFLINE_URL = scopedUrl('offline.html')")
     expect(worker.body).toContain('.map(scopedUrl)')
     expect(worker.body).toContain("'assets/js/gplayer-theme.js'")
