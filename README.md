@@ -17,8 +17,6 @@ GPlayer is a self-hosted media player and streaming gateway built with Node.js a
 - Plugin pages, hooks, filters, widgets, public assets, configuration forms, and isolated Node.js background modules.
 - Responsive, themeable shadcn UI with installable PWA metadata and an offline page.
 
-The current enabled-host catalog and its verification status are available in [`docs/live-host-support.json`](docs/live-host-support.json).
-
 ## Requirements
 
 - Node.js 24 or newer
@@ -135,16 +133,9 @@ Contributions are welcome.
 4. Run `pnpm check`.
 5. Open a pull request that explains the change, its user impact, and how it was verified.
 
-For provider work, include deterministic parser or protocol fixtures and update [`docs/live-host-support.json`](docs/live-host-support.json) when public catalog support changes. Keep network access bounded, validate redirects and DNS targets, and preserve the server-side credential boundary.
+For provider work, include deterministic parser or protocol fixtures and update the host labels and examples under `resources/data/json/` when public catalog support changes. Keep network access bounded, validate redirects and DNS targets, and preserve the server-side credential boundary.
 
 For UI work, compose the existing shadcn components and preserve native form names, routes, accessibility semantics, progressive enhancement, and established JavaScript hooks.
-
-## Documentation
-
-- [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md) — plugin manifests, pages, hooks, widgets, assets, and background modules.
-- [`docs/live-host-support.json`](docs/live-host-support.json) — registered and publicly enabled host support.
-- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — capability verification summary.
-- [`docs/verification-matrix.json`](docs/verification-matrix.json) — machine-readable verification evidence and boundaries.
 
 ## Security and responsible use
 

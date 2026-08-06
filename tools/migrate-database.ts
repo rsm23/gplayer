@@ -6,11 +6,11 @@ import mysql from 'mysql2/promise'
 import { SchemaMigrator, type SchemaSqlValue } from '../src/database/schema-migrator.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const manifest = JSON.parse(await readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8')) as { database?: { version?: number } }
 const schemaSql = await readFile(path.join(projectRoot, 'resources/mysql/mysql.sql'), 'utf8')
 const viewsSql = await readFile(path.join(projectRoot, 'resources/mysql/views.sql'), 'utf8')
 const databaseName = process.env.DB_MASTER_NAME?.trim() || 'gplayer'
-const targetVersion = Number(manifest.database?.version ?? 0)
+const targetVersion = Number(schemaSql.match(/\(\s*\d+\s*,\s*'updated'\s*,\s*'(\d+)'\s*\)/u)?.[1] ?? 0)
+if (!Number.isSafeInteger(targetVersion) || targetVersion < 1) throw new Error('The SQL schema does not declare a valid target version')
 const socketPath = process.env.DB_MASTER_SOCKET?.trim()
 
 const connection = await mysql.createConnection({

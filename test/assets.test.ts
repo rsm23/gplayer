@@ -19,22 +19,6 @@ async function filesUnder(directory: string): Promise<string[]> {
 }
 
 describe('legacy non-PHP assets', () => {
-  it('copies every inventoried public static asset', async () => {
-    const manifest = JSON.parse(await fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8')) as {
-      features: { staticAssets: string[] }
-    }
-
-    const missing: string[] = []
-    for (const relative of manifest.features.staticAssets) {
-      try {
-        await fs.access(path.join(projectRoot, relative))
-      } catch {
-        missing.push(relative)
-      }
-    }
-    expect(missing).toEqual([])
-  })
-
   it('keeps the runtime hostname and URL data byte-for-meaning equivalent', async () => {
     const hostnameJson = JSON.parse(await fs.readFile(path.join(projectRoot, 'resources/data/json/custom-hostnames.json'), 'utf8'))
     const downloadUrlJson = JSON.parse(await fs.readFile(path.join(projectRoot, 'resources/data/json/download-urls.json'), 'utf8'))

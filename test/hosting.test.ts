@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import liveHostSupport from '../docs/live-host-support.json' with { type: 'json' }
 import hostLabels from '../resources/data/json/host-list.json' with { type: 'json' }
 import supportedHostExamples from '../resources/data/json/supported-hosts.json' with { type: 'json' }
 import { legacyHostingData } from '../src/core/hosting-data.js'
@@ -20,16 +19,13 @@ describe('Hosting legacy URL parsing', () => {
     expect(fixtureHosts).toEqual(Object.keys(legacyHostingData.hostnames).sort())
   })
 
-  it('registers every currently enabled public-catalog host while retaining archive adapters', () => {
-    const enabledHosts = [...liveHostSupport.enabledHosts]
+  it('registers every currently enabled public-catalog host', () => {
     const registeredHosts = new ExtractorFactory().supportedHosts()
     const bundledEnabledHosts = Object.keys(hostLabels).filter((host) => ((supportedHostExamples as Record<string, readonly string[]>)[host]?.length ?? 0) > 0)
-    expect(new Set(enabledHosts).size).toBe(liveHostSupport.enabledHostCount)
-    expect(enabledHosts).toHaveLength(liveHostSupport.enabledHostCount)
-    expect(enabledHosts).toEqual(bundledEnabledHosts)
-    expect(registeredHosts).toHaveLength(liveHostSupport.registeredAdapterCount)
-    expect(enabledHosts.every((host) => registeredHosts.includes(host))).toBe(true)
-    expect(registeredHosts.filter((host) => !enabledHosts.includes(host))).toEqual([...liveHostSupport.archiveOnlyExtras].sort())
+    expect(new Set(bundledEnabledHosts).size).toBe(66)
+    expect(registeredHosts).toHaveLength(69)
+    expect(bundledEnabledHosts.every((host) => registeredHosts.includes(host))).toBe(true)
+    expect(registeredHosts.filter((host) => !bundledEnabledHosts.includes(host))).toEqual(['earnvids', 'nossoplayer', 'vidyard'])
     expect(registeredHosts).toEqual([...hostingCases, ...liveCatalogHostingCases].map(([host]) => host).sort())
   })
 

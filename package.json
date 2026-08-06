@@ -22,7 +22,6 @@
     "assets:migrate": "tsx tools/migrate-legacy-assets.ts",
     "db:migrate": "tsx tools/migrate-database.ts",
     "inspect:legacy-php": "node tools/inspect-yakpro-php.mjs",
-    "inventory:legacy": "node tools/inventory-legacy.mjs",
     "sync:legacy-assets": "node tools/sync-legacy-assets.mjs"
   },
   "dependencies": {
