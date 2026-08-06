@@ -6,6 +6,7 @@ import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { LEGACY_BACKGROUND_WORKER_RUNTIME } from '../src/drive/drive-background-worker.js'
 import { ExtractorFactory } from '../src/hosting/extractor-factory.js'
+import { PLAYER_LOADERS } from '../src/settings/player-settings.js'
 import { hostingCases } from './fixtures/hosting-cases.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -184,6 +185,109 @@ describe('generated legacy parity manifest', () => {
       for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
         await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
       }
+    }
+  })
+
+  it('maps the complete supplied player, embed, and download inventory to tested Node code', async () => {
+    type LegacyClassMap = Readonly<{ legacyClass: string; publicMethods: readonly string[]; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    type PlayerRouteMap = Readonly<{
+      legacy: string
+      methods: readonly ('GET' | 'POST')[]
+      registeredPath: string
+      replacementFiles: readonly string[]
+      testFiles: readonly string[]
+    }>
+    type TemplateSurfaceMap = Readonly<{
+      runtime: string
+      legacyTemplates: readonly string[]
+      replacementFiles: readonly string[]
+      testFiles: readonly string[]
+    }>
+    const [manifest, map, embedCss] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8').then((value) => JSON.parse(value)),
+      fs.readFile(path.join(projectRoot, 'docs/player-parity-map.json'), 'utf8').then((value) => JSON.parse(value) as {
+        legacyClasses: LegacyClassMap[]
+        frontendRoutes: PlayerRouteMap[]
+        templateSurfaces: TemplateSurfaceMap[]
+        loaders: { names: string[]; replacementFiles: string[]; testFiles: string[] }
+      }),
+      fs.readFile(path.join(projectRoot, 'public/assets/css/gplayer-embed.css'), 'utf8')
+    ])
+    const playerFrontendRoutes = [
+      'ads', 'api', 'api-config', 'download', 'embed', 'embed2', 'filmstrip', 'hls', 'mpd', 'poster', 'sharer',
+      'stream-seg', 'stream-ts', 'stream-vid', 'subtitle'
+    ]
+    expect(map.frontendRoutes.map((entry) => entry.legacy).sort()).toEqual(playerFrontendRoutes)
+    expect(manifest.routes.frontend.filter((route: string) => playerFrontendRoutes.includes(route)).sort()).toEqual(playerFrontendRoutes)
+
+    const playerClasses = ['PublicAjax', 'SourceHelper', 'Video', 'VideoAlternative', 'VideoHash', 'VideoSource']
+    expect(map.legacyClasses.map((entry) => entry.legacyClass).sort()).toEqual(playerClasses)
+    for (const entry of map.legacyClasses) {
+      const declaration = manifest.phpDeclarations.find((candidate: { className?: string }) => candidate.className === entry.legacyClass)
+      expect(declaration, entry.legacyClass).toBeDefined()
+      expect([...entry.publicMethods].sort()).toEqual([...(declaration.publicMethods as string[])].sort())
+      for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
+        await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+      }
+    }
+
+    const widgetTemplates = new Set([
+      'includes/templates/widget/blockadb.twig',
+      'includes/templates/widget/default-script.twig',
+      'includes/templates/widget/disqus.twig',
+      'includes/templates/widget/ga.twig',
+      'includes/templates/widget/gtm-body.twig',
+      'includes/templates/widget/gtm-head.twig',
+      'includes/templates/widget/histats.twig',
+      'includes/templates/widget/link-example.twig',
+      'includes/templates/widget/popupads.twig',
+      'includes/templates/widget/recaptcha.twig',
+      'includes/templates/widget/sharer.twig',
+      'includes/templates/widget/vast.twig'
+    ])
+    const playerTemplates = manifest.features.twigTemplates.filter((template: string) =>
+      template.startsWith('includes/templates/frontend/download/') ||
+      template.startsWith('includes/templates/frontend/embed/') ||
+      template.startsWith('includes/templates/frontend/loader/') ||
+      template.startsWith('includes/templates/frontend/player-generator/') ||
+      widgetTemplates.has(template)
+    )
+    const mappedTemplates = map.templateSurfaces.flatMap((entry) => entry.legacyTemplates)
+    expect(mappedTemplates).toHaveLength(40)
+    expect(new Set(mappedTemplates).size).toBe(mappedTemplates.length)
+    expect([...mappedTemplates].sort()).toEqual([...playerTemplates].sort())
+    for (const entry of map.templateSurfaces) {
+      expect(entry.runtime).not.toBe('')
+      expect(entry.legacyTemplates.length).toBeGreaterThan(0)
+      for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
+        await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+      }
+    }
+
+    const legacyLoaderNames = playerTemplates
+      .filter((template: string) => template.startsWith('includes/templates/frontend/loader/'))
+      .map((template: string) => path.basename(template, '.twig'))
+      .sort()
+    expect([...map.loaders.names].sort()).toEqual(legacyLoaderNames)
+    expect([...PLAYER_LOADERS].sort()).toEqual(legacyLoaderNames)
+    for (const loader of PLAYER_LOADERS) expect(embedCss, loader).toContain(`.player-loader-${loader} `)
+    for (const file of [...map.loaders.replacementFiles, ...map.loaders.testFiles]) {
+      await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+    }
+
+    const app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }))
+    try {
+      await app.ready()
+      for (const entry of map.frontendRoutes) {
+        for (const method of entry.methods) {
+          expect(app.hasRoute({ method, url: entry.registeredPath }), `${method} ${entry.registeredPath} for ${entry.legacy}`).toBe(true)
+        }
+        for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
+          await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+        }
+      }
+    } finally {
+      await app.close()
     }
   })
 })
