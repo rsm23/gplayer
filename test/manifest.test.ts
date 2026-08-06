@@ -140,4 +140,50 @@ describe('generated legacy parity manifest', () => {
     const packageJson = await fs.readFile(path.join(projectRoot, 'package.json'), 'utf8')
     expect(packageJson).not.toMatch(/puppeteer|playwright|selenium|yt-dlp|youtube-dl|aria2c/iu)
   })
+
+  it('maps every inventoried account model and account route to tested Node code', async () => {
+    type LegacyClassMap = Readonly<{ legacyClass: string; publicMethods: readonly string[]; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    type AccountRouteMap = Readonly<{ legacy: string; method: 'GET' | 'POST'; replacement: string; sourceFile: string; testFile: string }>
+    type SecurityContractMap = Readonly<{ legacy: string; replacementFiles: readonly string[]; testFiles: readonly string[] }>
+    const [manifest, map] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/parity-manifest.json'), 'utf8').then((value) => JSON.parse(value)),
+      fs.readFile(path.join(projectRoot, 'docs/authentication-parity-map.json'), 'utf8').then((value) => JSON.parse(value) as {
+        legacyClasses: LegacyClassMap[]
+        accountRoutes: AccountRouteMap[]
+        securityContracts: SecurityContractMap[]
+      })
+    ])
+    expect(map.legacyClasses.map((entry) => entry.legacyClass).sort()).toEqual(['Mailer', 'SecurityHelper', 'Session', 'User'])
+    for (const entry of map.legacyClasses) {
+      const declaration = manifest.phpDeclarations.find((candidate: { className?: string }) => candidate.className === entry.legacyClass)
+      expect(declaration, entry.legacyClass).toBeDefined()
+      expect([...entry.publicMethods].sort()).toEqual([...(declaration.publicMethods as string[])].sort())
+      for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
+        await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+      }
+    }
+    expect(map.accountRoutes.map((entry) => `${entry.method} ${entry.replacement}`).sort()).toEqual([
+      'GET /administrator/ajax/sessions/', 'GET /administrator/login/', 'GET /administrator/profile/', 'GET /administrator/register/',
+      'GET /administrator/register/resend/', 'GET /administrator/reset-password/', 'GET /administrator/users/sessions/',
+      'POST /administrator/login/', 'POST /administrator/logout/', 'POST /administrator/profile/', 'POST /administrator/register/',
+      'POST /administrator/register/resend/', 'POST /administrator/reset-password/', 'POST /administrator/users/sessions/delete/'
+    ])
+    const app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }))
+    try {
+      await app.ready()
+      for (const entry of map.accountRoutes) {
+        expect(app.hasRoute({ method: entry.method, url: entry.replacement }), `${entry.method} ${entry.replacement}`).toBe(true)
+        await expect(fs.access(path.join(projectRoot, entry.sourceFile))).resolves.toBeUndefined()
+        await expect(fs.access(path.join(projectRoot, entry.testFile))).resolves.toBeUndefined()
+      }
+    } finally {
+      await app.close()
+    }
+    for (const entry of map.securityContracts) {
+      expect(entry.legacy).not.toBe('')
+      for (const file of [...entry.replacementFiles, ...entry.testFiles]) {
+        await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+      }
+    }
+  })
 })

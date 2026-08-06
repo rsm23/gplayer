@@ -243,6 +243,23 @@ describe('administration routes', () => {
     expect(store.revoked).toEqual([fixedToken])
   })
 
+  it('revokes the browser session through the legacy frontend sign-out link', async () => {
+    const store = new MemoryAuthStore()
+    const service = auth(store)
+    await service.login({ identifier: 'admin', password: 'admin', remember: false, ip: '127.0.0.1', userAgent })
+    app = await buildApp(loadConfig({ NODE_ENV: 'test', BASE_URL: 'https://player.example/', SECURE_SALT: '1234567890123456' }), { auth: service })
+
+    const logout = await app.inject({
+      method: 'GET',
+      url: '/administrator/login/?logout=true',
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${fixedToken}`, 'user-agent': userAgent }
+    })
+    expect(logout.statusCode).toBe(200)
+    expect(logout.body).toContain('You have successfully logged out.')
+    expect(String(logout.headers['set-cookie'])).toContain(`${AUTH_COOKIE_NAME}=;`)
+    expect(store.revoked).toEqual([fixedToken])
+  })
+
   it('returns legacy-compatible account-state messages without exposing hashes', async () => {
     const store = new MemoryAuthStore([{ ...activeAdmin, status: 2 }])
     app = await createApp(store)
