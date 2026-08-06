@@ -465,4 +465,36 @@ describe('generated legacy parity manifest', () => {
       await app.close()
     }
   })
+
+  it('verifies every parity-ledger area against the supplied archive scope', async () => {
+    type VerificationArea = Readonly<{
+      area: string
+      verification: string
+      evidenceFiles: readonly string[]
+      boundary: string
+    }>
+    const [ledger, matrix] = await Promise.all([
+      fs.readFile(path.join(projectRoot, 'docs/PARITY.md'), 'utf8'),
+      fs.readFile(path.join(projectRoot, 'docs/verification-matrix.json'), 'utf8').then((value) => JSON.parse(value) as {
+        scope: { application: string; target: string; acceptedEvidence: string[]; excludedClaims: string[] }
+        areas: VerificationArea[]
+      })
+    ])
+    const rows = [...ledger.matchAll(/^\| ([^|]+) \| [^|]+ \| (not-started|in-progress|covered|verified) \|/gmu)]
+      .map((match) => ({ area: match[1]?.trim() ?? '', status: match[2] ?? '' }))
+    expect(rows).toHaveLength(15)
+    expect(rows.every((row) => row.status === 'verified')).toBe(true)
+    expect(matrix.areas.map((entry) => entry.area)).toEqual(rows.map((row) => row.area))
+    expect(new Set(matrix.areas.map((entry) => entry.area)).size).toBe(matrix.areas.length)
+    expect(matrix.scope.application).toContain('4.8.3')
+    expect(matrix.scope.target).toContain('Node.js')
+    expect(matrix.scope.acceptedEvidence).toHaveLength(4)
+    expect(matrix.scope.excludedClaims).toHaveLength(3)
+    for (const entry of matrix.areas) {
+      expect(entry.verification).not.toBe('')
+      expect(entry.boundary).not.toBe('')
+      expect(entry.evidenceFiles.length).toBeGreaterThan(0)
+      for (const file of entry.evidenceFiles) await expect(fs.access(path.join(projectRoot, file))).resolves.toBeUndefined()
+    }
+  })
 })

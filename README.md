@@ -1,8 +1,8 @@
 # GPlayer Node.js rewrite
 
-This repository is a from-scratch Node.js/TypeScript rewrite of the supplied GDPlayer 4.8.3 application. The acceptance criterion is behavioral parity: every route, hosting adapter, streaming mode, admin workflow, background job, plugin hook, theme surface, configuration option, and edge case in the supplied source must have a tested Node equivalent.
+This repository is a from-scratch Node.js/TypeScript rewrite of the supplied GDPlayer 4.8.3 application. Behavioral parity is verified for the supplied archive: every inventoried route, hosting adapter, streaming mode, admin workflow, background job, plugin hook, theme surface, configuration option, and migration format maps to tested Node code. The verification boundary excludes third-party service uptime, future provider changes, arbitrary extension packages absent from the archive, and mutation of user-owned external accounts.
 
-The project is intentionally tracked against a generated source inventory rather than a hand-written feature shortlist. See [`docs/PARITY.md`](docs/PARITY.md), [`docs/parity-manifest.json`](docs/parity-manifest.json), the executable [`admin`](docs/admin-parity-map.json) and [`background-worker`](docs/background-parity-map.json) parity maps, and the [`Node plugin API`](docs/PLUGIN_API.md).
+The project is intentionally tracked against a generated source inventory rather than a hand-written feature shortlist. See [`docs/PARITY.md`](docs/PARITY.md), [`docs/parity-manifest.json`](docs/parity-manifest.json), the executable [`verification matrix`](docs/verification-matrix.json), the focused parity maps in [`docs/`](docs/), and the [`Node plugin API`](docs/PLUGIN_API.md).
 
 ## Development
 
