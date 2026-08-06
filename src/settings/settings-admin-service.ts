@@ -175,7 +175,7 @@ export type SiteSettings = Readonly<{
 export const DEFAULT_SITE_SETTINGS: SiteSettings = Object.freeze({
   site_name: 'GPlayer',
   site_slogan: 'One runtime. Every source.',
-  site_description: 'Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.',
+  site_description: 'Turn 69 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.',
   custom_color: 'c8df69',
   custom_color2: 'e1ecae',
   pwa_shortname: 'GPlayer',

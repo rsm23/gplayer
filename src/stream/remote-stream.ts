@@ -10,6 +10,7 @@ const requestHeaderAllowlist = new Set([
   'accept',
   'accept-language',
   'authorization',
+  'client-id',
   'content-type',
   'if-match',
   'if-modified-since',

@@ -1411,12 +1411,12 @@ describe('player HTTP routes', () => {
 
   it('links recognized providers to their source page without claiming direct extraction', async () => {
     app = await buildApp(loadConfig({ NODE_ENV: 'test', SECURE_SALT: secureSalt }))
-    const token = new Security(secureSalt).encryptURL('host=streamhg&id=provider-id&poster=')
+    const token = new Security(secureSalt).encryptURL('host=embedtv&id=provider-id&poster=')
     const response = await app.inject({ method: 'GET', url: `/d/?${token}` })
 
     expect(response.statusCode).toBe(200)
     expect(response.body).toContain('Open source page')
-    expect(response.body).toContain('href="https://hglink.to/provider-id"')
+    expect(response.body).toContain('href="https://embedtv-3.icu/provider-id"')
     expect(response.body).toContain('Direct-file extraction will be enabled')
   })
 

@@ -132,6 +132,7 @@ describe('shared XFileSharing compatibility parser', () => {
 
   it.each([
     ['earnvids', 'https://morencius.com/embed/video-id', 'https://morencius.com/file/video-id'],
+    ['dropload', 'https://dropload.pro/e/video-id', 'https://dropload.pro/video-id'],
     ['fileupload', 'https://www.file-upload.org/embed-video-id.html', 'https://www.file-upload.org/video-id'],
     ['goodstream', 'https://goodstream.one/video-id', 'https://goodstream.one/video-id'],
     ['hexupload', 'https://hexupload.net/embed-video-id.html', 'https://hexupload.net/video-id'],
@@ -140,12 +141,16 @@ describe('shared XFileSharing compatibility parser', () => {
     ['mediacm', 'https://media.cm/e/video-id', 'https://media.cm/video-id'],
     ['mixdrop', 'https://mixdrop.ag/e/video-id', 'https://mixdrop.ag/f/video-id'],
     ['mp4upload', 'https://www.mp4upload.com/embed-video-id.html', 'https://www.mp4upload.com/video-id'],
+    ['savefiles', 'https://savefiles.com/e/video-id', 'https://savefiles.com/video-id'],
     ['sendvid', 'https://sendvid.com/embed/video-id', 'https://sendvid.com/video-id'],
+    ['streama2z', 'https://streama2z.com/embed-video-id.html', 'https://streama2z.com/video-id'],
+    ['streamhg', 'https://streamhg.com/e/video-id', 'https://streamhg.com/video-id'],
     ['supervideo', 'https://supervideo.cc/e/video-id', 'https://supervideo.cc/video-id'],
     ['thetube', 'https://www.the.tube/video-id', 'https://www.the.tube/video-id'],
     ['uqload', 'https://uqload.net/embed-video-id.html', null],
     ['vidmoly', 'https://vidmoly.biz/embed-video-id.html', null],
     ['vidoza', 'https://videzz.net/embed-video-id.html', 'https://videzz.net/video-id'],
+    ['vidtube', 'https://vidtube.one/embed-video-id.html', 'https://vidtube.cam/video-id.html'],
     ['vtube', 'https://vtube.network/embed-video-id.html', 'https://vtube.network/video-id.html']
   ])('registers the visible %s URL contract', async (host, embedUrl, titleUrl) => {
     const responses = [

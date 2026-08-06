@@ -34,6 +34,7 @@ import { StreamableExtractor } from './streamable.js'
 import { StreamtapeExtractor } from './streamtape.js'
 import { TiktokExtractor } from './tiktok.js'
 import { TurboVipPlayExtractor } from './turboviplay.js'
+import { TwitchExtractor, type TwitchExtractorOptions } from './twitch.js'
 import { VimeoExtractor } from './vimeo.js'
 import { VkExtractor } from './vk.js'
 import { VidyardExtractor } from './vidyard.js'
@@ -60,6 +61,7 @@ export class ExtractorFactory implements HostingExtractorFactory {
     dood?: DoodExtractorOptions
     amazon?: AmazonExtractorOptions
     filemoon?: FilemoonExtractorOptions
+    twitch?: TwitchExtractorOptions
     youtube?: YoutubeClient
     youtubeCookie?: () => Promise<string>
     youtubeFetch?: typeof fetch
@@ -87,6 +89,7 @@ export class ExtractorFactory implements HostingExtractorFactory {
     this.register('streamable', (id) => new StreamableExtractor(id, clientFor('streamable')))
     this.register('streamtape', (id) => new StreamtapeExtractor(id, clientFor('streamtape')))
     this.register('tiktok', (id) => new TiktokExtractor(id, clientFor('tiktok')))
+    this.register('twitch', (id) => new TwitchExtractor(id, clientFor('twitch'), options.twitch ?? {}))
     this.register('vidyard', (id) => new VidyardExtractor(id, clientFor('vidyard')))
     this.register('dropbox', (id) => new DropboxExtractor(id, clientFor('dropbox')))
     this.register('dzen', (id) => new DzenExtractor(id, clientFor('dzen')))
@@ -137,6 +140,10 @@ export class ExtractorFactory implements HostingExtractorFactory {
 }
 
 const xFileSharingAdapters: Readonly<Record<string, XFileSharingConfig>> = Object.freeze({
+  dropload: {
+    embedUrl: (id) => `https://dropload.pro/e/${encodeURIComponent(id)}`,
+    titleUrl: (id) => `https://dropload.pro/${encodeURIComponent(id)}`
+  },
   earnvids: {
     embedUrl: (id) => `https://morencius.com/embed/${encodeURIComponent(id)}`,
     titleUrl: (id) => `https://morencius.com/file/${encodeURIComponent(id)}`
@@ -182,6 +189,18 @@ const xFileSharingAdapters: Readonly<Record<string, XFileSharingConfig>> = Objec
     embedUrl: (id) => `https://sendvid.com/embed/${encodeURIComponent(id)}`,
     titleUrl: (id) => `https://sendvid.com/${encodeURIComponent(id)}`
   },
+  savefiles: {
+    embedUrl: (id) => `https://savefiles.com/e/${encodeURIComponent(id)}`,
+    titleUrl: (id) => `https://savefiles.com/${encodeURIComponent(id)}`
+  },
+  streama2z: {
+    embedUrl: (id) => `https://streama2z.com/embed-${encodeURIComponent(id)}.html`,
+    titleUrl: (id) => `https://streama2z.com/${encodeURIComponent(id)}`
+  },
+  streamhg: {
+    embedUrl: (id) => `https://streamhg.com/e/${encodeURIComponent(id)}`,
+    titleUrl: (id) => `https://streamhg.com/${encodeURIComponent(id)}`
+  },
   supervideo: {
     embedUrl: (id) => `https://supervideo.cc/e/${encodeURIComponent(id)}`,
     titleUrl: (id) => `https://supervideo.cc/${encodeURIComponent(id)}`
@@ -200,6 +219,10 @@ const xFileSharingAdapters: Readonly<Record<string, XFileSharingConfig>> = Objec
   },
   vidmoly: {
     embedUrl: (id) => `https://vidmoly.biz/embed-${encodeURIComponent(id)}.html`
+  },
+  vidtube: {
+    embedUrl: (id) => `https://vidtube.one/embed-${encodeURIComponent(id)}.html`,
+    titleUrl: (id) => `https://vidtube.cam/${encodeURIComponent(id)}.html`
   },
   vidoza: {
     embedUrl: (id) => `https://videzz.net/embed-${encodeURIComponent(id)}.html`,

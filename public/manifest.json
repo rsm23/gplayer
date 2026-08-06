@@ -1,7 +1,7 @@
 {
   "name": "GPlayer",
   "short_name": "GPlayer",
-  "description": "Turn 63 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.",
+  "description": "Turn 69 provider links, HLS, DASH, and direct video into one authenticated embed, with no PHP or system Python in the runtime.",
   "id": "./",
   "start_url": "./?source=pwa",
   "scope": "./",

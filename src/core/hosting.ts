@@ -1,6 +1,6 @@
 import { legacyHostingData, type HostingData } from './hosting-data.js'
 
-const fullPathHosts = new Set(['cloudmailru', 'facebook', 'mediacm', 'navertv', 'rumble', 'tiktok', 'wetransfer'])
+const fullPathHosts = new Set(['cloudmailru', 'facebook', 'mediacm', 'navertv', 'rumble', 'tiktok', 'twitch', 'wetransfer'])
 const fullPathQueryHosts = new Set(['googlephotos'])
 const lastPathHosts = new Set(['amazon', 'archive', 'dailymotion', 'dropload', 'dzen', 'gofile', 'lulustream', 'mymailru', 'pixeldrain', 'sendvid', 'streamable', 'supervideo', 'uqload', 'vidmoly', 'vimeo', 'voe', 'vtube', 'vudeo', 'yadisk', 'yourupload', 'vk', 'savefiles', 'streamhg', 'embedtv', 'embedtv2'])
 const onePathHosts = new Set(['vidara', 'aparat', 'cyberfile', 'dood', 'filemail', 'filemoon', 'krakenfiles', 'mediafire', 'mixdrop', 'okru', 'streamtape', 'turboviplay', 'vidyard', 'earnvids', 'nossoplayer'])
@@ -119,11 +119,12 @@ export class Hosting {
     else if (this.#host === 'sibnet' && /^\d+$/.test(this.#id)) result = `https://video.sibnet.ru/shell.php?videoid=${this.#id}`
     else if (this.#host === 'wetransfer') result = this.weTransferDownloadUrl()
     else if (this.#host === 'yadisk' && this.#id.includes('d/')) result = `https://disk.yandex.com/${this.#id}`
+    else if (this.#host === 'streama2z' || this.#host === 'vidtube') result = this.getID()
     else result = this.#id
 
     if (!isHttpUrl(result)) {
       const pattern = this.data.downloadUrls[this.#host]
-      if (pattern) result = pattern.replace('%s', this.#id.replace(/^\/+/, ''))
+      if (pattern) result = pattern.replace('%s', result.replace(/^\/+/, ''))
     }
 
     return result.trim()

@@ -130,11 +130,11 @@ describe('Direct hosting extractor', () => {
   it('registers direct extraction and supports provider extensions', () => {
     const factory = new ExtractorFactory().register('custom', (id) => new DirectExtractor(id))
     expect(factory.supportedHosts()).toEqual([
-      'amazon', 'aparat', 'archive', 'blogger', 'cloudmailru', 'custom', 'cyberfile', 'dailymotion', 'direct', 'dood', 'dropbox', 'dzen', 'earnvids', 'facebook', 'filemail', 'filemoon', 'filesfm', 'fileupload', 'fireload',
+      'amazon', 'aparat', 'archive', 'blogger', 'cloudmailru', 'custom', 'cyberfile', 'dailymotion', 'direct', 'dood', 'dropbox', 'dropload', 'dzen', 'earnvids', 'facebook', 'filemail', 'filemoon', 'filesfm', 'fileupload', 'fireload',
       'gdrive', 'gofile', 'goodstream', 'googlephotos', 'hexupload', 'hxfile', 'iceyfile', 'krakenfiles', 'lulustream', 'mediacm', 'mediafire', 'mixdrop',
-      'mp4upload', 'mstream', 'mymailru', 'navertv', 'nossoplayer', 'okru', 'pcloud', 'pixeldrain', 'rumble', 'sendvid', 'sibnet', 'soundcloud', 'streamable', 'streamtape', 'supervideo',
-      'thetube', 'tiktok', 'turboviplay',
-      'udrop', 'uqload', 'vidara', 'vidmoly', 'vidoza', 'vidyard', 'vimeo', 'vk', 'voe', 'vtube', 'vudeo', 'wetransfer', 'yadisk', 'yourupload', 'youtube'
+      'mp4upload', 'mstream', 'mymailru', 'navertv', 'nossoplayer', 'okru', 'pcloud', 'pixeldrain', 'rumble', 'savefiles', 'sendvid', 'sibnet', 'soundcloud', 'streama2z', 'streamable', 'streamhg', 'streamtape', 'supervideo',
+      'thetube', 'tiktok', 'turboviplay', 'twitch',
+      'udrop', 'uqload', 'vidara', 'vidmoly', 'vidoza', 'vidtube', 'vidyard', 'vimeo', 'vk', 'voe', 'vtube', 'vudeo', 'wetransfer', 'yadisk', 'yourupload', 'youtube'
     ])
     expect(factory.create('custom', 'https://cdn.example/a.mp4')).toBeInstanceOf(DirectExtractor)
     expect(factory.create('missing', 'id')).toBeNull()

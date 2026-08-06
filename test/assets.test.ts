@@ -60,7 +60,7 @@ describe('legacy non-PHP assets', () => {
 
   it('keeps runtime markers out of the static document title text', async () => {
     const landing = await fs.readFile(path.join(projectRoot, 'public/index.html'), 'utf8')
-    expect(landing).toContain('<title data-runtime-site-title>GPlayer | 63 sources, one Node.js player</title>')
+    expect(landing).toContain('<title data-runtime-site-title>GPlayer | 69 sources, one Node.js player</title>')
     expect(landing).not.toMatch(/<title[^>]*>[^<]*<!--/u)
   })
 

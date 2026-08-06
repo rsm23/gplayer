@@ -64,15 +64,21 @@ export const hostingCases = [
   ['youtube', 'https://www.youtube.com/watch?v=youtube-id', 'youtube-id', 'https://youtube.com/watch?v=youtube-id']
 ] as const
 
+// Enabled in the current public host catalog in addition to the supplied 4.8.3
+// extractor inventory. These are registered runtime adapters, not parser-only
+// compatibility records.
+export const liveCatalogHostingCases = [
+  ['dropload', 'https://dropload.pro/e/dropload-id', 'dropload-id', 'https://dropload.pro/dropload-id'],
+  ['savefiles', 'https://savefiles.com/e/savefiles-id', 'savefiles-id', 'https://savefiles.com/savefiles-id'],
+  ['streama2z', 'https://streama2z.com/embed-streama2z-id.html', 'streama2z-id', 'https://streama2z.com/streama2z-id'],
+  ['streamhg', 'https://streamhg.com/e/streamhg-id', 'streamhg-id', 'https://streamhg.com/streamhg-id'],
+  ['twitch', 'https://www.twitch.tv/pgl', 'pgl', 'https://www.twitch.tv/pgl'],
+  ['vidtube', 'https://vidtube.one/embed-vidtube-id.html', 'vidtube-id', 'https://vidtube.cam/vidtube-id.html']
+] as const
+
 export const configuredOnlyHostingCases = [
-  ['dropload', 'https://dropload.io/dropload-id', 'dropload-id', 'https://dropload.io/dropload-id'],
   ['embedtv', 'https://embedtv-3.icu/embedtv-id', 'embedtv-id', 'https://embedtv-3.icu/embedtv-id'],
   ['embedtv2', 'https://www.embedtv.net/embed/embedtv2-id', 'embedtv2-id', 'https://www.embedtv.net/embed/embedtv2-id'],
   ['firevideoplayer', 'https://firevideoplayer.com/e/fire-video-id', 'https://firevideoplayer.com/e/fire-video-id', 'https://firevideoplayer.com/e/fire-video-id'],
-  ['savefiles', 'https://streamhls.to/savefiles-id', 'savefiles-id', 'https://streamhls.to/savefiles-id'],
-  ['streama2z', 'https://streama2z.com/streama2z-id/video.mp4', 'streama2z-id', 'https://streama2z.com/streama2z-id'],
-  ['streamhg', 'https://hglink.to/e/streamhg-id', 'streamhg-id', 'https://hglink.to/streamhg-id'],
-  ['twitch', 'https://www.twitch.tv/videos/123456', 'https://www.twitch.tv/videos/123456', 'https://www.twitch.tv/videos/123456'],
-  ['vidtube', 'https://vidtube.one/vidtube-id/video.mp4', 'vidtube-id', 'https://vidtube.one/vidtube-id'],
   ['ytdlp', 'https://ytdlp.example/video/ytdlp-id', 'https://ytdlp.example/video/ytdlp-id', 'https://ytdlp.example/video/ytdlp-id']
 ] as const

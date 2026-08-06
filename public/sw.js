@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gplayer-node-public-v31'
+const CACHE_NAME = 'gplayer-node-public-v32'
 const scopedUrl = (path) => new URL(path, self.registration.scope).toString()
 const OFFLINE_URL = scopedUrl('offline.html')
 const PRECACHE = [
@@ -17,7 +17,19 @@ const PRECACHE = [
   'assets/img/google-drive.png',
   'assets/img/maskable_icon.png',
   'assets/img/product/gplayer-generator.png',
-  'assets/img/product/gplayer-admin.png'
+  'assets/img/product/gplayer-admin.png',
+  'assets/img/logo/gdrive.png',
+  'assets/img/logo/youtube.png',
+  'assets/img/logo/vimeo.png',
+  'assets/img/logo/dailymotion.png',
+  'assets/img/logo/facebook.png',
+  'assets/img/logo/dropbox.png',
+  'assets/img/logo/mediafire.png',
+  'assets/img/logo/streamtape.png',
+  'assets/img/logo/twitch.png',
+  'assets/img/logo/m3u.png',
+  'assets/img/logo/mpd.png',
+  'assets/img/logo/direct.png'
 ].map(scopedUrl)
 
 self.addEventListener('install', (event) => {

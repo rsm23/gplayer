@@ -33,7 +33,7 @@ class CaptureHttpClient implements ProviderHttpClient {
 describe('Hosting Settings compatibility contract', () => {
   it('builds one sorted provider record for every registered extractor', () => {
     const values = hostingSettings({}, supportedHosts)
-    expect(values.providers).toHaveLength(63)
+    expect(values.providers).toHaveLength(69)
     expect(values.providers.map(({ host }) => host)).toContain('direct')
     expect(values.providers.find(({ host }) => host === 'gdrive')).toEqual(expect.objectContaining({
       label: 'Google Drive',

@@ -19,6 +19,7 @@ beforeEach(async () => {
           method: request.method,
           body: Buffer.concat(chunks).toString(),
           authorization: request.headers.authorization,
+          clientId: request.headers['client-id'],
           apiVersion: request.headers['x-api-version'],
           loginTokenCheck: request.headers.filemaillogintokencheck,
           websiteToken: request.headers['x-website-token'],
@@ -134,6 +135,7 @@ describe('RemoteStream', () => {
       method: 'POST',
       headers: {
         authorization: 'Bearer provider-token',
+        'client-id': 'public-player-client',
         'content-type': 'application/json',
         filemaillogintokencheck: 'true',
         'x-api-version': '2.0',
@@ -152,6 +154,7 @@ describe('RemoteStream', () => {
       method: 'POST',
       body: '{"fixture":true}',
       authorization: 'Bearer provider-token',
+      clientId: 'public-player-client',
       apiVersion: '2.0',
       loginTokenCheck: 'true',
       websiteToken: 'website-token',

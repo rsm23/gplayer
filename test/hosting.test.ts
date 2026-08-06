@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import liveHostSupport from '../docs/live-host-support.json' with { type: 'json' }
+import hostLabels from '../resources/data/json/host-list.json' with { type: 'json' }
+import supportedHostExamples from '../resources/data/json/supported-hosts.json' with { type: 'json' }
 import { legacyHostingData } from '../src/core/hosting-data.js'
 import { Hosting } from '../src/core/hosting.js'
-import { configuredOnlyHostingCases, hostingCases } from './fixtures/hosting-cases.js'
+import { ExtractorFactory } from '../src/hosting/extractor-factory.js'
+import { configuredOnlyHostingCases, hostingCases, liveCatalogHostingCases } from './fixtures/hosting-cases.js'
 
 describe('Hosting legacy URL parsing', () => {
-  it.each([...hostingCases, ...configuredOnlyHostingCases])('parses the complete %s URL contract', (host, url, id, download) => {
+  it.each([...hostingCases, ...liveCatalogHostingCases, ...configuredOnlyHostingCases])('parses the complete %s URL contract', (host, url, id, download) => {
     const hosting = new Hosting(url)
     expect(hosting.getHost()).toBe(host)
     expect(hosting.getID()).toBe(id)
@@ -12,8 +16,35 @@ describe('Hosting legacy URL parsing', () => {
   })
 
   it('covers every configured hostname record exactly once', () => {
-    const fixtureHosts = [...hostingCases, ...configuredOnlyHostingCases].map(([host]) => host).sort()
+    const fixtureHosts = [...hostingCases, ...liveCatalogHostingCases, ...configuredOnlyHostingCases].map(([host]) => host).sort()
     expect(fixtureHosts).toEqual(Object.keys(legacyHostingData.hostnames).sort())
+  })
+
+  it('registers every currently enabled public-catalog host while retaining archive adapters', () => {
+    const enabledHosts = [...liveHostSupport.enabledHosts]
+    const registeredHosts = new ExtractorFactory().supportedHosts()
+    const bundledEnabledHosts = Object.keys(hostLabels).filter((host) => ((supportedHostExamples as Record<string, readonly string[]>)[host]?.length ?? 0) > 0)
+    expect(new Set(enabledHosts).size).toBe(liveHostSupport.enabledHostCount)
+    expect(enabledHosts).toHaveLength(liveHostSupport.enabledHostCount)
+    expect(enabledHosts).toEqual(bundledEnabledHosts)
+    expect(registeredHosts).toHaveLength(liveHostSupport.registeredAdapterCount)
+    expect(enabledHosts.every((host) => registeredHosts.includes(host))).toBe(true)
+    expect(registeredHosts.filter((host) => !enabledHosts.includes(host))).toEqual([...liveHostSupport.archiveOnlyExtras].sort())
+    expect(registeredHosts).toEqual([...hostingCases, ...liveCatalogHostingCases].map(([host]) => host).sort())
+  })
+
+  it.each([
+    ['https://savefiles.com/savefiles-id', 'savefiles', 'savefiles-id'],
+    ['https://dropload.pro/dropload-id', 'dropload', 'dropload-id'],
+    ['https://streama2z.com/streama2z-id/video.mkv', 'streama2z', 'streama2z-id'],
+    ['https://streamhg.com/streamhg-id', 'streamhg', 'streamhg-id'],
+    ['https://streamhg.com/f/streamhg-id', 'streamhg', 'streamhg-id'],
+    ['https://vidtube.cam/vidtube-id.html', 'vidtube', 'vidtube-id'],
+    ['https://www.twitch.tv/videos/123456', 'twitch', 'videos/123456']
+  ])('parses current public example shape %s', (url, host, id) => {
+    const hosting = new Hosting(url)
+    expect(hosting.getHost()).toBe(host)
+    expect(hosting.getID()).toBe(id)
   })
 
   it.each([
