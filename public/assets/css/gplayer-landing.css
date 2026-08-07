@@ -1293,23 +1293,6 @@ img[src$="/direct.png"] {
   font-family: var(--mono);
 }
 
-.public-share-rail {
-  position: fixed;
-  z-index: 45;
-  top: 50%;
-  left: 14px;
-  display: grid;
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--panel), transparent 5%);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
-  transform: translateY(-50%);
-  backdrop-filter: blur(14px);
-}
-
-.public-share-rail a,
-.public-share-rail button,
 .goto-top {
   display: grid;
   width: 42px;
@@ -1325,14 +1308,6 @@ img[src$="/direct.png"] {
   transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
-.public-share-rail a + a,
-.public-share-rail a + button,
-.public-share-rail button {
-  border-top: 1px solid var(--line);
-}
-
-.public-share-rail a:hover,
-.public-share-rail button:hover,
 .goto-top:hover {
   background: var(--brand);
   color: var(--brand-ink);
@@ -1559,23 +1534,6 @@ img[src$="/direct.png"] {
 
   .format-band {
     flex-wrap: wrap;
-  }
-}
-
-@media (max-width: 640px) {
-  .public-share-rail {
-    top: auto;
-    bottom: 18px;
-    left: 18px;
-    transform: none;
-  }
-
-  .public-share-rail [data-share-network] {
-    display: none;
-  }
-
-  .public-share-rail button {
-    border-top: 0;
   }
 }
 
