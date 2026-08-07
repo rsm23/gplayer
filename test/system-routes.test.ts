@@ -686,7 +686,7 @@ describe('legacy-compatible system routes', () => {
       ])
     }))
     expect(worker.statusCode).toBe(200)
-    expect(worker.body).toContain("gplayer-node-public-v32")
+    expect(worker.body).toContain("gplayer-node-public-v33")
     expect(worker.body).toContain("'assets/css/gplayer-ui.css'")
     expect(worker.body).toContain("const OFFLINE_URL = scopedUrl('offline.html')")
     expect(worker.body).toContain('.map(scopedUrl)')
