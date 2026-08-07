@@ -2,6 +2,7 @@
   "name": "gplayer",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Self-hosted Node.js media player and streaming gateway for provider links, HLS, DASH, and MP4.",
   "packageManager": "pnpm@11.10.0",
